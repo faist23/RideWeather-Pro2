@@ -1,10 +1,3 @@
-//
-//  SafetyAnalyticsEngine.swift
-//  RideWeather Pro
-//
-//  Created by Craig Faist on 8/19/25.
-//
-
 
 //
 //  SafetyAndDaylightAnalytics.swift
@@ -15,6 +8,7 @@
 
 import SwiftUI
 import CoreLocation
+import Solar
 
 // MARK: - Safety Analytics Engine
 
@@ -166,16 +160,20 @@ struct SafetyAnalyticsEngine {
     // MARK: - Private Helper Methods
     
     private func calculateSunrise() -> Date {
-        // Simplified calculation - in production, use proper solar calculation library
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: rideStartTime)
-        return calendar.date(byAdding: .hour, value: 6, to: today) ?? rideStartTime
+        // Use the Solar library to get the real sunrise time for the ride's location and date
+        guard let solar = Solar(for: rideStartTime, coordinate: self.location) else {
+            // Fallback for safety, but should not happen
+            return rideStartTime
+        }
+        return solar.sunrise ?? rideStartTime
     }
-    
+
     private func calculateSunset() -> Date {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: rideStartTime)
-        return calendar.date(byAdding: .hour, value: 19, to: today) ?? rideStartTime
+        // Use the Solar library to get the real sunset time
+        guard let solar = Solar(for: rideStartTime, coordinate: self.location) else {
+            return rideStartTime
+        }
+        return solar.sunset ?? rideStartTime
     }
     
     private func estimatedEndTime() -> Date {
@@ -508,7 +506,7 @@ enum RecommendationPriority: Int, CaseIterable {
 
 // MARK: - UI Components
 
-struct SafetyAnalyticsCard: View {
+/*struct SafetyAnalyticsCard: View {
     @EnvironmentObject var viewModel: WeatherViewModel
     @State private var showingDetails = false
     
@@ -516,7 +514,7 @@ struct SafetyAnalyticsCard: View {
         SafetyAnalyticsEngine(
             weatherPoints: viewModel.weatherDataForRoute,
             rideStartTime: viewModel.rideDate,
-            averageSpeed: Double(viewModel.averageSpeedInput) ?? 20.0,
+            averageSpeed: viewModel.getPowerAnalysisResult()?.averageSpeedMps ?? viewModel.averageSpeedMetersPerSecond,
             units: viewModel.settings.units,
             location: viewModel.routePoints.first ?? CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)
         )
@@ -559,7 +557,7 @@ struct SafetyAnalyticsCard: View {
                     SafetyInsightChip(
                         icon: "cloud.fill",
                         label: "Weather",
-                        value: safetyEngine.weatherSafetyAnalysis.overallSafetyRating.rawValue == 0 ? "Safe" : "Caution",
+                        value: safetyEngine.weatherSafetyAnalysis.overallSafetyRating == .safe ? "Safe" : "Caution",
                         color: safetyEngine.weatherSafetyAnalysis.overallSafetyRating.color
                     )
                 }
@@ -588,7 +586,7 @@ struct SafetyAnalyticsCard: View {
             SafetyAnalyticsDetailView(engine: safetyEngine)
         }
     }
-}
+}*/
 
 struct SafetyScoreRing: View {
     let score: Double

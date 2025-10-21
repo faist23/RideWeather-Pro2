@@ -1,10 +1,9 @@
 //
-//  State.swift
+//  StateViews.swift
 //  RideWeather Pro
 //
 //  Created by Craig Faist on 8/16/25.
 //
-
 
 import SwiftUI
 
@@ -46,14 +45,14 @@ struct ModernShimmerView: View {
             }
             .padding(16)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 24))
-            .shimmer()
+            .shimmer() // This will now correctly use your Shimmer.swift file
             
             // Additional shimmer cards
             ForEach(0..<2, id: \.self) { _ in
                 RoundedRectangle(cornerRadius: 20)
                     .fill(.thinMaterial)
                     .frame(height: 120)
-                    .shimmer()
+                    .shimmer() // This will also use your Shimmer.swift file
             }
         }
     }
@@ -99,39 +98,5 @@ struct ModernErrorView: View {
             RoundedRectangle(cornerRadius: 24)
                 .stroke(.white.opacity(0.2), lineWidth: 1)
         )
-    }
-}
-
-// A simple shimmer modifier
-struct ShimmerModifier: ViewModifier {
-    @State private var phase: CGFloat = 0
-    
-    func body(content: Content) -> some View {
-        content
-            .overlay(
-                Rectangle()
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                .white.opacity(0.0),
-                                .white.opacity(0.3),
-                                .white.opacity(0.0)
-                            ]),
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .offset(x: phase * 200)
-                    .animation(.linear(duration: 1.5).repeatForever(autoreverses: false), value: phase)
-            )
-            .onAppear {
-                phase = 2.0
-            }
-    }
-}
-
-extension View {
-    func shimmer() -> some View {
-        self.modifier(ShimmerModifier())
     }
 }

@@ -1,12 +1,4 @@
 //
-//  FITRecord.swift
-//  RideWeather Pro
-//
-//  Created by Craig Faist on 10/19/25.
-//
-
-
-//
 //  RideFileAnalysis.swift
 //  RideWeather Pro
 //
@@ -14,6 +6,9 @@
 import Foundation
 import SwiftUI
 import CoreLocation
+import Combine
+import UniformTypeIdentifiers
+import FitFileParser
 
 // MARK: - FIT File Parser Models
 
@@ -84,24 +79,20 @@ struct RideAnalysis {
     }
     
     private func calculatePerformanceScore() -> Double {
-        var score: Double = 50.0 // Start at neutral
-        
-        // Adjust based on pacing consistency
+        var score: Double = 50.0
         score += (100 - paceAnalysis.variabilityIndex) * 0.2
         
-        // Adjust based on power distribution
         if let metrics = powerMetrics {
             let efficiencyRatio = metrics.normalizedPower / metrics.averagePower
             if efficiencyRatio < 1.05 {
-                score += 15 // Very efficient
+                score += 15
             } else if efficiencyRatio < 1.10 {
-                score += 10 // Good
+                score += 10
             } else if efficiencyRatio < 1.15 {
-                score += 5 // Acceptable
+                score += 5
             }
         }
         
-        // Deduct for major deviations
         let majorDeviations = deviations.filter { $0.severity == .major }.count
         score -= Double(majorDeviations) * 5
         
@@ -114,8 +105,8 @@ struct PowerMetrics {
     let normalizedPower: Double
     let intensityFactor: Double
     let tss: Double
-    let variabilityIndex: Double // NP/AP ratio
-    let peakPowers: [Duration: Int] // 5s, 1min, 5min, 20min, etc.
+    let variabilityIndex: Double
+    let peakPowers: [Duration: Int]
     let powerDistribution: [PowerZoneTime]
     
     struct PowerZoneTime {
@@ -127,10 +118,10 @@ struct PowerMetrics {
 
 struct PaceAnalysis {
     let segments: [PaceSegment]
-    let overallConsistency: Double // 0-100 scale
-    let variabilityIndex: Double // CoV of power/speed
+    let overallConsistency: Double
+    let variabilityIndex: Double
     let fatigueDetected: Bool
-    let fatiguePoint: TimeInterval? // When fatigue started
+    let fatiguePoint: TimeInterval?
     
     struct PaceSegment {
         let startTime: TimeInterval
@@ -168,8 +159,8 @@ struct SegmentComparison {
     }
     
     struct Deviation {
-        let powerDelta: Double? // Watts over/under
-        let timeDelta: TimeInterval // Seconds over/under
+        let powerDelta: Double?
+        let timeDelta: TimeInterval
         let severity: DeviationSeverity
     }
 }
@@ -284,6 +275,14 @@ final class RideFileAnalyzer: ObservableObject {
     private let originalPlan: PacingPlan
     private let settings: AppSettings
     
+    enum ParseError: LocalizedError {
+        case noActivityData
+        
+        var errorDescription: String? {
+            "No activity data found in FIT file"
+        }
+    }
+    
     init(originalPlan: PacingPlan, settings: AppSettings) {
         self.originalPlan = originalPlan
         self.settings = settings
@@ -294,12 +293,16 @@ final class RideFileAnalyzer: ObservableObject {
         error = nil
         
         do {
+            print("🔍 Starting ride file analysis...")
+            
             // Parse the FIT file
             let parsedFile = try await parseFITFile(fileURL)
             
+            print("📊 File parsed, starting analysis...")
+            
             // Analyze power metrics
-            let powerMetrics = parsedFile.hasPowerData 
-                ? calculatePowerMetrics(from: parsedFile) 
+            let powerMetrics = parsedFile.hasPowerData
+                ? calculatePowerMetrics(from: parsedFile)
                 : nil
             
             // Analyze pacing
@@ -338,8 +341,11 @@ final class RideFileAnalyzer: ObservableObject {
                 weatherComparison: weatherComparison
             )
             
+            print("✅ Ride analysis complete!")
+            
         } catch {
             self.error = error.localizedDescription
+            print("❌ Analysis failed: \(error.localizedDescription)")
         }
         
         isAnalyzing = false
@@ -348,49 +354,208 @@ final class RideFileAnalyzer: ObservableObject {
     // MARK: - FIT File Parsing
     
     private func parseFITFile(_ fileURL: URL) async throws -> ParsedRideFile {
-        // Simulated FIT file parsing
-        // In production, use a proper FIT SDK or library
+        print("📂 Starting FIT file parse: \(fileURL.lastPathComponent)")
         
         let data = try Data(contentsOf: fileURL)
+        print("   File size: \(data.count) bytes")
         
-        // Mock parsing for demonstration
-        // Real implementation would use FIT SDK
-        let fileName = fileURL.lastPathComponent
-        let startTime = Date()
-        let endTime = startTime.addingTimeInterval(3600)
+        // Use the FitFileParser library
+        let fitFile = FitFile(data: data)
         
-        var records: [FITRecord] = []
+        // Get all record messages
+        let records = fitFile.messages(forMessageType: .record)
+        print("   Found \(records.count) record messages")
         
-        // Generate sample records (in production, parse actual FIT data)
-        for i in 0..<360 {
-            let timestamp = startTime.addingTimeInterval(Double(i * 10))
+        var fitRecords: [FITRecord] = []
+        var startTime: Date?
+        var endTime: Date?
+        
+        for (index, msg) in records.enumerated() {
+            // Use reflection to access the message data
+            let mirror = Mirror(reflecting: msg)
+            var valuesDict: [String: Double]?
+            var datesDict: [String: Date]?
+            
+            for (label, value) in mirror.children {
+                if label == "values", let vDict = value as? [String: Double] {
+                    valuesDict = vDict
+                }
+                if label == "dates", let dDict = value as? [String: Date] {
+                    datesDict = dDict
+                }
+            }
+            
+            guard let values = valuesDict else { continue }
+            
+            // Extract timestamp
+            var timestamp: Date?
+            if let dates = datesDict {
+                timestamp = dates["timestamp"]
+            }
+            
+            if startTime == nil, let ts = timestamp {
+                startTime = ts
+            }
+            if let ts = timestamp {
+                endTime = ts
+            }
+            
+            // Extract GPS coordinates (in semicircles, need to convert)
+            var latitude: Double?
+            var longitude: Double?
+            if let lat = values["position_lat"], let lon = values["position_long"] {
+                latitude = lat * (180.0 / pow(2.0, 31.0))
+                longitude = lon * (180.0 / pow(2.0, 31.0))
+            }
+            
+            // Extract altitude
+            var altitude: Double?
+            let altitudeKeys = ["enhanced_altitude", "altitude", "enhanced_alt", "alt"]
+            for key in altitudeKeys {
+                if let alt = values[key] {
+                    altitude = alt
+                    break
+                }
+            }
+            
+            // Extract power
+            var power: Int?
+            if let powerValue = values["power"] {
+                power = Int(powerValue)
+            }
+            
+            // Extract heart rate
+            var heartRate: Int?
+            if let hrValue = values["heart_rate"] {
+                heartRate = Int(hrValue)
+            }
+            
+            // Extract cadence
+            var cadence: Int?
+            if let cadenceValue = values["cadence"] {
+                cadence = Int(cadenceValue)
+            }
+            
+            // Extract speed (m/s)
+            var speed: Double?
+            let speedKeys = ["enhanced_speed", "speed"]
+            for key in speedKeys {
+                if let speedValue = values[key] {
+                    speed = speedValue
+                    break
+                }
+            }
+            
+            // Extract temperature
+            var temperature: Double?
+            if let tempValue = values["temperature"] {
+                temperature = tempValue
+            }
+            
+            // Extract distance (cumulative, in meters)
+            var distance: Double?
+            if let distValue = values["distance"] {
+                distance = distValue
+            }
+            
+            // Debug first few records
+            if index < 3 {
+                print("   Record \(index + 1):")
+                print("      Power: \(power ?? -1)W")
+                print("      HR: \(heartRate ?? -1)bpm")
+                print("      Speed: \(String(format: "%.1f", (speed ?? 0) * 3.6))km/h")
+                print("      Distance: \(String(format: "%.1f", (distance ?? 0) / 1000))km")
+            }
+            
             let record = FITRecord(
-                timestamp: timestamp,
-                latitude: 40.7128 + Double(i) * 0.0001,
-                longitude: -74.0060 + Double(i) * 0.0001,
-                altitude: 100 + Double.random(in: -5...5),
-                power: Int.random(in: 200...250),
-                heartRate: Int.random(in: 140...160),
-                cadence: Int.random(in: 85...95),
-                speed: 8.5 + Double.random(in: -0.5...0.5),
-                temperature: 20.0,
-                distance: Double(i * 85)
+                timestamp: timestamp ?? Date(),
+                latitude: latitude,
+                longitude: longitude,
+                altitude: altitude,
+                power: power,
+                heartRate: heartRate,
+                cadence: cadence,
+                speed: speed,
+                temperature: temperature,
+                distance: distance
             )
-            records.append(record)
+            
+            fitRecords.append(record)
         }
         
+        guard !fitRecords.isEmpty else {
+            throw ParseError.noActivityData
+        }
+        
+        // Calculate metrics
+        let actualStartTime = startTime ?? Date()
+        let actualEndTime = endTime ?? Date()
+        let totalDuration = actualEndTime.timeIntervalSince(actualStartTime)
+        
+        // Calculate moving time
+        var movingTime: TimeInterval = 0
+        for i in 1..<fitRecords.count {
+            let timeDiff = fitRecords[i].timestamp.timeIntervalSince(fitRecords[i - 1].timestamp)
+            if let speed = fitRecords[i].speed, speed > 1.0 {
+                movingTime += timeDiff
+            }
+        }
+        
+        // Total distance from last record
+        let totalDistance = fitRecords.last?.distance ?? 0
+        
+        // Check what data we have
+        let hasPower = fitRecords.contains { $0.power != nil }
+        let hasHR = fitRecords.contains { $0.heartRate != nil }
+        let hasGPS = fitRecords.contains { $0.latitude != nil && $0.longitude != nil }
+        
+        // Calculate average metrics for verification
+        let powerValues = fitRecords.compactMap { $0.power }
+        let hrValues = fitRecords.compactMap { $0.heartRate }
+        
+        if !powerValues.isEmpty {
+            let avgPower = Double(powerValues.reduce(0, +)) / Double(powerValues.count)
+            print("   ✅ Average Power: \(Int(avgPower))W")
+        }
+        
+        if !hrValues.isEmpty {
+            let avgHR = Double(hrValues.reduce(0, +)) / Double(hrValues.count)
+            print("   ✅ Average HR: \(Int(avgHR))bpm")
+        }
+        
+        print("✅ FIT file parsed successfully:")
+        print("   Duration: \(formatDuration(totalDuration))")
+        print("   Moving Time: \(formatDuration(movingTime))")
+        print("   Distance: \(String(format: "%.2f km", totalDistance / 1000))")
+        print("   Records: \(fitRecords.count)")
+        print("   Has Power: \(hasPower)")
+        print("   Has HR: \(hasHR)")
+        print("   Has GPS: \(hasGPS)")
+        
         return ParsedRideFile(
-            fileName: fileName,
-            startTime: startTime,
-            endTime: endTime,
-            totalDuration: 3600,
-            movingTime: 3500,
-            totalDistance: 30600,
-            records: records,
-            hasPowerData: true,
-            hasHeartRateData: true,
-            hasGPSData: true
+            fileName: fileURL.lastPathComponent,
+            startTime: actualStartTime,
+            endTime: actualEndTime,
+            totalDuration: totalDuration,
+            movingTime: movingTime,
+            totalDistance: totalDistance,
+            records: fitRecords,
+            hasPowerData: hasPower,
+            hasHeartRateData: hasHR,
+            hasGPSData: hasGPS
         )
+    }
+    
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        let hours = Int(seconds / 3600)
+        let minutes = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
+        let secs = Int(seconds.truncatingRemainder(dividingBy: 60))
+        
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, secs)
+        } else {
+            return String(format: "%d:%02d", minutes, secs)
+        }
     }
     
     // MARK: - Analysis Methods
@@ -409,11 +574,16 @@ final class RideFileAnalyzer: ObservableObject {
             )
         }
         
+        print("📊 Calculating power metrics from \(powers.count) power samples")
+        
         // Average Power
         let avgPower = Double(powers.reduce(0, +)) / Double(powers.count)
         
-        // Normalized Power (30-second rolling average)
+        // Normalized Power
         let np = calculateNormalizedPower(powers)
+        
+        print("   Average Power: \(Int(avgPower))W")
+        print("   Normalized Power: \(Int(np))W")
         
         // Intensity Factor
         let ftp = Double(settings.functionalThresholdPower)
@@ -422,6 +592,8 @@ final class RideFileAnalyzer: ObservableObject {
         // TSS
         let durationHours = file.movingTime / 3600.0
         let tss = durationHours * pow(intensityFactor, 2) * 100
+        
+        print("   IF: \(String(format: "%.2f", intensityFactor)), TSS: \(Int(tss))")
         
         // Variability Index
         let vi = avgPower > 0 ? np / avgPower : 1.0
@@ -444,6 +616,8 @@ final class RideFileAnalyzer: ObservableObject {
     }
     
     private func calculateNormalizedPower(_ powers: [Int]) -> Double {
+        guard !powers.isEmpty else { return 0.0 }
+        
         let windowSize = 30
         var rollingAverages: [Double] = []
         var windowSum: Double = 0
@@ -457,8 +631,13 @@ final class RideFileAnalyzer: ObservableObject {
                 windowSum -= Double(queue.removeFirst())
             }
             
-            rollingAverages.append(windowSum / Double(queue.count))
+            let count = queue.count
+            if count > 0 {
+                rollingAverages.append(windowSum / Double(count))
+            }
         }
+        
+        guard !rollingAverages.isEmpty else { return 0.0 }
         
         let fourths = rollingAverages.map { pow($0, 4) }
         let meanOfFourths = fourths.reduce(0, +) / Double(fourths.count)
@@ -469,15 +648,23 @@ final class RideFileAnalyzer: ObservableObject {
     private func calculatePeakPowers(_ powers: [Int]) -> [Duration: Int] {
         var peaks: [Duration: Int] = [:]
         
+        guard !powers.isEmpty else { return peaks }
+        
         let durations: [Duration] = [.seconds(5), .seconds(60), .seconds(300), .seconds(1200)]
         
         for duration in durations {
-            let windowSize = duration.seconds / 10 // Assuming 10s recording interval
+            let windowSize = max(1, duration.seconds / 10)
+            
+            guard powers.count >= windowSize else {
+                continue
+            }
+            
             var maxAvg = 0
             
             for i in 0...(powers.count - windowSize) {
                 let window = powers[i..<(i + windowSize)]
-                let avg = window.reduce(0, +) / windowSize
+                let sum = window.reduce(0, +)
+                let avg = sum / windowSize
                 maxAvg = max(maxAvg, avg)
             }
             
@@ -500,7 +687,7 @@ final class RideFileAnalyzer: ObservableObject {
                 Double(power) >= zone.minPower && Double(power) <= zone.maxPower
             }
             
-            let seconds = Double(powersInZone.count) * 10 // Assuming 10s intervals
+            let seconds = Double(powersInZone.count) * 10
             let percentage = (seconds / duration) * 100
             
             distribution.append(PowerMetrics.PowerZoneTime(
@@ -514,21 +701,19 @@ final class RideFileAnalyzer: ObservableObject {
     }
     
     private func analyzePacing(from file: ParsedRideFile) -> PaceAnalysis {
-        // Divide ride into segments for analysis
-        let segmentDuration: TimeInterval = 600 // 10-minute segments
+        let segmentDuration: TimeInterval = 600
         let segmentCount = Int(file.movingTime / segmentDuration)
         
         var segments: [PaceAnalysis.PaceSegment] = []
         
         for i in 0..<segmentCount {
-            let startIdx = i * 60 // 10 minutes at 10s intervals
+            let startIdx = i * 60
             let endIdx = min(startIdx + 60, file.records.count)
             let segmentRecords = Array(file.records[startIdx..<endIdx])
             
             let avgPower = segmentRecords.compactMap { $0.power }.average
             let avgSpeed = segmentRecords.compactMap { $0.speed }.average ?? 0
             
-            // Determine trend
             let trend: PaceAnalysis.PaceSegment.Trend
             if i > 0, let prevPower = segments.last?.avgPower, let currentPower = avgPower {
                 let change = (currentPower - prevPower) / prevPower
@@ -552,11 +737,9 @@ final class RideFileAnalyzer: ObservableObject {
             ))
         }
         
-        // Calculate consistency
         let powerCV = calculateCoeffientOfVariation(segments.compactMap { $0.avgPower })
         let consistency = max(0, 100 - (powerCV * 100))
         
-        // Detect fatigue
         let (fatigueDetected, fatiguePoint) = detectFatigue(segments: segments)
         
         return PaceAnalysis(
@@ -574,37 +757,53 @@ final class RideFileAnalyzer: ObservableObject {
     ) -> [SegmentComparison] {
         var comparisons: [SegmentComparison] = []
         
-        // Match planned segments to actual data
+        print("🔍 Comparing \(planned.count) planned segments to actual ride data")
+        
+        let totalActualDistance = actual.records.last?.distance ?? 0
+        print("   Actual ride distance: \(String(format: "%.1f", totalActualDistance / 1000))km")
+        
         var cumulativeDistance: Double = 0
         
         for (index, plannedSegment) in planned.enumerated() {
             let segmentStartDistance = cumulativeDistance
             let segmentEndDistance = segmentStartDistance + plannedSegment.distanceKm * 1000
             
-            // Find actual records in this distance range
+            if segmentStartDistance >= totalActualDistance {
+                print("   ⚠️ Stopped comparison at segment \(index + 1) - beyond actual ride distance")
+                break
+            }
+            
             let actualRecords = actual.records.filter { record in
                 guard let distance = record.distance else { return false }
-                return distance >= segmentStartDistance && distance < segmentEndDistance
+                return distance >= segmentStartDistance && distance < min(segmentEndDistance, totalActualDistance)
             }
             
             guard !actualRecords.isEmpty else {
+                print("   ⚠️ No data for segment \(index + 1)")
                 cumulativeDistance = segmentEndDistance
                 continue
             }
             
-            // Calculate actual metrics
             let actualPower = actualRecords.compactMap { $0.power }.average
-            let actualTime = actualRecords.last!.timestamp.timeIntervalSince(actualRecords.first!.timestamp)
+            let actualTime: TimeInterval
+            
+            if actualRecords.count > 1,
+               let firstTime = actualRecords.first?.timestamp,
+               let lastTime = actualRecords.last?.timestamp {
+                actualTime = lastTime.timeIntervalSince(firstTime)
+            } else {
+                actualTime = plannedSegment.estimatedTime
+            }
+            
             let actualSpeed = actualRecords.compactMap { $0.speed }.average ?? 0
             
-            // Calculate deviation
             let powerDelta = actualPower.map { $0 - plannedSegment.targetPower }
             let timeDelta = actualTime - plannedSegment.estimatedTime
             
             let severity: DeviationSeverity
             if let powerDelta = powerDelta {
                 let powerDeviation = abs(powerDelta / plannedSegment.targetPower)
-                let timeDeviation = abs(timeDelta / plannedSegment.estimatedTime)
+                let timeDeviation = actualTime > 0 ? abs(timeDelta / plannedSegment.estimatedTime) : 0
                 
                 if powerDeviation > 0.15 || timeDeviation > 0.15 {
                     severity = .major
@@ -619,7 +818,6 @@ final class RideFileAnalyzer: ObservableObject {
                 severity = .none
             }
             
-            // Generate analysis
             let analysis = generateSegmentAnalysis(
                 plannedPower: plannedSegment.targetPower,
                 actualPower: actualPower,
@@ -651,6 +849,7 @@ final class RideFileAnalyzer: ObservableObject {
             cumulativeDistance = segmentEndDistance
         }
         
+        print("   ✅ Created \(comparisons.count) segment comparisons")
         return comparisons
     }
     
@@ -660,7 +859,6 @@ final class RideFileAnalyzer: ObservableObject {
     ) -> [PaceDeviation] {
         var deviations: [PaceDeviation] = []
         
-        // Look for power surges
         if let powers = actual.records.compactMap({ $0.power }) as [Int]? {
             let avgPower = powers.average ?? 0
             
@@ -694,7 +892,6 @@ final class RideFileAnalyzer: ObservableObject {
     ) -> [RideInsight] {
         var insights: [RideInsight] = []
         
-        // Pacing consistency insight
         if paceAnalysis.overallConsistency > 85 {
             insights.append(RideInsight(
                 category: .pacing,
@@ -713,7 +910,6 @@ final class RideFileAnalyzer: ObservableObject {
             ))
         }
         
-        // Variability Index insight
         if let metrics = powerMetrics {
             if metrics.variabilityIndex > 1.10 {
                 insights.append(RideInsight(

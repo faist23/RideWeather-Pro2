@@ -95,9 +95,7 @@ struct GarminCourseFitGenerator {
         try fileIdMesg.setSerialNumber(UInt32(Date().timeIntervalSince1970))
         try fileIdMesg.setTimeCreated(DateTime(date: Date()))
         
-        guard encoder.write(mesg: fileIdMesg) else {
-            throw CourseExportError.fitSDKError("Failed to write FileID message")
-        }
+        encoder.write(mesg: fileIdMesg)
     }
     
     private func writeCourseMessage(
@@ -114,9 +112,7 @@ struct GarminCourseFitGenerator {
         // Sport type
         try courseMesg.setSport(.cycling)
         
-        guard encoder.write(mesg: courseMesg) else {
-            throw CourseExportError.fitSDKError("Failed to write Course message")
-        }
+        encoder.write(mesg: courseMesg)
     }
     
     private func writeLapMessage(
@@ -156,9 +152,7 @@ struct GarminCourseFitGenerator {
         try lapMesg.setAvgPower(UInt16(pacingPlan.averagePower))
         try lapMesg.setNormalizedPower(UInt16(pacingPlan.normalizedPower))
         
-        guard encoder.write(mesg: lapMesg) else {
-            throw CourseExportError.fitSDKError("Failed to write Lap message")
-        }
+        encoder.write(mesg: lapMesg)
     }
     
     private func writeCoursePointsWithPower(
@@ -219,9 +213,7 @@ struct GarminCourseFitGenerator {
             let powerNote = "\(Int(segment.targetPower))W"
             try coursePointMesg.setName(powerNote)
             
-            guard encoder.write(mesg: coursePointMesg) else {
-                throw CourseExportError.fitSDKError("Failed to write CoursePoint message")
-            }
+            encoder.write(mesg: coursePointMesg)
         }
         
         print("✅ Wrote \(messageIndex) course points")
@@ -282,9 +274,7 @@ struct GarminCourseFitGenerator {
             let hrZone = mapPowerZoneToHR(powerZone: currentSegment.powerZone)
             try recordMesg.setHeartRate(hrZone)
             
-            guard encoder.write(mesg: recordMesg) else {
-                throw CourseExportError.fitSDKError("Failed to write Record message at point \(pointIndex)")
-            }
+            encoder.write(mesg: recordMesg)
             
             // Increment time for next point
             if pointIndex < routePoints.count - 1 {

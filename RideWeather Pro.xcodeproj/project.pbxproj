@@ -6,13 +6,33 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7E5B80E92E4CCAE8005D114F /* CoreGPX in Frameworks */ = {isa = PBXBuildFile; productRef = 7E5B80E82E4CCAE8005D114F /* CoreGPX */; };
+		7E96CD292E7F7A2F009475FA /* FITSwiftSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 7E96CD282E7F7A2F009475FA /* FITSwiftSDK */; };
+		7EAE7C3A2E6F35EE006C9634 /* Solar in Frameworks */ = {isa = PBXBuildFile; productRef = 7EAE7C392E6F35EE006C9634 /* Solar */; };
+		7EB9FF512E5CBFE000157204 /* FitFileParser in Frameworks */ = {isa = PBXBuildFile; productRef = 7EB9FF502E5CBFE000157204 /* FitFileParser */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		7E5B80AB2E4C3B2D005D114F /* RideWeather Pro.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "RideWeather Pro.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		7E5B80E12E4C3F24005D114F /* Exceptions for "RideWeather Pro" folder in "RideWeather Pro" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 7E5B80AA2E4C3B2D005D114F /* RideWeather Pro */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		7E5B80AD2E4C3B2D005D114F /* RideWeather Pro */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7E5B80E12E4C3F24005D114F /* Exceptions for "RideWeather Pro" folder in "RideWeather Pro" target */,
+			);
 			path = "RideWeather Pro";
 			sourceTree = "<group>";
 		};
@@ -23,6 +43,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7EAE7C3A2E6F35EE006C9634 /* Solar in Frameworks */,
+				7E96CD292E7F7A2F009475FA /* FITSwiftSDK in Frameworks */,
+				7E5B80E92E4CCAE8005D114F /* CoreGPX in Frameworks */,
+				7EB9FF512E5CBFE000157204 /* FitFileParser in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +89,10 @@
 			);
 			name = "RideWeather Pro";
 			packageProductDependencies = (
+				7E5B80E82E4CCAE8005D114F /* CoreGPX */,
+				7EB9FF502E5CBFE000157204 /* FitFileParser */,
+				7EAE7C392E6F35EE006C9634 /* Solar */,
+				7E96CD282E7F7A2F009475FA /* FITSwiftSDK */,
 			);
 			productName = "RideWeather Pro";
 			productReference = 7E5B80AB2E4C3B2D005D114F /* RideWeather Pro.app */;
@@ -94,6 +122,12 @@
 			);
 			mainGroup = 7E5B80A22E4C3B2D005D114F;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				7E5B80E72E4CCAE8005D114F /* XCRemoteSwiftPackageReference "CoreGPX" */,
+				7EB9FF4F2E5CBFE000157204 /* XCRemoteSwiftPackageReference "FitFileParser" */,
+				7EAE7C382E6F35EE006C9634 /* XCRemoteSwiftPackageReference "Solar" */,
+				7E96CD272E7F7A2F009475FA /* XCRemoteSwiftPackageReference "fit-swift-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7E5B80AC2E4C3B2D005D114F /* Products */;
 			projectDirPath = "";
@@ -252,10 +286,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 1.1;
 				DEVELOPMENT_TEAM = DT58WA8N32;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "RideWeather-Pro-Info.plist";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -284,10 +319,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 1.1;
 				DEVELOPMENT_TEAM = DT58WA8N32;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "RideWeather-Pro-Info.plist";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -332,6 +368,64 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		7E5B80E72E4CCAE8005D114F /* XCRemoteSwiftPackageReference "CoreGPX" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/vincentneo/CoreGPX";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.3;
+			};
+		};
+		7E96CD272E7F7A2F009475FA /* XCRemoteSwiftPackageReference "fit-swift-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/garmin/fit-swift-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 21.178.0;
+			};
+		};
+		7EAE7C382E6F35EE006C9634 /* XCRemoteSwiftPackageReference "Solar" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ceeK/Solar.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.0.1;
+			};
+		};
+		7EB9FF4F2E5CBFE000157204 /* XCRemoteSwiftPackageReference "FitFileParser" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/roznet/FitFileParser";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.5.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		7E5B80E82E4CCAE8005D114F /* CoreGPX */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7E5B80E72E4CCAE8005D114F /* XCRemoteSwiftPackageReference "CoreGPX" */;
+			productName = CoreGPX;
+		};
+		7E96CD282E7F7A2F009475FA /* FITSwiftSDK */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7E96CD272E7F7A2F009475FA /* XCRemoteSwiftPackageReference "fit-swift-sdk" */;
+			productName = FITSwiftSDK;
+		};
+		7EAE7C392E6F35EE006C9634 /* Solar */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7EAE7C382E6F35EE006C9634 /* XCRemoteSwiftPackageReference "Solar" */;
+			productName = Solar;
+		};
+		7EB9FF502E5CBFE000157204 /* FitFileParser */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7EB9FF4F2E5CBFE000157204 /* XCRemoteSwiftPackageReference "FitFileParser" */;
+			productName = FitFileParser;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 7E5B80A32E4C3B2D005D114F /* Project object */;
 }

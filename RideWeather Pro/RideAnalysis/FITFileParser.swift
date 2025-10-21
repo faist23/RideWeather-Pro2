@@ -2,8 +2,6 @@
 //  FITFileParser.swift
 //  RideWeather Pro
 //
-//  Real FIT file parsing using native Swift
-//
 
 import Foundation
 import CoreLocation
@@ -60,7 +58,7 @@ final class FITFileParser {
         
         // Calculate moving time (exclude stops)
         let movingTime = calculateMovingTime(records)
-        
+
         // Calculate total distance
         let totalDistance = records.last?.distance ?? 0
         
@@ -89,6 +87,8 @@ final class FITFileParser {
         var records: [FITRecord] = []
         var position = headerSize
         
+        print("🔍 Starting to parse FIT records from position \(headerSize)")
+        
         // State tracking for record assembly
         var currentTimestamp: Date?
         var currentLatitude: Double?
@@ -104,6 +104,9 @@ final class FITFileParser {
         // Message definitions cache
         var messageDefinitions: [UInt8: MessageDefinition] = [:]
         
+        var recordCount = 0
+        var dataMessageCount = 0
+        
         while position < data.count {
             guard position < data.count else { break }
             
@@ -117,11 +120,14 @@ final class FITFileParser {
                 // Parse definition message
                 let definition = try parseDefinitionMessage(from: data, at: &position)
                 messageDefinitions[localMessageType] = definition
+                
+                if definition.globalMessageNumber == 20 {
+                    print("   Found record message definition")
+                }
             } else {
                 // Parse data message
                 guard let definition = messageDefinitions[localMessageType] else {
-                    // Skip unknown message
-                    position += 1
+                    // Skip unknown message - advance by 1 byte and continue
                     continue
                 }
                 
@@ -130,6 +136,8 @@ final class FITFileParser {
                     at: &position,
                     definition: definition
                 )
+                
+                dataMessageCount += 1
                 
                 // Extract fields based on global message number
                 switch definition.globalMessageNumber {
@@ -144,7 +152,7 @@ final class FITFileParser {
                         currentLongitude = semicirclesToDegrees(lon)
                     }
                     if let alt = messageData["altitude"] as? UInt16 {
-                        currentAltitude = Double(alt) / 5.0 - 500.0
+                        currentAltitude = (Double(alt) / 5.0) - 500.0
                     }
                     if let power = messageData["power"] as? UInt16 {
                         currentPower = Int(power)
@@ -180,11 +188,33 @@ final class FITFileParser {
                             distance: currentDistance
                         )
                         records.append(record)
+                        recordCount += 1
+                        
+                        // Debug: print first few records
+                        if recordCount <= 3 {
+                            print("   Record \(recordCount): power=\(currentPower ?? -1)W, hr=\(currentHeartRate ?? -1)bpm, speed=\(String(format: "%.1f", (currentSpeed ?? 0) * 3.6))km/h")
+                        }
                     }
                     
                 default:
                     break
                 }
+            }
+        }
+        
+        print("✅ Parsed \(recordCount) records from \(dataMessageCount) data messages")
+        
+        if !records.isEmpty {
+            let powerValues = records.compactMap { $0.power }
+            if !powerValues.isEmpty {
+                let avgPower = Double(powerValues.reduce(0, +)) / Double(powerValues.count)
+                print("   Average power from raw data: \(Int(avgPower))W")
+            }
+            
+            let hrValues = records.compactMap { $0.heartRate }
+            if !hrValues.isEmpty {
+                let avgHR = Double(hrValues.reduce(0, +)) / Double(hrValues.count)
+                print("   Average HR from raw data: \(Int(avgHR))bpm")
             }
         }
         

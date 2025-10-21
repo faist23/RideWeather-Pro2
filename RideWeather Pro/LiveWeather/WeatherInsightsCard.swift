@@ -1,7 +1,16 @@
+//
+//  WeatherInsightsCard.swift
+//  RideWeather Pro
+//
+//  Created by Craig Faist on 8/16/25.
+//
+
+
 import SwiftUI
 
 struct WeatherInsightsCard: View {
     let weather: DisplayWeatherModel
+    let insights: EnhancedWeatherInsights? // Add this
     @EnvironmentObject var viewModel: WeatherViewModel
     
     var body: some View {
@@ -11,33 +20,57 @@ struct WeatherInsightsCard: View {
                 .foregroundStyle(.white)
             
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 8) {
-                InsightItem(
-                    title: "UV Index",
-                    value: "Moderate",
-                    icon: "sun.max.fill",
-                    color: .yellow
-                )
+                if let insights = insights {
+                    InsightItem(
+                        title: "UV Index",
+                        value: "\(String(format: "%.1f", insights.uvIndex)) • \(insights.uvLevel)",
+                        icon: "sun.max.fill",
+                        color: insights.uvColor
+                    )
+                    
+                    InsightItem(
+                        title: "Air Quality",
+                        value: insights.airQualityLevel,
+                        icon: "leaf.fill",
+                        color: insights.airQualityColor
+                    )
+                    
+                    InsightItem(
+                        title: "Visibility",
+                        value: formatVisibility(insights.visibility),
+                        icon: "eye.fill",
+                        color: insights.visibilityColor
+                    )
+                } else {
+                    // Fallback to existing hardcoded values while loading
+                    InsightItem(
+                        title: "UV Index",
+                        value: "Loading...",
+                        icon: "sun.max.fill",
+                        color: .gray
+                    )
+                    
+                    InsightItem(
+                        title: "Air Quality",
+                        value: "Loading...",
+                        icon: "leaf.fill",
+                        color: .gray
+                    )
+                    
+                    InsightItem(
+                        title: "Visibility",
+                        value: "Loading...",
+                        icon: "eye.fill",
+                        color: .gray
+                    )
+                }
                 
                 InsightItem(
-                    title: "Air Quality",
-                    value: "Good",
-                    icon: "leaf.fill",
-                    color: .green
-                )
-                
-                InsightItem(
-                    title: "Visibility",
-                    value: "Clear",
-                    icon: "eye.fill",
-                    color: .blue
-                )
-                
-                InsightItem(
-                    title: "Comfort",
-                    value: comfortLevel,
-                    icon: "heart.fill",
-                    color: comfortColor
-                )
+                     title: "Comfort",
+                     value: enhancedComfortLevel, // Use the new computed property
+                     icon: "heart.fill",
+                     color: enhancedComfortColor // Use the new computed property
+                 )
             }
         }
         .padding(16)
@@ -49,29 +82,67 @@ struct WeatherInsightsCard: View {
         .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
     }
     
-    private var comfortLevel: String {
-        let tempF = viewModel.settings.units == .metric ? (weather.temp * 9/5) + 32 : weather.temp
-        let wind = weather.windSpeed
-        
-        if tempF < 40 || tempF > 85 || wind > 15 {
-            return "Challenging"
-        } else if tempF < 55 || tempF > 75 || wind > 10 {
-            return "Moderate"
+    private func formatVisibility(_ meters: Int) -> String {
+        let units = viewModel.settings.units
+        if units == .metric {
+            if meters >= 1000 {
+                return "\(meters/1000) km"
+            } else {
+                return "\(meters) m"
+            }
         } else {
-            return "Excellent"
+            let miles = Double(meters) * 0.000621371
+            return String(format: "%.1f mi", miles)
         }
     }
     
-    private var comfortColor: Color {
-        switch comfortLevel {
-        case "Excellent": return .green
-        case "Moderate": return .yellow
-        case "Challenging": return .red
-        default: return .gray
+    // MARK: - Enhanced Comfort Calculation
+    
+    // Calculates the raw enhanced comfort score from 0.0 to 1.0.
+    private var enhancedComfortScore: Double {
+        // Create a temporary HourlyForecast object to access the formula.
+        // We can use dummy values for properties not used in the calculation.
+        let forecastForCalculation = HourlyForecast(
+            time: "",
+            date: Date(),
+            iconName: "",
+            temp: weather.temp,
+            feelsLike: weather.feelsLike,
+            pop: weather.pop,
+            windSpeed: weather.windSpeed,
+            windDeg: weather.windDeg,
+            humidity: weather.humidity,
+            uvIndex: insights?.uvIndex,
+            aqi: insights?.airQuality
+        )
+        
+//        return forecastForCalculation.enhancedCyclingComfort(using: viewModel.settings.units, uvIndex: insights?.uvIndex, aqi: insights?.airQuality)
+        return forecastForCalculation.enhancedCyclingComfort(using: viewModel.settings.units, idealTemp: viewModel.settings.idealTemperature, uvIndex: insights?.uvIndex, aqi: insights?.airQuality)
+    }
+    
+    // Converts the numeric comfort score into a descriptive label.
+    private var enhancedComfortLevel: String {
+        let score = enhancedComfortScore
+        switch score {
+        case ..<0.4: return "Challenging"
+        case 0.4..<0.6: return "Moderate"
+        case 0.6..<0.8: return "Good"
+        default: return "Excellent"
         }
     }
-}
+    
+    // Determines the color based on the numeric comfort score.
+    private var enhancedComfortColor: Color {
+        let score = enhancedComfortScore
+        switch score {
+        case ..<0.4: return .red
+        case 0.4..<0.6: return .orange
+        case 0.6..<0.8: return .yellow
+        default: return .green
+        }
+    }
 
+}
 struct InsightItem: View {
     let title: String
     let value: String

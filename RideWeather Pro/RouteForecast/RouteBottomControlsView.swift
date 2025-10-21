@@ -1,113 +1,293 @@
 //
-//  RouteBottomControlsView.swift
-//  RideWeather Pro
+// RouteBottomControlsView.swift
 //
 
 import SwiftUI
+import CoreLocation
 
-struct RouteBottomControlsView: View {
+struct ModernRouteBottomControlsView: View {
     @EnvironmentObject var viewModel: WeatherViewModel
     @Binding var isImporting: Bool
-    @FocusState var isSpeedFieldFocused: Bool
     @Binding var showBottomControls: Bool
+    @Binding var importedFileName: String
+    
+    @State private var showingDatePicker = false
+    @State private var showingTimePicker = false
+    @State private var showingSettings = false
+    
+    // Import button animation
+    @State private var importButtonPressed = false
     
     var body: some View {
-        VStack(spacing: 20) {
-            
-            // Status indicators
-            if viewModel.isLoading {
-                ModernLoadingView()
-            }
-            
-            if let errorMessage = viewModel.errorMessage {
-                ErrorBanner(message: errorMessage)
-            }
-            
-            // Main controls card
-            VStack(spacing: 24) {
-                
-                // Import and date section
-                HStack(spacing: 16) {
-                    ImportButton { isImporting = true }
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Ride Time", systemImage: "clock")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        
-                        DatePicker(
-                            "",
-                            selection: $viewModel.rideDate,
-                            in: Date()...,
-                            displayedComponents: [.date, .hourAndMinute]
-                        )
-                        .labelsHidden()
-                        .datePickerStyle(.compact)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                
-                Divider()
-                
-                // Speed input section
-                HStack {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Average Speed", systemImage: "speedometer")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        
-                        HStack(spacing: 8) {
-                            TextField("Speed", text: $viewModel.averageSpeedInput)
-                                .keyboardType(.decimalPad)
-                                .focused($isSpeedFieldFocused)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 80)
-                            
-                            Text(viewModel.settings.units.speedUnitAbbreviation)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    // Hide controls button
-                    Button {
-                        withAnimation(.smooth) {
-                            showBottomControls = false
-                        }
-                    } label: {
-                        Image(systemName: "chevron.down.circle")
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                
-                Divider()
-                
-                // Action button
+        VStack(spacing: 0) {
+            // Quick action buttons
+            HStack(spacing: 12) {
                 Button {
-                    isSpeedFieldFocused = false
-                    withAnimation(.smooth) {
-                        showBottomControls = false
+                    // Visual feedback for button press
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        importButtonPressed = true
                     }
-                    Task { await viewModel.calculateAndFetchWeather() }
+                    
+                    // Reset animation and trigger file picker
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            importButtonPressed = false
+                        }
+                        isImporting = true
+                    }
                 } label: {
-                    Label("Generate Forecast", systemImage: "cloud.sun.fill")
-                        .font(.headline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                    importButtonLabel
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .disabled(viewModel.routePoints.isEmpty)
-                .animation(.easeInOut, value: viewModel.routePoints.isEmpty)
+                .scaleEffect(importButtonPressed ? 0.95 : 1.0)
+                .tint(getImportButtonColor())
+                .disabled(viewModel.isLoading) // ✅ ADDED: Disable the button while parsing
+
+                Button {
+                    showingSettings = true
+                } label: {
+                    Image(systemName: "gearshape.fill")
+                        .font(.title2)
+                }
+                .buttonStyle(.bordered)
+                .frame(width: 56, height: 56)
+                .disabled(viewModel.isLoading) // ✅ ADDED: Also disable settings while parsing
             }
-            .padding(24)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .shadow(color: .black.opacity(0.1), radius: 16, y: 4)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 12)
+            
+            // Smart input sections
+            VStack(spacing: 16) {
+                // Ride Time Section
+                rideTimeSection
+                
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 12)
+            
+            // Generate Button
+            generateButton
         }
-        .padding(.horizontal)
-        .padding(.bottom, 8)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: .black.opacity(0.1), radius: 20, y: -5)
+        .sheet(isPresented: $showingDatePicker) {
+            datePickerSheet
+        }
+        .sheet(isPresented: $showingTimePicker) {
+            timePickerSheet
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView()
+                .environmentObject(viewModel)
+        }
+    }
+    
+    // MARK: - Import Button Label
+    
+    // ✅ ADDED: This new ViewBuilder creates the correct button label based on the current UI state.
+    @ViewBuilder
+    private var importButtonLabel: some View {
+        // When the state is .parsing, show a progress indicator.
+        if case .parsing = viewModel.uiState {
+            HStack(spacing: 10) {
+                ProgressView()
+                    .tint(.white.opacity(0.9))
+                Text("Importing Route...")
+            }
+            .font(.headline.weight(.semibold))
+            .frame(maxWidth: .infinity)
+        } else {
+            // Otherwise, show the normal button content.
+            HStack(spacing: 8) {
+                Image(systemName: getImportIcon())
+                    .symbolEffect(.bounce, value: importButtonPressed)
+                    .symbolRenderingMode(.hierarchical)
+                
+                Text(getImportButtonText())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .font(.headline.weight(.semibold))
+            .frame(maxWidth: .infinity)
+        }
+    }
+    
+    // MARK: - Import Button Logic
+    
+    private func getImportIcon() -> String {
+        if !viewModel.routePoints.isEmpty {
+            return "checkmark.circle.fill"
+        } else if importButtonPressed {
+            return "arrow.down.circle.fill"
+        } else {
+            return "square.and.arrow.down"
+        }
+    }
+    
+    private func getImportButtonText() -> String {
+        if !viewModel.routePoints.isEmpty && !importedFileName.isEmpty {
+            return importedFileName
+        } else if !viewModel.routePoints.isEmpty {
+            return "Route Loaded"
+        } else {
+            return "Import Route"
+        }
+    }
+    
+    private func getImportButtonColor() -> Color {
+        return !viewModel.routePoints.isEmpty ? .green : .blue
+    }
+    
+    // MARK: - View Components
+    
+    private var rideTimeSection: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "clock.fill")
+                    .foregroundColor(.secondary)
+                    .font(.title3)
+                
+                Text("Ride Time")
+                    .font(.headline.weight(.semibold))
+                    .foregroundColor(.primary)
+                
+                Spacer()
+            }
+            
+            HStack(spacing: 12) {
+                // Date Button
+                Button {
+                    showingDatePicker = true
+                } label: {
+                    Text(formattedDate)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(.secondarySystemFill))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color(.separator), lineWidth: 0.5)
+                        )
+                }
+                
+                // Time Button
+                Button {
+                    showingTimePicker = true
+                } label: {
+                    Text(formattedTime)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(.secondarySystemFill))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color(.separator), lineWidth: 0.5)
+                        )
+                }
+            }
+        }
+        .padding(12)
+        .background(Color(.tertiarySystemFill))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    
+    private var generateButton: some View {
+        Button {
+            withAnimation(.smooth) {
+                showBottomControls = false
+            }
+            
+            Task {
+                await viewModel.calculateAndFetchWeather()
+            }
+        } label: {
+            HStack {
+                Image(systemName: "play.fill")
+                    .font(.title3)
+                Text("Generate Weather Forecast")
+                    .font(.headline.weight(.bold))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .disabled(viewModel.routePoints.isEmpty)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 12)
+    }
+    
+    private var datePickerSheet: some View {
+        NavigationView {
+            VStack {
+                DatePicker(
+                    "Select Date",
+                    selection: $viewModel.rideDate,
+                    in: Date()...,
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.graphical)
+                .padding()
+                
+                Spacer()
+            }
+            .navigationTitle("Select Date")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        showingDatePicker = false
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+    
+    private var timePickerSheet: some View {
+        NavigationView {
+            VStack {
+                DatePicker(
+                    "Select Time",
+                    selection: $viewModel.rideDate,
+                    displayedComponents: .hourAndMinute
+                )
+                .datePickerStyle(.wheel)
+                .padding()
+                
+                Spacer()
+            }
+            .navigationTitle("Select Time")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        showingTimePicker = false
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Computed Properties
+    
+    private var formattedDate: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "E, MMM d"
+        return formatter.string(from: viewModel.rideDate)
+    }
+    
+     var formattedTime: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: viewModel.rideDate)
     }
 }

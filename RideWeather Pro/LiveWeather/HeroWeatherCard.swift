@@ -1,3 +1,11 @@
+//
+//  HeroWeatherCard.swift
+//  RideWeather Pro
+//
+//  Created by Craig Faist on 8/16/25.
+//
+
+
 import SwiftUI
 
 struct HeroWeatherCard: View {
@@ -60,7 +68,7 @@ struct HeroWeatherCard: View {
             }
         }
         .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(.white.opacity(0.2), lineWidth: 1)

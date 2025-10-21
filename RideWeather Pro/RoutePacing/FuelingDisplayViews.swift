@@ -1,12 +1,13 @@
 //
-//  StrategyOverviewCard.swift
+//  FuelingDisplayViews.swift
 //  RideWeather Pro
 //
 //  Created by Craig Faist on 10/1/25.
-//
 
-
-// Add to StreamlinedAdvancedIntegration.swift or create a new FuelingDisplayViews.swift
+import Foundation
+import SwiftUI
+import CoreLocation
+import UIKit
 
 struct StrategyOverviewCard: View {
     let fueling: FuelingStrategy
@@ -200,90 +201,5 @@ struct HydrationCard: View {
         }
         .padding(20)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
-    }
-}
-
-struct ShoppingListCard: View {
-    let items: [FuelItem]
-    @State private var checkedItems: Set<String> = []
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("Shopping List", systemImage: "cart.fill")
-                    .font(.headline)
-                Spacer()
-                if totalCost > 0 {
-                    Text(String(format: "$%.2f", totalCost))
-                        .font(.headline)
-                        .foregroundColor(.green)
-                }
-            }
-            
-            VStack(spacing: 8) {
-                ForEach(items, id: \.item) { item in
-                    Button {
-                        if checkedItems.contains(item.item) {
-                            checkedItems.remove(item.item)
-                        } else {
-                            checkedItems.insert(item.item)
-                        }
-                    } label: {
-                        HStack {
-                            Image(systemName: checkedItems.contains(item.item) ? "checkmark.square.fill" : "square")
-                                .foregroundColor(checkedItems.contains(item.item) ? .green : .gray)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("\(item.quantity)x \(item.item)")
-                                    .font(.subheadline)
-                                    .foregroundColor(.primary)
-                                    .strikethrough(checkedItems.contains(item.item))
-                                
-                                Text(item.notes)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            if let cost = item.estimatedCost {
-                                Text(String(format: "$%.2f", cost))
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .padding(20)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
-    }
-    
-    private var totalCost: Double {
-        items.reduce(0) { $0 + ($1.estimatedCost ?? 0) }
-    }
-}
-
-// Helper view for the existing timeline
-struct DetailRow: View {
-    let icon: String
-    let title: String
-    let value: String
-    
-    var body: some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .foregroundColor(.blue)
-                .font(.caption)
-            Text(title)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            Text(value)
-                .font(.caption)
-                .fontWeight(.medium)
-        }
     }
 }

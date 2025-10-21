@@ -1,16 +1,26 @@
+//
+//  BackgroundDecorationView.swift
+//  RideWeather Pro
+//
+//  Created by Craig Faist on 8/16/25.
+//
+
+
 import SwiftUI
 
 struct BackgroundDecorationView: View {
     var body: some View {
         ZStack {
-            TimelineView(.animation) { timeline in
-                let time = timeline.date.timeIntervalSinceReferenceDate
+  //          TimelineView(.animation) { timeline in
+            TimelineView(.periodic(from: .now, by: 0.1)) { timeline in
+
+            let time = timeline.date.timeIntervalSinceReferenceDate
                 
                 // Floating circles
                 ForEach(0..<3, id: \.self) { index in
                     let phase = time * 0.3 + Double(index) * 0.2
-                    let offsetX = sin(phase * 0.8) * 30
-                    let offsetY = cos(phase * 0.6) * 40
+                    let offsetX = sin(phase * 1.0) * 30
+                    let offsetY = cos(phase * 0.8) * 40
                     
                     Circle()
                         .fill(.white.opacity(0.05))
@@ -22,10 +32,10 @@ struct BackgroundDecorationView: View {
                 }
                 
                 // Animated bike silhouette
-                let bikePhase = time * 0.1
-                let bikeOffsetX = sin(bikePhase) * 50
-                let bikeOffsetY = cos(bikePhase * 1.2) * 30
-                let bikeRotation = sin(bikePhase * 1.5) * 10
+                let bikePhase = time * 0.25 // this is the main speed control
+                let bikeOffsetX = sin(bikePhase) * 80
+                let bikeOffsetY = cos(bikePhase * 1.2) * 30   // Increased frequency multiplier
+                let bikeRotation = sin(bikePhase * 1.5) * 10  // Increased frequency multiplier
                 
                 Image(systemName: "bicycle")
                     .resizable()

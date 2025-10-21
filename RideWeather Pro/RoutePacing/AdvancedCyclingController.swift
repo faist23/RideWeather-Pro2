@@ -1,11 +1,12 @@
 //
-//  AdvancedCyclingController.swift
+//  AdvancedCyclingController.swift - FIXED VERSION
 //  RideWeather Pro
 //
 
 import Foundation
 import SwiftUI
 import CoreLocation
+import Combine
 
 // MARK: - Main Integration Controller
 
@@ -17,12 +18,12 @@ final class AdvancedCyclingController: ObservableObject {
     @Published var energyExpenditure: EnergyExpenditure?
     @Published var fuelingStrategy: FuelingStrategy?
     @Published var isGeneratingPlan = false
-    @Published var syncResults: [SyncResult] = []
+//    @Published var syncResults: [SyncResult] = []
     
     // MARK: - Components
     private var pacingEngine: PacingEngine
     private var energyCalculator: EnergyCalculator
-    private var deviceSyncManager: DeviceSyncManager
+//    private var deviceSyncManager: DeviceSyncManager
     private let settings: AppSettings
     
     // MARK: - Initialization
@@ -31,7 +32,7 @@ final class AdvancedCyclingController: ObservableObject {
         self.settings = settings
         self.pacingEngine = PacingEngine(settings: settings)
         self.energyCalculator = EnergyCalculator(settings: settings)
-        self.deviceSyncManager = DeviceSyncManager()
+ //       self.deviceSyncManager = DeviceSyncManager()
     }
     
     // MARK: - Main Workflow
@@ -40,130 +41,54 @@ final class AdvancedCyclingController: ObservableObject {
     func generateAdvancedRacePlan(
         from powerAnalysis: PowerRouteAnalysisResult,
         strategy: PacingStrategy = .balanced,
-        fuelingPreferences: FuelingPreferences = FuelingPreferences(),
+        fuelingPreferences: FuelingPreferences = FuelingPreferences(), // Remove default init call
         startTime: Date = Date().addingTimeInterval(7200) // 2 hours from now
     ) async {
         
         isGeneratingPlan = true
         
-        do {
-            print("🚴‍♂️ Generating advanced race plan...")
-            
-            // Step 1: Generate pacing plan
-            print("📊 Calculating optimal pacing strategy...")
-            let pacing = pacingEngine.generatePacingPlan(
-                from: powerAnalysis,
-                strategy: strategy,
-                startTime: startTime
-            )
-            
-            // Step 2: Calculate energy expenditure
-            print("⚡ Analyzing energy requirements...")
-            let energy = energyCalculator.calculateEnergyExpenditure(from: pacing)
-            
-            // Step 3: Generate fueling strategy
-            print("🍌 Creating fueling strategy...")
-            let fueling = energyCalculator.generateFuelingStrategy(
-                from: energy,
-                preferences: fuelingPreferences
-            )
-            
-            // Update published properties
-            self.pacingPlan = pacing
-            self.energyExpenditure = energy
-            self.fuelingStrategy = fueling
-            
-            print("✅ Advanced race plan generated successfully!")
-            print("📈 \(String(format: "%.1f", pacing.totalDistance))km in \(formatDuration(pacing.totalTimeMinutes * 60))")
-            print("⚡ \(Int(energy.totalCalories)) calories, \(Int(pacing.estimatedTSS)) TSS")
-            
-        } catch {
-            print("❌ Error generating race plan: \(error)")
-        }
+        // Remove the do-catch since no errors are thrown
+        print("🚴‍♂️ Generating advanced race plan...")
+        
+        // Step 1: Generate pacing plan
+        print("📊 Calculating optimal pacing strategy...")
+        let pacing = pacingEngine.generatePacingPlan(
+            from: powerAnalysis,
+            strategy: strategy,
+            startTime: startTime
+        )
+        
+        // Step 2: Calculate energy expenditure
+        print("⚡ Analyzing energy requirements...")
+        let energy = energyCalculator.calculateEnergyExpenditure(from: pacing)
+        
+        // Step 3: Generate fueling strategy
+        print("🍌 Creating fueling strategy...")
+        let fueling = energyCalculator.generateFuelingStrategy(
+            from: energy,
+            preferences: fuelingPreferences
+        )
+        
+        // Update published properties
+        self.pacingPlan = pacing
+        self.energyExpenditure = energy
+        self.fuelingStrategy = fueling
+        
+        print("✅ Advanced race plan generated successfully!")
+        print("📈 \(String(format: "%.1f", pacing.totalDistance))km in \(formatDuration(pacing.totalTimeMinutes * 60))")
+        print("⚡ \(Int(energy.totalCalories)) calories, \(Int(pacing.estimatedTSS)) TSS")
         
         isGeneratingPlan = false
     }
-    
-    /// Sync current race plan to selected devices
-    func syncToDevices(_ platforms: [DevicePlatform], options: WorkoutOptions = WorkoutOptions()) async {
-        guard let pacing = pacingPlan else {
-            print("❌ No pacing plan available to sync")
-            return
-        }
-        
-        print("📱 Starting device sync to \(platforms.map { $0.displayName }.joined(separator: ", "))...")
-        
-        var results: [SyncResult] = []
-        
-        for platform in platforms {
-            do {
-                // Check authentication
-                if !deviceSyncManager.isAuthenticated(platform) {
-                    print("🔐 Authenticating with \(platform.displayName)...")
-                    let authResult = await deviceSyncManager.authenticateDevice(platform)
-                    
-                    if !authResult.success {
-                        results.append(SyncResult(
-                            success: false,
-                            platform: platform,
-                            workoutId: nil,
-                            workoutName: options.workoutName,
-                            message: "Authentication failed",
-                            syncInstructions: [],
-                            estimatedSyncTime: nil,
-                            error: authResult.error
-                        ))
-                        continue
-                    }
-                }
-                
-                // Convert pacing plan to workout
-                let workout = try deviceSyncManager.convertPacingToWorkout(
-                    pacing,
-                    platform: platform,
-                    options: options
-                )
-                
-                // Push to device
-                print("📤 Pushing workout to \(platform.displayName)...")
-                let result = await deviceSyncManager.pushWorkout(workout, to: platform)
-                results.append(result)
-                
-            } catch {
-                results.append(SyncResult(
-                    success: false,
-                    platform: platform,
-                    workoutId: nil,
-                    workoutName: options.workoutName,
-                    message: "Sync process failed",
-                    syncInstructions: [],
-                    estimatedSyncTime: nil,
-                    error: error.localizedDescription
-                ))
-            }
-        }
-        
-        self.syncResults = results
-        
-        // Log results
-        for result in results {
-            if result.success {
-                print("✅ \(result.platform.displayName): \(result.message)")
-            } else {
-                print("❌ \(result.platform.displayName): \(result.error ?? "Unknown error")")
-            }
-        }
-    }
-    
+       
     // MARK: - Export Functions
     
     /// Export complete race plan as CSV
-    func exportRacePlanCSV() -> String {
-        guard let pacing = pacingPlan,
-              let energy = energyExpenditure else {
-            return "No race plan available"
+    func exportPacingPlanCSV(using pacingPlan: PacingPlan) -> String {
+        guard let energy = energyExpenditure else {
+            return "Energy data not available"
         }
-        
+
         let headers = [
             "Segment", "Distance_km", "Gradient_%", "Target_Power_W", "Power_Zone",
             "Est_Time_min", "Calories", "Carbs_kcal", "Cumulative_Time_min",
@@ -173,7 +98,7 @@ final class AdvancedCyclingController: ObservableObject {
         var cumulativeTime: Double = 0
         var cumulativeDistance: Double = 0
         
-        let rows = pacing.segments.enumerated().map { index, pacingSeg in
+        let rows = pacingPlan.segments.enumerated().map { index, pacingSeg in
             cumulativeTime += pacingSeg.estimatedTimeMinutes
             cumulativeDistance += pacingSeg.distanceKm
             
@@ -181,7 +106,7 @@ final class AdvancedCyclingController: ObservableObject {
             
             return [
                 String(index + 1),
-                String(format: "%.2f", pacingSeg.distanceKm),
+                String(format: "%.3f", pacingSeg.distanceKm),
                 String(format: "%.1f", pacingSeg.originalSegment.elevationGrade * 100),
                 String(Int(pacingSeg.targetPower)),
                 pacingSeg.powerZone.name,
@@ -197,35 +122,221 @@ final class AdvancedCyclingController: ObservableObject {
         return ([headers.joined(separator: ",")] + rows).joined(separator: "\n")
     }
     
-    /// Generate printable race day summary
-    func generateRaceDaySummary() -> String {
-        guard let pacing = pacingPlan,
-              let energy = energyExpenditure,
+    func generateRaceDaySummary(using pacingPlan: PacingPlan) -> String {
+        guard let energy = energyExpenditure,
               let fueling = fuelingStrategy else {
             return "No race plan available"
         }
-        
+
         let formatter = DateFormatter()
         formatter.dateStyle = .full
         formatter.timeStyle = .short
         
         var summary = """
-        RACE DAY SUMMARY
-        ================
-        Date: \(formatter.string(from: Date()))
-        Route Distance: \(String(format: "%.1f", pacing.totalDistance)) km
-        Estimated Time: \(formatDuration(pacing.totalTimeMinutes * 60))
-        Estimated Arrival: \(formatter.string(from: pacing.estimatedArrival))
+        ═══════════════════════════════════════════════
+        RACE DAY PLAN - \(formatter.string(from: Date()))
+        ═══════════════════════════════════════════════
         
-        POWER PLAN
-        ===========
-        Strategy: \(pacing.strategy.description)
-        Average Power: \(Int(pacing.averagePower)) W
-        Difficulty: \(pacing.difficulty.rawValue)
-        Estimated TSS: \(Int(pacing.estimatedTSS))
-        Intensity Factor: \(String(format: "%.2f", pacing.intensityFactor))
+        📍 ROUTE OVERVIEW
+        ─────────────────────────────────────────────
+        Distance:        \(String(format: "%.1f km", pacingPlan.totalDistance))
+        Estimated Time:  \(formatDuration(pacingPlan.totalTimeMinutes * 60))
+        Start Time:      \(formatter.string(from: pacingPlan.startTime))
+        Arrival:         \(formatter.string(from: pacingPlan.estimatedArrival))
         
-        ENERGY & FUELING
-        ================
-        Total Calories: \(Int(energy.totalCalories))
-        Calories/Hour: \(Int(energy.caloriesPerHour))
+        ⚡ POWER TARGETS
+        ─────────────────────────────────────────────
+        Strategy:        \(pacingPlan.strategy.description)
+        Normalized Power: \(Int(pacingPlan.normalizedPower)) W
+        Average Power:   \(Int(pacingPlan.averagePower)) W
+        Intensity Factor: \(String(format: "%.2f", pacingPlan.intensityFactor))
+        TSS:             \(Int(pacingPlan.estimatedTSS))
+        
+        🔥 ENERGY DEMANDS
+        ─────────────────────────────────────────────
+        Total Calories:  \(Int(energy.totalCalories)) kcal
+        Calories/Hour:   \(Int(energy.caloriesPerHour)) kcal/h
+        Carbs Needed:    \(Int(energy.totalCarbsCalories / 4))g
+        Fat Utilization: \(Int(energy.totalFatCalories / energy.totalCalories * 100))%
+        
+        """
+        
+        // Critical timing section
+        summary += """
+        ⏰ CRITICAL TIMINGS (SET ALARMS!)
+        ─────────────────────────────────────────────
+        
+        """
+        
+        // Pre-ride timing
+        let preRideTime = pacingPlan.startTime.addingTimeInterval(-10800) // 3 hours before
+        formatter.timeStyle = .short
+        summary += "☕ \(formatter.string(from: preRideTime)) - Pre-ride meal\n"
+        summary += "   → \(fueling.preRideFueling.carbsAmount)\n"
+        summary += "   → Examples: \(fueling.preRideFueling.examples.prefix(2).joined(separator: ", "))\n\n"
+        
+        let finalFuelTime = pacingPlan.startTime.addingTimeInterval(-1800) // 30 min before
+        summary += "🎯 \(formatter.string(from: finalFuelTime)) - Final fuel top-up\n"
+        summary += "   → 30-60g fast carbs (gel or drink)\n\n"
+        
+        // During-ride fueling with actual times
+        summary += "🌟 DURING RIDE - FUELING SCHEDULE\n"
+        summary += "────────────────────────────────────────────────\n"
+        
+        for (index, fuelPoint) in fueling.schedule.enumerated() {
+            let fuelTime = pacingPlan.startTime.addingTimeInterval(fuelPoint.timeMinutes * 60)
+            let icon = fuelIcon(for: fuelPoint.fuelType)
+            summary += "\n\(icon) \(formatter.string(from: fuelTime)) (\(Int(fuelPoint.timeMinutes))min into ride)\n"
+            summary += "   → \(fuelPoint.amount) - \(fuelPoint.product)\n"
+            summary += "   → \(fuelPoint.reason) (Intensity: \(Int(fuelPoint.intensity))%)\n"
+        }
+        
+        if fueling.schedule.isEmpty {
+            summary += "\n⚠️  No fueling points scheduled - ride duration may be too short\n"
+        }
+        
+        summary += "\nℹ️  TIP: Set 15-20 minute timer for consistent fueling\n"
+        
+        if fueling.schedule.count > 10 {
+            summary += "\n   ... plus \(fueling.schedule.count - 10) more fuel points\n"
+        }
+        
+        // Hydration
+        summary += """
+        
+        
+        💧 HYDRATION STRATEGY
+        ─────────────────────────────────────────────
+        Total Fluid:     \(String(format: "%.1f L", fueling.hydration.totalFluidML / 1000))
+        Per Hour:        \(Int(fueling.hydration.fluidPerHourML)) ml/h
+        Schedule:        \(fueling.hydration.schedule)
+        Electrolytes:    \(fueling.hydration.electrolytesNeeded ? "✓ Required" : "Not needed")
+        
+        TIP: Set a 15-minute repeating alarm for hydration reminders
+        
+        """
+        
+        // Post-ride timing
+        let finishTime = pacingPlan.estimatedArrival
+        let recoveryWindowEnd = finishTime.addingTimeInterval(1800) // 30 min window
+        summary += "🔄 POST-RIDE RECOVERY\n"
+        summary += "─────────────────────────────────────────────\n"
+        summary += "⏱️  Within 30 min of finish (\(formatter.string(from: finishTime)) - \(formatter.string(from: recoveryWindowEnd)))\n"
+        summary += "   → \(fueling.postRideFueling.carbsAmount) + \(fueling.postRideFueling.proteinAmount)\n"
+        summary += "   → Examples: \(fueling.postRideFueling.examples.joined(separator: ", "))\n"
+        summary += "\n🍽️  Full meal: \(fueling.postRideFueling.fullMealTiming)\n\n"
+        
+        // Warnings section
+        if !fueling.warnings.isEmpty || energy.carbDepletionRisk {
+            summary += "⚠️  IMPORTANT WARNINGS\n"
+            summary += "─────────────────────────────────────────────\n"
+            for warning in fueling.warnings {
+                summary += "• \(warning)\n"
+            }
+            if energy.carbDepletionRisk {
+                summary += "• HIGH GLYCOGEN DEPLETION RISK - Do not skip fueling!\n"
+            }
+            summary += "\n"
+        }
+        
+        // Shopping list
+        summary += "🛒 SHOPPING LIST\n"
+        summary += "─────────────────────────────────────────────\n"
+        var totalCost = 0.0
+        for item in fueling.shoppingList {
+            let cost = item.estimatedCost ?? 0
+            totalCost += cost
+            summary += "□ \(item.quantity)x \(item.item)"
+            if cost > 0 {
+                summary += " (~$\(String(format: "%.2f", cost)))"
+            }
+            summary += "\n"
+        }
+        summary += "\nEstimated Total: $\(String(format: "%.2f", totalCost))\n\n"
+        
+        // Pre-departure checklist
+        summary += """
+        ✅ PRE-DEPARTURE CHECKLIST
+        ─────────────────────────────────────────────
+        □ All fuel/nutrition packed and accessible
+        □ Bottles filled with correct mix
+        □ Device synced and charged (>80% battery)
+        □ Weather-appropriate clothing
+        □ Power meter calibrated
+        □ Alarms set for key timings
+        □ Backup fuel in pocket
+        □ Emergency contact info saved
+        
+        📱 DEVICE REMINDERS
+        ─────────────────────────────────────────────
+        • Check power targets every 5-10 minutes
+        • Stay in prescribed zones - resist going harder!
+        • Fuel before feeling hungry
+        • If power meter fails: use HR zones + perceived effort
+        
+        ═══════════════════════════════════════════════
+        Generated by RideWeather Pro
+        \(Date().formatted(date: .abbreviated, time: .shortened))
+        ═══════════════════════════════════════════════
+        """
+        
+// temporary print statement
+        print(summary)
+
+        return summary
+    }
+
+    private func fuelIcon(for type: FuelType) -> String {
+        switch type {
+        case .gel: return "🟠"
+        case .drink: return "🔵"
+        case .bar: return "🟤"
+        case .solid: return "🟢"
+        case .electrolytes: return "🟣"
+        }
+    }
+    
+    // MARK: - Utility Functions
+    
+    private func formatDuration(_ seconds: Double) -> String {
+        let hours = Int(seconds / 3600)
+        let minutes = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)min"
+        } else {
+            return "\(minutes)min"
+        }
+    }
+}
+
+// MARK: - Helper Extensions
+
+extension Array {
+    subscript(safe index: Int) -> Element? {
+        return indices.contains(index) ? self[index] : nil
+    }
+}
+
+extension AdvancedCyclingController {
+    
+    /// Generates a Garmin Course FIT file with power targets
+    func generateGarminCourseFIT(
+        pacingPlan: PacingPlan,
+        routePoints: [EnhancedRoutePoint],
+        courseName: String? = nil
+    ) throws -> Data? {
+                
+        let generator = GarminCourseFitGenerator()
+        let name = courseName ?? "RideWeather Pro Course"
+        
+        let fitData = try generator.generateCourseFIT(
+            routePoints: routePoints,
+            pacingPlan: pacingPlan,
+            courseName: name,
+            settings: settings
+        )
+        
+        return fitData
+    }
+}

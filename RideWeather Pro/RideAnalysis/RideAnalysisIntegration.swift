@@ -1,45 +1,59 @@
 //
-//  UpdatedOptimizedAdvancedCyclingTabView.swift
+//  RideAnalysisIntegrationFixed.swift
 //  RideWeather Pro
 //
-//  Created by Craig Faist on 10/19/25.
-//
-
-
-//
-//  RideAnalysisIntegration.swift
-//  RideWeather Pro
-//
-//  Integration code to add Ride File Analysis to your existing app
+//  Fixed integration code with proper imports and no extensions with stored properties
 //
 
 import Foundation
 import SwiftUI
-
-// MARK: - Add to WeatherViewModel
+import Combine
+import UniformTypeIdentifiers
 
 extension WeatherViewModel {
-    
-    // Add this property
-    @Published var currentRideAnalyzer: RideFileAnalyzer?
-    
-    // Add this method
     func beginRideAnalysis(fileURL: URL, againstPlan plan: PacingPlan) async {
         let analyzer = RideFileAnalyzer(originalPlan: plan, settings: settings)
         
         // Store it so UI can access
-        await MainActor.run {
-            self.currentRideAnalyzer = analyzer
+        self.currentRideAnalyzer = analyzer
+        
+        // Start access to security-scoped resource
+        let isAccessing = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if isAccessing {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
         }
         
-        // Analyze the file
-        await analyzer.analyzeRideFile(fileURL)
+        do {
+            // Copy the file to a temporary location we have full access to
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempFileURL = tempDir.appendingPathComponent("temp_ride_\(UUID().uuidString).fit")
+            
+            // Copy the file
+            let fileData = try Data(contentsOf: fileURL)
+            try fileData.write(to: tempFileURL)
+            
+            print("✅ Copied ride file to temporary location: \(tempFileURL.path)")
+            
+            // Analyze using the temporary file
+            await analyzer.analyzeRideFile(tempFileURL)
+            
+            // Clean up temp file after analysis
+            try? FileManager.default.removeItem(at: tempFileURL)
+            
+        } catch {
+            print("❌ Failed to copy ride file: \(error.localizedDescription)")
+            await MainActor.run {
+                analyzer.error = "Failed to access file: \(error.localizedDescription)"
+            }
+        }
     }
 }
 
-// MARK: - Add Ride Analysis Tab to Advanced Cycling View
+// MARK: - Fixed Advanced Cycling Tab View (WITHOUT What-If for now)
 
-struct UpdatedOptimizedAdvancedCyclingTabView: View {
+struct RideAnalysisTabView: View {
     @ObservedObject var viewModel: WeatherViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTab = 0
@@ -65,16 +79,9 @@ struct UpdatedOptimizedAdvancedCyclingTabView: View {
                         Label("Export", systemImage: "square.and.arrow.up")
                     }
                 
-                // NEW: What-If Scenarios Tab
-                whatIfTab
-                    .tag(3)
-                    .tabItem {
-                        Label("What-If", systemImage: "chart.bar.xaxis")
-                    }
-                
-                // NEW: Ride Analysis Tab
+                // NEW: Ride Analysis Tab (What-If removed for now)
                 rideAnalysisTab
-                    .tag(4)
+                    .tag(3)
                     .tabItem {
                         Label("Analysis", systemImage: "doc.text.magnifyingglass")
                     }
@@ -88,27 +95,6 @@ struct UpdatedOptimizedAdvancedCyclingTabView: View {
                     }
                     .fontWeight(.medium)
                 }
-            }
-        }
-    }
-    
-    // MARK: - What-If Tab
-    
-    private var whatIfTab: some View {
-        Group {
-            if let controller = viewModel.advancedController,
-               let analysis = viewModel.lastPowerAnalysis {
-                WhatIfScenariosView(
-                    baseSettings: viewModel.settings,
-                    basePowerAnalysis: analysis,
-                    baseStartTime: viewModel.rideDate
-                )
-            } else {
-                EmptyStateView(
-                    title: "What-If Analysis Unavailable",
-                    message: "Generate a pacing plan first to compare scenarios",
-                    systemImage: "chart.bar.xaxis"
-                )
             }
         }
     }
@@ -134,7 +120,7 @@ struct UpdatedOptimizedAdvancedCyclingTabView: View {
                         }
                     }
                 }
-            } else if let plan = viewModel.advancedController?.pacingPlan {
+            } else if viewModel.advancedController?.pacingPlan != nil {
                 // No analyzer yet, show import option
                 EmptyRideAnalysisView(viewModel: viewModel)
             } else {
@@ -211,7 +197,7 @@ struct EmptyRideAnalysisView: View {
         .padding()
         .fileImporter(
             isPresented: $showingFilePicker,
-            allowedContentTypes: [.data],
+            allowedContentTypes: [.data, .item, .content],
             allowsMultipleSelection: false
         ) { result in
             handleFileImport(result)
@@ -219,14 +205,19 @@ struct EmptyRideAnalysisView: View {
     }
     
     private func handleFileImport(_ result: Result<[URL], Error>) {
-        guard case .success(let urls) = result,
-              let fileURL = urls.first,
-              let plan = viewModel.advancedController?.pacingPlan else {
-            return
-        }
-        
-        Task {
-            await viewModel.beginRideAnalysis(fileURL: fileURL, againstPlan: plan)
+        switch result {
+        case .success(let urls):
+            guard let fileURL = urls.first,
+                  let plan = viewModel.advancedController?.pacingPlan else {
+                return
+            }
+            
+            Task {
+                await viewModel.beginRideAnalysis(fileURL: fileURL, againstPlan: plan)
+            }
+            
+        case .failure(let error):
+            print("❌ File picker error: \(error.localizedDescription)")
         }
     }
 }
@@ -287,6 +278,7 @@ struct RideAnalysisResultsView: View {
     @ObservedObject var viewModel: WeatherViewModel
     @State private var showingExport = false
     @State private var exportType: ExportType = .csv
+    @State private var exportContent: String = ""
     
     enum ExportType {
         case csv
@@ -329,6 +321,7 @@ struct RideAnalysisResultsView: View {
                 VStack(spacing: 12) {
                     Button(action: {
                         exportType = .csv
+                        exportContent = analysis.exportAsCSV()
                         showingExport = true
                     }) {
                         Label("Export as CSV", systemImage: "tablecells")
@@ -338,6 +331,7 @@ struct RideAnalysisResultsView: View {
                     
                     Button(action: {
                         exportType = .report
+                        exportContent = analysis.exportDetailedReport()
                         showingExport = true
                     }) {
                         Label("Export Detailed Report", systemImage: "doc.text")
@@ -359,58 +353,13 @@ struct RideAnalysisResultsView: View {
             }
         }
         .sheet(isPresented: $showingExport) {
-            ShareSheet(activityItems: [exportContent()])
-        }
-    }
-    
-    private func exportContent() -> String {
-        switch exportType {
-        case .csv:
-            return analysis.exportAsCSV()
-        case .report:
-            return analysis.exportDetailedReport()
+            ShareSheet(activityItems: [exportContent])
         }
     }
 }
 
-// MARK: - Quick Actions Menu Addition
+// MARK: - Fixed Performance History Tracking
 
-extension OptimizedUnifiedRouteAnalyticsDashboard {
-    
-    // Add this as an additional option in your existing UI
-    var rideAnalysisQuickAction: some View {
-        Button(action: {
-            // Show ride analysis
-        }) {
-            HStack {
-                Image(systemName: "doc.text.magnifyingglass")
-                    .foregroundStyle(.blue)
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Analyze Past Ride")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    
-                    Text("Compare actual performance to plan")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .padding()
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        }
-    }
-}
-
-// MARK: - Performance History Tracking
-
-@MainActor
 final class RideHistoryManager: ObservableObject {
     @Published var rideHistory: [RideAnalysisSummary] = []
     
@@ -660,177 +609,3 @@ struct PerformanceTrendChart: View {
         }
     }
 }
-
-// MARK: - Add History Button to Main View
-
-extension OptimizedAdvancedCyclingTabView {
-    
-    // Add this to your toolbar
-    var historyButton: some View {
-        Button(action: {
-            // Show history
-        }) {
-            Image(systemName: "clock.arrow.circlepath")
-        }
-    }
-}
-
-// MARK: - Comparison Between Multiple Rides
-
-struct MultiRideComparisonView: View {
-    let rides: [RideHistoryManager.RideAnalysisSummary]
-    @State private var selectedMetric: Metric = .performanceScore
-    
-    enum Metric: String, CaseIterable {
-        case performanceScore = "Performance Score"
-        case averagePower = "Average Power"
-        case normalizedPower = "Normalized Power"
-        case tss = "TSS"
-        
-        func value(from ride: RideHistoryManager.RideAnalysisSummary) -> Double? {
-            switch self {
-            case .performanceScore: return ride.performanceScore
-            case .averagePower: return ride.averagePower
-            case .normalizedPower: return ride.normalizedPower
-            case .tss: return ride.tss
-            }
-        }
-    }
-    
-    var body: some View {
-        VStack(spacing: 20) {
-            Picker("Metric", selection: $selectedMetric) {
-                ForEach(Metric.allCases, id: \.self) { metric in
-                    Text(metric.rawValue).tag(metric)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding()
-            
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    ForEach(rides) { ride in
-                        if let value = selectedMetric.value(from: ride) {
-                            ComparisonBar(
-                                ride: ride,
-                                value: value,
-                                maxValue: maxValue(for: selectedMetric)
-                            )
-                        }
-                    }
-                }
-                .padding()
-            }
-        }
-        .navigationTitle("Compare Rides")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-    
-    private func maxValue(for metric: Metric) -> Double {
-        rides.compactMap { metric.value(from: $0) }.max() ?? 100
-    }
-}
-
-struct ComparisonBar: View {
-    let ride: RideHistoryManager.RideAnalysisSummary
-    let value: Double
-    let maxValue: Double
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(ride.date.formatted(date: .abbreviated, time: .omitted))
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
-                Spacer()
-                
-                Text(String(format: "%.0f", value))
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.blue)
-            }
-            
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Rectangle()
-                        .fill(.quaternary)
-                    
-                    Rectangle()
-                        .fill(.blue.gradient)
-                        .frame(width: geometry.size.width * (value / maxValue))
-                }
-            }
-            .frame(height: 24)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-    }
-}
-
-// MARK: - Auto-Save Analysis Results
-
-extension RideFileAnalyzer {
-    
-    func saveAnalysisIfSuccessful() {
-        guard let analysis = analysis else { return }
-        
-        // Save to history
-        let historyManager = RideHistoryManager()
-        historyManager.addAnalysis(analysis)
-        
-        print("✅ Ride analysis saved to history")
-    }
-}
-
-// MARK: - Usage Instructions
-
-/*
- 
- INTEGRATION STEPS:
- 
- 1. Add to WeatherViewModel:
-    @Published var currentRideAnalyzer: RideFileAnalyzer?
-    @Published var lastPowerAnalysis: PowerRouteAnalysisResult?
- 
- 2. Update your existing generateAdvancedCyclingPlan to store the analysis:
-    self.lastPowerAnalysis = powerAnalysis
- 
- 3. Replace OptimizedAdvancedCyclingTabView with UpdatedOptimizedAdvancedCyclingTabView
- 
- 4. Add RideHistoryManager as a StateObject in your main view
- 
- 5. Optional: Add a history button to your main analytics dashboard:
-    - Shows performance trends
-    - Allows comparing multiple rides
-    - Quick access to past analyses
- 
- FEATURES INCLUDED:
- 
- ✅ FIT file parsing (native Swift implementation)
- ✅ GPX file support (extensible)
- ✅ Comprehensive performance analysis
- ✅ Power metrics (NP, TSS, VI, peak powers)
- ✅ Pacing consistency scoring
- ✅ Segment-by-segment comparison
- ✅ Fatigue detection
- ✅ Personalized insights & recommendations
- ✅ Deviation tracking (surges, etc.)
- ✅ Performance scoring (0-100)
- ✅ CSV & detailed report export
- ✅ Ride history tracking
- ✅ Performance trend visualization
- ✅ Multi-ride comparison
- 
- EXAMPLE USAGE:
- 
- // After completing a ride
- if let plan = viewModel.advancedController?.pacingPlan {
-     let fileURL = URL(fileURLWithPath: "path/to/ride.fit")
-     await viewModel.beginRideAnalysis(fileURL: fileURL, againstPlan: plan)
- }
- 
- // View results in the Analysis tab
- 
- */

@@ -1,12 +1,4 @@
 //
-//  OptimizedUnifiedRouteAnalyticsDashboard.swift
-//  RideWeather Pro
-//
-//  Created by Craig Faist on 9/25/25.
-//
-
-
-//
 //  OptimizedUIComponents.swift
 //  RideWeather Pro - Optimized for iOS 26+ and Apple HIG
 //
@@ -50,8 +42,8 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { 
-                        dismiss() 
+                    Button("Done") {
+                        dismiss()
                     }
                     .fontWeight(.medium)
                 }
@@ -93,7 +85,8 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     // MARK: - Content View
     private func analysisContentView(_ analysis: ComprehensiveRouteAnalysis) -> some View {
         ScrollView {
-            LazyVStack(spacing: 20) {
+            LazyVStack(spacing: 20) { 
+                RouteInfoCardView(viewModel: viewModel)
                 // Hero Section - Overall Score
                 OptimizedOverallScoreCard(analysis: analysis, settings: viewModel.settings)
                 
@@ -107,7 +100,7 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
                 }
                 
                 // Interactive Weather Chart
-                OptimizedWeatherChartSection(
+                InteractiveWeatherChart(
                     weatherPoints: analysis.weatherPoints,
                     units: analysis.settings.units,
                     elevationAnalysis: viewModel.elevationAnalysis,
@@ -455,30 +448,6 @@ struct PowerMetricItem: View {
 
 // MARK: - Optimized Sections
 
-struct OptimizedWeatherChartSection: View {
-    let weatherPoints: [RouteWeatherPoint]
-    let units: UnitSystem
-    let elevationAnalysis: ElevationAnalysis?
-    @Binding var selectedDistance: Double?
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Label("Weather Conditions", systemImage: "chart.xyaxis.line")
-                .font(.headline)
-                .fontWeight(.semibold)
-            
-            InteractiveWeatherChart(
-                weatherPoints: weatherPoints,
-                units: units,
-                elevationAnalysis: elevationAnalysis,
-                selectedDistance: $selectedDistance
-            )
-        }
-        .padding(20)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-    }
-}
-
 struct OptimizedRecommendationsSection: View {
     let recommendations: [UnifiedRecommendation]
     
@@ -638,7 +607,8 @@ struct OptimizedAdvancedFeaturesCard: View {
             showingAdvancedFeatures = true
         }
         .sheet(isPresented: $showingAdvancedFeatures) {
-            OptimizedAdvancedCyclingTabView(viewModel: viewModel)
+//            OptimizedAdvancedCyclingTabView(viewModel: viewModel)
+            RideAnalysisTabView(viewModel: viewModel)
         }
     }
 }
@@ -653,19 +623,19 @@ struct OptimizedAdvancedCyclingTabView: View {
     var body: some View {
         NavigationStack {
             TabView(selection: $selectedTab) {
-                OptimizedPacingPlanTab(viewModel: viewModel)
+                OptimizedPacingPlanTab(viewModel: viewModel, selectedTab: $selectedTab)
                     .tag(0)
                     .tabItem {
                         Label("Pacing", systemImage: "speedometer")
                     }
                 
-                OptimizedFuelingPlanTab(viewModel: viewModel)
+                FuelingPlanTab(viewModel: viewModel)
                     .tag(1)
                     .tabItem {
                         Label("Fueling", systemImage: "drop.fill")
                     }
                 
-                OptimizedDeviceSyncTab(viewModel: viewModel)
+                UpdatedOptimizedExportTab(viewModel: viewModel)
                     .tag(2)
                     .tabItem {
                         Label("Export", systemImage: "square.and.arrow.up")
@@ -683,4 +653,1027 @@ struct OptimizedAdvancedCyclingTabView: View {
             }
         }
     }
+}
+
+// MARK: - Optimized Pacing Plan Tab
+
+struct OptimizedPacingPlanTab: View {
+    @ObservedObject var viewModel: WeatherViewModel
+    @State private var showingExport = false
+    @State private var showingDetails = false
+    @State private var exportText = ""
+    @State private var isGenerating = false
+    
+    @Binding var selectedTab: Int
+    
+    private var hasNewStrategySelection: Bool {
+        guard let lastPlan = viewModel.advancedController?.pacingPlan else {
+            return false
+        }
+        return viewModel.selectedPacingStrategy != lastPlan.strategy  // Use viewModel property
+    }
+    
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 20) {
+                RouteInfoCardView(viewModel: viewModel)
+                // Strategy Selection Card
+                strategySelectionCard
+                
+                // Plan Content
+                Group {
+                    if isGenerating || viewModel.isGeneratingAdvancedPlan {
+                        PacingPlanLoadingCard()
+                    } else if let error = viewModel.advancedPlanError {
+                        ErrorStateCard(
+                            title: "Generation Failed",
+                            message: error,
+                            retryAction: { await generatePlan() }
+                        )
+                    } else if let pacing = adjustedPacingPlan { // <-- Use the ADJUSTED plan
+                        OptimizedPacingPlanCard(
+                            pacing: pacing, // <-- Now it gets the tweaked version
+                            settings: viewModel.settings,
+                            controller: viewModel.advancedController!, // Use ! because we know it exists if adjustedPacingPlan isn't nil
+                            onViewDetails: { showingDetails = true },
+                            onExportPlan: {
+                                if let plan = adjustedPacingPlan {
+                                    exportText = viewModel.advancedController!.exportPacingPlanCSV(using: plan)
+                                    showingExport = true
+                                }
+                            }
+                        )
+                    } else {
+                        EmptyPacingPlanCard()
+                    }
+                }
+            }
+            .padding()
+        }
+        .onChange(of: viewModel.selectedPacingStrategy) { oldValue, newValue in
+            // Reset intensity adjustment when strategy changes
+            viewModel.intensityAdjustment = 0
+        }
+        .refreshable {
+            await generatePlan()
+        }
+        .sheet(isPresented: $showingExport) {
+            ShareSheet(activityItems: [exportText])
+        }
+        .sheet(isPresented: $showingDetails) {
+            if let pacing = adjustedPacingPlan, let controller = viewModel.advancedController {
+                DetailedPacingPlanView(
+                    viewModel: viewModel,
+                    pacing: pacing,
+                    controller: controller,
+                    onGoToExportTab: {
+                        // Set the selected tab to 2 (the Export tab)
+                        selectedTab = 2
+                    }
+                )
+            }
+        }
+    }
+        
+    // MARK: - Strategy Selection Card
+    
+    private var strategySelectionCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Label("Pacing Strategy", systemImage: "target")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+            }
+            
+            // Strategy Picker (iOS native)
+            Picker("Strategy", selection: $viewModel.selectedPacingStrategy) {
+                ForEach(PacingStrategy.allCases, id: \.self) { strategy in
+                    Text(strategy.description)
+                        .tag(strategy)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            
+            // Strategy Description
+            Text(strategyDescription(for: viewModel.selectedPacingStrategy))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            
+            // Status Message
+            if hasNewStrategySelection {
+                HStack {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundStyle(.blue)
+                    Text("New strategy selected. Generate to see updated plan.")
+                        .font(.subheadline)
+                        .foregroundStyle(.blue)
+                }
+                .padding(12)
+                .background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+            }
+            
+            // Generate Button
+            Button(action: { Task { await generatePlan() } }) {
+                HStack {
+                    if isGenerating || viewModel.isGeneratingAdvancedPlan {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                        Text("Generating Plan...")
+                    } else {
+                        Text(hasNewStrategySelection ? "Regenerate Plan" : "Generate Pacing Plan")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isGenerating || viewModel.isGeneratingAdvancedPlan)
+            
+            Divider()
+
+            Stepper(
+                "Intensity Adjustment: \(viewModel.intensityAdjustment, specifier: "%.0f")%",
+                value: $viewModel.intensityAdjustment,
+                in: -20...20, // Allow adjusting +/- 20%
+                step: 1
+            )
+            .disabled(viewModel.advancedController?.pacingPlan == nil) // Disable if no plan exists
+
+        }
+        .padding(20)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+    
+    // MARK: - Helper Methods
+    
+    @MainActor
+    private func generatePlan() async {
+        isGenerating = true
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.impactOccurred()
+        
+        await viewModel.generateAdvancedCyclingPlan(
+            strategy: viewModel.selectedPacingStrategy,  // Use viewModel property
+            startTime: viewModel.rideDate
+        )
+
+        isGenerating = false
+    }
+    
+    private func strategyDescription(for strategy: PacingStrategy) -> String {
+        switch strategy {
+        case .balanced:
+            return "Well-rounded approach balancing speed and sustainability for most riders"
+        case .conservative:
+            return "Start easier and maintain energy reserves for the latter portion of the ride"
+        case .aggressive:
+            return "A race-pace effort that starts hard, maintains a high tempo, and finishes by emptying the tank for the fastest possible time."
+        case .negativeSplit:
+            return "Build power output progressively throughout the ride duration"
+        case .evenEffort:
+            return "Adjust power for terrain to maintain constant physiological stress"
+        }
+    }
+    
+    private var adjustedPacingPlan: PacingPlan? {
+        viewModel.finalPacingPlan // <-- Just pass through the value from the viewModel
+    }
+    
+}
+
+// MARK: - Optimized Pacing Plan Card
+
+struct OptimizedPacingPlanCard: View {
+    let pacing: PacingPlan
+    let settings: AppSettings
+    let controller: AdvancedCyclingController
+    let onViewDetails: () -> Void
+    let onExportPlan: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Generated Plan")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                    
+                    Text(pacing.strategy.description)
+                        .font(.subheadline)
+                        .foregroundStyle(.blue)
+                }
+                
+                Spacer()
+                
+                DifficultyBadge(difficulty: pacing.difficulty)
+            }
+            
+            // Key Metrics
+            HStack(spacing: 24) {
+                PlanMetricView(
+                    title: "Distance",
+                    value: formatDistance(pacing.totalDistance),
+                    icon: "road.lanes"
+                )
+                
+                PlanMetricView(
+                    title: "Duration",
+                    value: formatDuration(pacing.totalTimeMinutes * 60),
+                    icon: "clock"
+                )
+                
+                VStack(spacing: 4) {
+                    Image(systemName: "bolt")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                    
+                    Text("Power")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    
+                    VStack(spacing: 1) {
+                        Text("\(Int(pacing.normalizedPower))W")
+                            .font(.callout)
+                            .fontWeight(.semibold)
+                        Text("NP")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            
+            // Intensity Warning
+            if pacing.intensityFactor > 0.85 {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("High intensity ride (IF \(String(format: "%.2f", pacing.intensityFactor))) - pace carefully")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                .padding(8)
+                .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            }
+            
+            // Actions
+            VStack(spacing: 8) {
+                HStack(spacing: 12) {
+                    Button("View Details") {
+                        onViewDetails()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .padding(20)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+    
+    private func formatDistance(_ distanceKm: Double) -> String {
+        if settings.units == .metric {
+            return String(format: "%.1f km", distanceKm)
+        } else {
+            let miles = distanceKm * 0.621371
+            return String(format: "%.1f mi", miles)
+        }
+    }
+    
+    private func formatDuration(_ seconds: Double) -> String {
+        let hours = Int(seconds / 3600)
+        let minutes = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+}
+
+// MARK: - Supporting Views for Pacing
+
+struct PlanMetricView: View {
+    let title: String
+    let value: String
+    let icon: String
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.callout)
+                .foregroundStyle(.blue)
+            
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            
+            Text(value)
+                .font(.callout)
+                .fontWeight(.semibold)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+struct DifficultyBadge: View {
+    let difficulty: DifficultyRating  // This matches your enum from PacingEngine.swift
+    
+    var body: some View {
+        Text(difficulty.rawValue)
+            .font(.caption)
+            .fontWeight(.medium)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color(hex: difficulty.color).opacity(0.2))
+            .foregroundStyle(Color(hex: difficulty.color))
+            .clipShape(Capsule())
+    }
+}
+
+struct PacingPlanLoadingCard: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack {
+                ProgressView()
+                    .controlSize(.regular)
+                Text("Generating pacing plan...")
+                    .font(.headline)
+                Spacer()
+            }
+            
+            Text("Analyzing route segments and optimizing power distribution")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(20)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+struct EmptyPacingPlanCard: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "speedometer")
+                .font(.system(size: 48))
+                .foregroundStyle(.gray)
+            
+            Text("No Pacing Plan")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            
+            Text("Generate a power-based pacing plan to optimize your ride performance")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(32)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+// MARK: - Optimized Export Tab (formerly DeviceSyncTab)
+
+struct UpdatedOptimizedExportTab: View {
+    @ObservedObject var viewModel: WeatherViewModel
+    @State private var exportingFIT = false
+    @State private var exportingCSV = false
+    @State private var exportingSummary = false
+    @State private var exportError: String?
+    @State private var currentShareItem: URL? = nil
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 20) {
+                // Route Info Card
+                if !viewModel.routeDisplayName.isEmpty {
+                    RouteInfoCardView(viewModel: viewModel)
+                }
+                
+                // Export Status Card
+                exportStatusCard
+                
+                // Available Export Options
+                if viewModel.advancedController?.pacingPlan != nil {
+                    exportOptionsCard
+                } else {
+                    exportUnavailableCard
+                }
+                
+                // Help & Tips
+                exportTipsCard
+            }
+            .padding()
+        }
+        .sheet(item: Binding<ShareableItem?>(
+            get: { currentShareItem.map { ShareableItem(url: $0) } },
+            set: { _ in currentShareItem = nil }
+        )) { item in
+            ShareSheet(activityItems: [item.url])
+        }
+    }
+    
+    // MARK: - View Components
+    
+    private var exportStatusCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Export Status", systemImage: "info.circle.fill")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.blue)
+            
+            VStack(alignment: .leading, spacing: 8) {
+                ExportStatusRow(
+                    title: "Garmin Course FIT",
+                    status: .available,
+                    description: "GPS route with power targets for Garmin Edge/Forerunner"
+                )
+                
+                ExportStatusRow(
+                    title: "CSV Export",
+                    status: .available,
+                    description: "Spreadsheet format for analysis and custom integrations"
+                )
+                
+                ExportStatusRow(
+                    title: "Device Sync",
+                    status: .comingSoon,
+                    description: "Direct sync to Garmin Connect, Wahoo, and Zwift (coming soon)"
+                )
+            }
+        }
+        .padding(20)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+    
+    private var exportOptionsCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Export Workout", systemImage: "square.and.arrow.up.fill")
+                .font(.headline)
+                .fontWeight(.semibold)
+            
+            VStack(spacing: 12) {
+                ExportOptionButton(
+                    title: "Export Garmin Course FIT",
+                    subtitle: "GPS route with power guidance for Garmin devices",
+                    icon: "doc.fill",
+                    isLoading: exportingFIT
+                ) {
+                    await exportFitFile()
+                }
+                
+                ExportOptionButton(
+                    title: "Export CSV Data",
+                    subtitle: "Detailed segment-by-segment breakdown",
+                    icon: "tablecells.fill",
+                    isLoading: exportingCSV
+                ) {
+                    await exportCSVFile()
+                }
+                
+                ExportOptionButton(
+                    title: "Pacing Plan Summary",
+                    subtitle: "Printable summary with key information",
+                    icon: "doc.text.fill",
+                    isLoading: exportingSummary
+                ) {
+                    await exportPlanSummary()
+                }
+            }
+            
+            if let error = exportError {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                .padding(8)
+                .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            }
+        }
+        .padding(20)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+    
+    private var exportUnavailableCard: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "square.and.arrow.up.trianglebadge.exclamationmark")
+                .font(.system(size: 48))
+                .foregroundStyle(.gray)
+            
+            Text("No Workout to Export")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            
+            Text("Generate a pacing plan first to create exportable workout files")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(32)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+    
+    private var exportTipsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Export Tips", systemImage: "lightbulb.fill")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.yellow)
+            
+            VStack(alignment: .leading, spacing: 8) {
+                TipRow(
+                    icon: "desktopcomputer",
+                    text: "Upload FIT files to Garmin Connect, then sync to your device"
+                )
+                
+                TipRow(
+                    icon: "map",
+                    text: "Course files show GPS route + power targets on your bike computer"
+                )
+                
+                TipRow(
+                    icon: "iphone",
+                    text: "Use AirDrop to quickly transfer files to your cycling computer"
+                )
+                
+                TipRow(
+                    icon: "printer.fill",
+                    text: "Print the race summary for easy reference during your ride"
+                )
+                
+                if !viewModel.routeDisplayName.isEmpty {
+                    TipRow(
+                        icon: "tag.fill",
+                        text: "Exported files will be named: '\(viewModel.routeDisplayName)-course-power.fit'"
+                    )
+                }
+            }
+        }
+        .padding(20)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+    
+    // MARK: - Export Methods
+    
+    private func exportFitFile() async {
+        await MainActor.run {
+            exportingFIT = true
+            exportError = nil
+        }
+        
+        // Give UI time to show loading indicator
+        try? await Task.sleep(nanoseconds: 50_000_000) // 0.05 seconds
+        
+        guard viewModel.advancedController != nil else {
+            await MainActor.run {
+                exportError = "No workout data available"
+                exportingFIT = false
+            }
+            return
+        }
+        
+        do {
+            // Use the new Garmin Course FIT export
+            guard let tempFile = try await viewModel.exportGarminCourseFIT() else {
+                await MainActor.run {
+                    exportError = "Failed to generate Garmin Course FIT file"
+                    exportingFIT = false
+                }
+                return
+            }
+            
+            await MainActor.run {
+                currentShareItem = tempFile
+                exportingFIT = false
+            }
+            
+        } catch {
+            await MainActor.run {
+                exportError = "Export failed: \(error.localizedDescription)"
+                exportingFIT = false
+            }
+        }
+    }
+    
+    private func exportCSVFile() async {
+        await MainActor.run {
+            exportingCSV = true
+            exportError = nil
+        }
+        
+        // Give UI time to show loading indicator
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        
+        guard let controller = viewModel.advancedController else {
+            await MainActor.run {
+                exportError = "No workout data available"
+                exportingCSV = false
+            }
+            return
+        }
+        
+        do {
+            guard let planToExport = viewModel.finalPacingPlan else {
+                await MainActor.run { exportError = "No plan available to export." }
+                exportingCSV = false
+                return
+            }
+            
+            let csvData = await MainActor.run {
+                controller.exportPacingPlanCSV(using: planToExport) // <-- Pass the adjusted plan
+            }
+
+            let tempDir = FileManager.default.temporaryDirectory
+            let customFilename = viewModel.generateExportFilename(
+                baseName: nil,
+                suffix: "pacing",
+                extension: "csv"
+            )
+            let tempFile = tempDir.appendingPathComponent(customFilename)
+            
+            try csvData.write(to: tempFile, atomically: true, encoding: .utf8)
+            
+            await MainActor.run {
+                currentShareItem = tempFile
+                exportingCSV = false
+            }
+            
+        } catch {
+            await MainActor.run {
+                exportError = "Failed to save CSV file: \(error.localizedDescription)"
+                exportingCSV = false
+            }
+        }
+    }
+
+    private func exportPlanSummary() async {
+        await MainActor.run {
+            exportingSummary = true
+            exportError = nil
+        }
+        
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        
+        guard let controller = viewModel.advancedController,
+              let pacingPlan = controller.pacingPlan else {  // Get the pacing plan
+            await MainActor.run {
+                exportError = "No workout data available"
+                exportingSummary = false
+            }
+            return
+        }
+        
+        do {
+            guard let planToExport = viewModel.finalPacingPlan, // <-- Get the final plan
+                  let controller = viewModel.advancedController else {
+                await MainActor.run { exportError = "No plan available to export." }
+                exportingSummary = false
+                return
+            }
+            
+            let summary = await MainActor.run {
+                // Call the correct, detailed summary function on the controller
+                controller.generateRaceDaySummary(using: planToExport)
+            }
+
+            let tempDir = FileManager.default.temporaryDirectory
+            let customFilename = viewModel.generateExportFilename(
+                baseName: nil,
+                suffix: "pacing-summary",  // Better name
+                extension: "txt"
+            )
+            let tempFile = tempDir.appendingPathComponent(customFilename)
+            
+            try summary.write(to: tempFile, atomically: true, encoding: .utf8)
+            
+            await MainActor.run {
+                currentShareItem = tempFile
+                exportingSummary = false
+            }
+            
+        } catch {
+            await MainActor.run {
+                exportError = "Failed to save summary file: \(error.localizedDescription)"
+                exportingSummary = false
+            }
+        }
+    }
+}
+
+// MARK: - Shared Error State Card
+
+struct ErrorStateCard: View {
+    let title: String
+    let message: String
+    let retryAction: () async -> Void
+    
+    @State private var isRetrying = false
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(.red)
+            
+            VStack(spacing: 8) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.red)
+                
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            
+            Button(action: {
+                Task {
+                    isRetrying = true
+                    await retryAction()
+                    isRetrying = false
+                }
+            }) {
+                HStack {
+                    if isRetrying {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                        Text("Retrying...")
+                    } else {
+                        Text("Try Again")
+                    }
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isRetrying)
+        }
+        .padding(32)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+struct ShareableItem: Identifiable {
+    let id = UUID()
+    let url: URL
+    
+    init(url: URL) {
+        self.url = url
+    }
+}
+
+enum ExportStatus {
+    case available
+    case comingSoon
+    case unavailable
+    
+    var icon: String {
+        switch self {
+        case .available: return "checkmark.circle.fill"
+        case .comingSoon: return "clock.fill"
+        case .unavailable: return "xmark.circle.fill"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .available: return .green
+        case .comingSoon: return .orange
+        case .unavailable: return .red
+        }
+    }
+}
+
+struct ExportStatusRow: View {
+    let title: String
+    let status: ExportStatus
+    let description: String
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: status.icon)
+                .foregroundStyle(status.color)
+                .font(.title3)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            
+            Spacer()
+        }
+    }
+}
+
+struct ExportOptionButton: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let isLoading: Bool
+    let action: () async -> Void
+    
+    @State private var isPerformingAction = false
+    
+    var body: some View {
+        Button(action: {
+            Task {
+                isPerformingAction = true
+                await action()
+                isPerformingAction = false
+            }
+        }) {
+            HStack(spacing: 16) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(.blue)
+                    .frame(width: 24)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+                    
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                if isPerformingAction || isLoading {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        
+                        Text("Working...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(16)
+            .background(
+                Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: 12)
+            )
+            .opacity((isPerformingAction || isLoading) ? 0.8 : 1.0)
+        }
+        .disabled(isPerformingAction || isLoading)
+        .buttonStyle(.plain)
+    }
+}
+
+struct TipRow: View {
+    let icon: String
+    let text: String
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+            
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+struct FuelingTimelineView: View {
+    let schedule: [FuelPoint]
+    @State private var selectedPoint: FuelPoint?
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(schedule.enumerated()), id: \.offset) { index, point in
+                HStack(alignment: .top, spacing: 12) {
+                    // Timeline connector
+                    VStack(spacing: 0) {
+                        if index > 0 {
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(width: 2, height: 20)
+                        }
+                        
+                        // Time marker
+                        ZStack {
+                            Circle()
+                                .fill(fuelTypeColor(point.fuelType))
+                                .frame(width: 32, height: 32)
+                            
+                            Image(systemName: fuelTypeIcon(point.fuelType))
+                                .foregroundStyle(.white)
+                                .font(.system(size: 14))
+                        }
+                        
+                        if index < schedule.count - 1 {
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(width: 2, height: 20)
+                        }
+                    }
+                    
+                    // Fuel point content
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("\(Int(point.timeMinutes))min")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                            
+                            Spacer()
+                            
+                            Text(point.fuelType.rawValue)
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(fuelTypeColor(point.fuelType).opacity(0.2))
+                                .foregroundStyle(fuelTypeColor(point.fuelType))
+                                .clipShape(Capsule())
+                        }
+                        
+                        Text(point.product)
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+                        
+                        Text(point.reason)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        HStack {
+                            Label("\(Int(point.intensity))% intensity", systemImage: "flame")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            
+                            Spacer()
+                            
+                            Text("Segment \(point.segmentIndex + 1)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.top, 2)
+                    }
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 12)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .padding(.bottom, index < schedule.count - 1 ? 0 : 12)
+            }
+        }
+    }
+    
+    private func fuelTypeColor(_ type: FuelType) -> Color {
+        switch type {
+        case .gel: return .orange
+        case .drink: return .blue
+        case .bar: return .brown
+        case .solid: return .green
+        case .electrolytes: return .purple
+        }
+    }
+    
+    private func fuelTypeIcon(_ type: FuelType) -> String {
+        switch type {
+        case .gel: return "drop.fill"
+        case .drink: return "cup.and.saucer.fill"
+        case .bar: return "rectangle.fill"
+        case .solid: return "leaf.fill"
+        case .electrolytes: return "bolt.fill"
+        }
+    }
+}
+
+// MARK: - ShareSheet (UIActivityViewController wrapper)
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+    
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

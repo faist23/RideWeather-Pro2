@@ -1,5 +1,5 @@
 //
-//  ModernHourlyForecastView.swift
+//  HourlyForecastView.swift
 //  RideWeather Pro
 //
 //  Created by Craig Faist on 8/16/25.
