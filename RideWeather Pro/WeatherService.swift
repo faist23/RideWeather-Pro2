@@ -37,7 +37,8 @@ class WeatherService {
     }()
     
     init() {
-        cache.countLimit = 100 // Limit cache size
+        loadConfig()
+       cache.countLimit = 100 // Limit cache size
         cache.totalCostLimit = 10 * 1024 * 1024 // 10MB
     }
     
@@ -260,6 +261,24 @@ class WeatherService {
             }
         }
     }
+
+    private func loadConfig() {
+        guard let path = Bundle.main.path(forResource: "OpenWeather", ofType: "plist"),
+              let dict = NSDictionary(contentsOfFile: path) as? [String: String] else {
+            print("🚨 WeatherService FATAL ERROR: OpenWeather.plist not found or incorrectly formatted!")
+            let errorMessage = "Critical configuration error. Weather integration disabled."
+            openWeather = nil
+            return
+        }
+
+        openWeather = dict
+        print("WeatherService: Configuration loaded successfully.")
+
+        if configValue(forKey: "OpenWeatherApiKey") == nil {
+            print("🚨 WeatherService WARNING: OpenWeatherApiKey missing in OpenWeather.plist!")
+        }
+    }
+    
     /// Helper to safely access config values
     private func configValue(forKey key: String) -> String? {
         return openWeather?[key]
