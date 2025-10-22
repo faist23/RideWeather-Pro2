@@ -50,10 +50,11 @@ struct PowerZone {
         return [
             PowerZone(number: 1, name: "Recovery", minPower: 0, maxPower: ftp * 0.55, color: "#9E9E9E"),
             PowerZone(number: 2, name: "Endurance", minPower: ftp * 0.55, maxPower: ftp * 0.75, color: "#2196F3"),
-            PowerZone(number: 3, name: "Tempo", minPower: ftp * 0.75, maxPower: ftp * 0.90, color: "#4CAF50"),
-            PowerZone(number: 4, name: "Threshold", minPower: ftp * 0.90, maxPower: ftp * 1.05, color: "#FF9800"),
-            PowerZone(number: 5, name: "VO2 Max", minPower: ftp * 1.05, maxPower: ftp * 1.20, color: "#F44336"),
-            PowerZone(number: 6, name: "Anaerobic", minPower: ftp * 1.20, maxPower: ftp * 1.50, color: "#9C27B0")
+            PowerZone(number: 3, name: "Tempo", minPower: ftp * 0.75, maxPower: ftp * 0.87, color: "#4CAF50"),
+            PowerZone(number: 4, name: "Sweet Spot", minPower: ftp * 0.87, maxPower: ftp * 0.94, color: "#FFFF00"),
+            PowerZone(number: 5, name: "Threshold", minPower: ftp * 0.94, maxPower: ftp * 1.05, color: "#FF9800"),
+            PowerZone(number: 6, name: "VO2 Max", minPower: ftp * 1.05, maxPower: ftp * 1.20, color: "#F44336"),
+            PowerZone(number: 7, name: "Anaerobic", minPower: ftp * 1.20, maxPower: ftp * 1.50, color: "#9C27B0")
         ]
     }
 }

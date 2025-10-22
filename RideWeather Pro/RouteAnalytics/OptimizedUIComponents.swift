@@ -607,8 +607,8 @@ struct OptimizedAdvancedFeaturesCard: View {
             showingAdvancedFeatures = true
         }
         .sheet(isPresented: $showingAdvancedFeatures) {
-//            OptimizedAdvancedCyclingTabView(viewModel: viewModel)
-            RideAnalysisTabView(viewModel: viewModel)
+            OptimizedAdvancedCyclingTabView(viewModel: viewModel)
+//            RideAnalysisTabView(viewModel: viewModel)
         }
     }
 }
@@ -639,6 +639,11 @@ struct OptimizedAdvancedCyclingTabView: View {
                     .tag(2)
                     .tabItem {
                         Label("Export", systemImage: "square.and.arrow.up")
+                    }
+                RideAnalysisView(weatherViewModel: viewModel)
+                    .tag(3)
+                    .tabItem {
+                        Label("Analysis", systemImage: "chart.xyaxis.line")
                     }
             }
             .navigationTitle("Advanced Features")
@@ -1039,7 +1044,7 @@ struct EmptyPacingPlanCard: View {
     }
 }
 
-// MARK: - Optimized Export Tab (formerly DeviceSyncTab)
+// MARK: - Optimized Export Tab 
 
 struct UpdatedOptimizedExportTab: View {
     @ObservedObject var viewModel: WeatherViewModel
@@ -1677,3 +1682,4 @@ struct ShareSheet: UIViewControllerRepresentable {
     
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
+
