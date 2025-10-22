@@ -10,7 +10,13 @@ import Foundation
 import Combine
 
 class WeatherService {
-    private let apiKey = "1a234f8281e1b2c4ce2e7d2dc4840a47"
+    // MARK: - Configuration (Secrets Management)
+    private var openWeather: [String: String]?
+
+    private var apiKey: String {
+        // Safely access config, provide a non-functional default if missing
+        return configValue(forKey: "OpenWeatherApiKey") ?? "INVALID_API"
+    }
     private let baseWeatherURL = "https://api.openweathermap.org/data/2.5"
     private let baseOneCallURL = "https://api.openweathermap.org/data/3.0"
     // MARK: - Additional Properties (add to your WeatherService class)
@@ -254,6 +260,11 @@ class WeatherService {
             }
         }
     }
+    /// Helper to safely access config values
+    private func configValue(forKey key: String) -> String? {
+        return openWeather?[key]
+    }
+
 }
 
 // MARK: - Complete Weather Data Structure
