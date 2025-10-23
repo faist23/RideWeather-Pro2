@@ -4,10 +4,27 @@
 <dict>
 	<key>CFBundleURLTypes</key>
 	<array>
-		<dict/>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.rideweatherpro</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>rideweatherpro</string>
+			</array>
+		</dict>
 	</array>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Multiple commands produce &apos;/Users/craigfaist/Library/Developer/Xcode/DerivedData/RideWeather_Pro-alufepvadpqfwwdcfcfikefhwgiw/Build/Products/Debug-iphonesimulator/RideWeather Pro.app/Info.plist&apos;
-We need location for weather and mapping</string>
+        <key>NSAppTransportSecurity</key>
+        <dict>
+            <key>NSAllowsArbitraryLoads</key>
+            <true/>
+        </dict>
+        <key>NSLocationWhenInUseUsageDescription</key>
+        <string>To provide local weather forecasts for your ride.</string>
+        <key>LSApplicationQueriesSchemes</key>
+        <array>
+            <string>strava</string>
+        </array>
 </dict>
 </plist>

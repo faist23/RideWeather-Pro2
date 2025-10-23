@@ -8,6 +8,7 @@ import MapKit
 @main
 struct RideWeatherProApp: App {
     @StateObject private var weatherViewModel = WeatherViewModel()
+    @StateObject private var stravaService = StravaService() // Add this
     @State private var showLaunchView = true
 
     var body: some Scene {
@@ -16,7 +17,8 @@ struct RideWeatherProApp: App {
                 Color.blue.opacity(0.6).ignoresSafeArea()
                 MainView()
                     .environmentObject(weatherViewModel)
-
+                    .environmentObject(stravaService) // Pass it down
+                
                 if showLaunchView {
                     LaunchView()
                         .transition(.opacity.animation(.easeOut(duration: 0.5)))
@@ -33,6 +35,20 @@ struct RideWeatherProApp: App {
                 // Initialize MapKit early to reduce first-time loading lag
                 await initializeMapKit()
             }
+            // V V V ADD THIS MODIFIER V V V
+            .onOpenURL { url in
+                print("App received URL via onOpenURL: \(url.absoluteString)")
+                // Check if it's the Strava callback URL based on scheme and host
+                if url.scheme == "rideweatherpro" && url.host == "strava-auth" {
+                    // Pass the URL to your StravaService instance
+                    // Since StravaService is @MainActor, this call is safe
+                    stravaService.handleRedirect(url: url)
+                } else {
+                    print("URL is not the expected Strava callback.")
+                    // Handle other URL schemes if your app supports them
+                }
+            }
+            // ^ ^ ^ ADD THIS MODIFIER ^ ^ ^
         }
     }
     

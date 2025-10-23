@@ -1,8 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>To provide local weather forecasts for your ride.</string>
-</dict>
+    <dict>
+        <key>NSAppTransportSecurity</key>
+        <dict>
+            <key>NSAllowsArbitraryLoads</key>
+            <true/>
+        </dict>
+        <key>NSLocationWhenInUseUsageDescription</key>
+        <string>To provide local weather forecasts for your ride.</string>
+        <key>LSApplicationQueriesSchemes</key>
+        <array>
+            <string>strava</string>
+        </array>
+    </dict>
 </plist>

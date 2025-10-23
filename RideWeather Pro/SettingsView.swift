@@ -6,6 +6,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var viewModel: WeatherViewModel
+    @EnvironmentObject var stravaService: StravaService // Get the service
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -309,6 +310,85 @@ struct SettingsView: View {
                     Toggle("Avoid Gluten", isOn: $viewModel.settings.avoidGluten)
                     Toggle("Avoid Caffeine", isOn: $viewModel.settings.avoidCaffeine)
                 }
+ 
+                Section("Strava") {
+                    if stravaService.isAuthenticated {
+                        HStack(spacing: 12) {
+                            StravaLogo()
+                                .frame(width: 30, height: 30)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Connected to Strava")
+                                    .font(.headline)
+                                if let name = stravaService.athleteName {
+                                    Text(name)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            Spacer()
+
+                            Button(role: .destructive) {
+                                stravaService.disconnect()
+                            } label: {
+                                Text("Disconnect")
+                            }
+                        }
+                    } else {
+                        Button {
+                            stravaService.authenticate()
+                        } label: {
+                            HStack(spacing: 12) {
+                                StravaLogo()
+                                    .frame(width: 30, height: 30)
+                                Text("Connect with Strava")
+                                    .fontWeight(.semibold)
+                            }
+                        }
+                    }
+                }
+
+
+/*                Section("Integrations") {
+                    if stravaService.isAuthenticated {
+                        HStack {
+                            Image("strava_logo") // Assuming you add a Strava logo asset
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 24, height: 24)
+                            Text("Strava Connected")
+                            Spacer()
+                            Button("Disconnect") {
+                                stravaService.disconnect()
+                            }
+                            .tint(.red)
+                        }
+                    } else {
+                        Button {
+                            stravaService.authenticate()
+                        } label: {
+                            HStack {
+                                Image("strava_logo_connect") // Add a connect logo asset
+                                    .resizable()
+                                    .renderingMode(.template)
+                                    .foregroundColor(.white) // Or another color
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 20, height: 20)
+                                Text("Connect with Strava")
+                            }
+                        }
+                        // Optional: Add Strava's official connect button styling if desired
+                        // .buttonStyle(...)
+                    }
+                    
+                    // Display error messages
+                    if let error = stravaService.errorMessage {
+                        Text("Error: \(error)")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }*/
                 
                 Section("About") {
                     HStack {
@@ -358,5 +438,25 @@ struct SettingsView: View {
 extension Bundle {
     var buildNumber: String? {
         return infoDictionary?["CFBundleVersion"] as? String
+    }
+}
+
+// MARK: - Strava Logo View
+struct StravaLogo: View {
+    var body: some View {
+        Image("strava_logo")
+            .resizable()
+            .renderingMode(.original) // preserve colors
+            .scaledToFit()
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .shadow(color: .black.opacity(0.1), radius: 1, y: 1)
+    }
+}
+
+extension WeatherViewModel {
+    static var preview: WeatherViewModel {
+        let vm = WeatherViewModel()
+        // set up fake data if desired
+        return vm
     }
 }
