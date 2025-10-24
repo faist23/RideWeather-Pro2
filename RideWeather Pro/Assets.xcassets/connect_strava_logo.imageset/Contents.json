@@ -1,11 +1,11 @@
 {
   "images" : [
     {
-      "filename" : "api_logo_pwrdBy_strava_stack_orange.svg",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
+      "filename" : "btn_strava_connect_with_orange_x2.svg",
       "idiom" : "universal",
       "scale" : "2x"
     },

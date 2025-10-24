@@ -315,7 +315,7 @@ struct SettingsView: View {
                     if stravaService.isAuthenticated {
                         HStack(spacing: 12) {
                             StravaLogo()
-                                .frame(width: 30, height: 30)
+                                .frame(width: 60, height: 30)
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Connected to Strava")
@@ -445,7 +445,7 @@ extension Bundle {
 // MARK: - Strava Logo View
 struct StravaLogo: View {
     var body: some View {
-        Image("strava_logo")
+        Image("connect_strava_logo")
             .resizable()
             .renderingMode(.original) // preserve colors
             .scaledToFit()

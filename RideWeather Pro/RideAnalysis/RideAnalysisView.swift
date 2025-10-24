@@ -119,7 +119,7 @@ struct RideAnalysisView: View {
                         Image("strava_logo")
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 20, height: 20)
+                            .frame(width: 60, height: 20)
                         Text("Import from Strava")
                             .font(.headline)
                     }

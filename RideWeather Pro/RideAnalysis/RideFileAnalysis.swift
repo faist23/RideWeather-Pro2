@@ -212,9 +212,9 @@ struct FITDataPoint {
 // MARK: - Ride File Analyzer
 
 class RideFileAnalyzer {
-    
+       
     // MARK: - Main Analysis Function
-    
+
     func analyzeRide(
         dataPoints: [FITDataPoint],
         ftp: Double,
@@ -222,52 +222,70 @@ class RideFileAnalyzer {
         plannedRide: PacingPlan? = nil
     ) -> RideAnalysis {
         
-        // Only include points with valid power !< 0
+        // Filter to only include points with valid power >= 0
         let validPoints = dataPoints.filter {
             if let power = $0.power {
-                return power >= 0 // ✅ Changed > to >= to include 0 power
+                return power >= 0
             }
             return false
         }
+        
         guard !validPoints.isEmpty else {
             return createEmptyAnalysis()
         }
         
-        let powers = validPoints.compactMap { $0.power }
-        let duration = calculateDuration(dataPoints: validPoints)
+        // ✅ NEW: Separate moving vs stopped segments
+        let movingPoints = identifyMovingSegments(dataPoints: validPoints)
+        
+        // Use moving points for all power analysis
+        let powers = movingPoints.compactMap { $0.power }
+        
+        // Calculate both moving time and elapsed time
+        let elapsedTime = calculateDuration(dataPoints: validPoints)
+        let movingTime = calculateDuration(dataPoints: movingPoints)
+        let stoppedTime = elapsedTime - movingTime
+        
         let distance = calculateDistance(dataPoints: validPoints)
         
-        // Power Metrics
+        // Power Metrics (using moving time only)
         let avgPower = calculateAveragePower(powers: powers)
         let normalizedPower = calculateNormalizedPower(powers: powers)
         let intensityFactor = normalizedPower / ftp
-        let tss = calculateTSS(normalizedPower: normalizedPower, duration: duration, ftp: ftp)
+        let tss = calculateTSS(normalizedPower: normalizedPower, duration: movingTime, ftp: ftp) // ✅ Use moving time
         let variabilityIndex = normalizedPower / avgPower
         
-        // Peak Powers
-        let peaks = calculatePeakPowers(dataPoints: validPoints)
+        // Peak Powers (from all data)
+        let peaks = calculatePeakPowers(dataPoints: movingPoints)
         
-        // Pacing Analysis
+        // Pacing Analysis (using moving segments only)
         let consistency = calculateConsistencyScore(powers: powers, target: normalizedPower)
         let powerVariability = calculateCoefficientOfVariation(powers: powers)
         let pacingRating = determinePacingRating(consistency: consistency, variability: powerVariability)
         
-        // Fatigue Detection
-        let (fatigueDetected, fatigueOnset, declineRate) = detectFatigue(dataPoints: validPoints)
+        // Fatigue Detection (on moving segments)
+        let (fatigueDetected, fatigueOnset, declineRate) = detectFatigue(dataPoints: movingPoints)
         
         // Segment Comparison
         var segmentComparisons: [SegmentComparison] = []
         var overallDeviation: Double = 0
         if let plan = plannedRide {
-            segmentComparisons = compareSegments(dataPoints: validPoints, plan: plan, ftp: ftp)
+            segmentComparisons = compareSegments(dataPoints: movingPoints, plan: plan, ftp: ftp)
             overallDeviation = calculateOverallDeviation(comparisons: segmentComparisons)
         }
         
         // Deviation Detection
-        let (surgeCount, pacingErrors) = detectPacingErrors(dataPoints: validPoints, targetPower: normalizedPower)
+        let (surgeCount, pacingErrors) = detectPacingErrors(dataPoints: movingPoints, targetPower: normalizedPower)
         
-        // Power Zone Distribution
-        let powerZones = calculatePowerZoneDistribution(dataPoints: validPoints, ftp: ftp)
+        // Power Zone Distribution (using moving time only)
+        let powerZones = calculatePowerZoneDistribution(dataPoints: movingPoints, ftp: ftp)
+        
+        // ✅ NEW: Ride characteristics analysis
+        let rideCharacteristics = analyzeRideCharacteristics(
+            dataPoints: movingPoints,
+            avgPower: avgPower,
+            normalizedPower: normalizedPower,
+            stoppedTime: stoppedTime
+        )
         
         // Performance Score
         let perfScore = calculatePerformanceScore(
@@ -278,7 +296,7 @@ class RideFileAnalyzer {
             fatigueDetected: fatigueDetected
         )
         
-        // Generate Insights
+        // Generate Insights (enhanced with ride characteristics)
         let insights = generateInsights(
             consistency: consistency,
             variability: powerVariability,
@@ -288,13 +306,16 @@ class RideFileAnalyzer {
             intensityFactor: intensityFactor,
             segmentComparisons: segmentComparisons,
             pacingErrors: pacingErrors,
-            performanceScore: perfScore
+            performanceScore: perfScore,
+            rideCharacteristics: rideCharacteristics,
+            movingTime: movingTime,
+            elapsedTime: elapsedTime
         )
         
         return RideAnalysis(
             date: dataPoints.first?.timestamp ?? Date(),
             rideName: "Ride Analysis",
-            duration: duration,
+            duration: movingTime,  // ✅ Store moving time as primary duration
             distance: distance,
             averagePower: avgPower,
             normalizedPower: normalizedPower,
@@ -311,7 +332,7 @@ class RideFileAnalyzer {
             fatigueDetected: fatigueDetected,
             fatigueOnsetTime: fatigueOnset,
             powerDeclineRate: declineRate,
-            plannedRideId: nil, // PacingPlan doesn't have an id property
+            plannedRideId: nil,
             segmentComparisons: segmentComparisons,
             overallDeviation: overallDeviation,
             surgeCount: surgeCount,
@@ -321,7 +342,89 @@ class RideFileAnalyzer {
             powerZoneDistribution: powerZones
         )
     }
-    
+
+    // ✅ NEW: Identify moving segments
+    private func identifyMovingSegments(dataPoints: [FITDataPoint]) -> [FITDataPoint] {
+        // Filter out periods where power is 0 for more than 10 consecutive seconds
+        var movingPoints: [FITDataPoint] = []
+        var zeroCount = 0
+        
+        for point in dataPoints {
+            if let power = point.power, power > 0 {
+                movingPoints.append(point)
+                zeroCount = 0
+            } else {
+                zeroCount += 1
+                // Allow brief zeros (coasting), but not extended stops
+                if zeroCount <= 10 {
+                    movingPoints.append(point)
+                }
+            }
+        }
+        
+        return movingPoints
+    }
+
+    // ✅ NEW: Analyze ride characteristics
+    private func analyzeRideCharacteristics(
+        dataPoints: [FITDataPoint],
+        avgPower: Double,
+        normalizedPower: Double,
+        stoppedTime: TimeInterval
+    ) -> RideCharacteristics {
+        
+        // Analyze power distribution
+        let powers = dataPoints.compactMap { $0.power }
+        let highPowerThreshold = avgPower * 1.5
+        let highPowerPoints = powers.filter { $0 > highPowerThreshold }.count
+        let highPowerPercentage = Double(highPowerPoints) / Double(powers.count) * 100
+        
+        // Detect ride type based on power patterns
+        let variability = normalizedPower / avgPower
+        
+        let rideType: RideType
+        if variability < 1.05 && highPowerPercentage < 5 {
+            rideType = .steady
+        } else if variability > 1.15 && highPowerPercentage > 15 {
+            rideType = .intervals
+        } else if stoppedTime > 300 { // More than 5 min stopped
+            rideType = .urban
+        } else {
+            rideType = .mixed
+        }
+        
+        // Count accelerations (power spikes)
+        var accelerationCount = 0
+        for i in 1..<powers.count {
+            if powers[i] > powers[i-1] * 1.3 && powers[i] > 150 {
+                accelerationCount += 1
+            }
+        }
+        
+        return RideCharacteristics(
+            rideType: rideType,
+            highPowerPercentage: highPowerPercentage,
+            accelerationCount: accelerationCount,
+            averageToNormalizedRatio: avgPower / normalizedPower,
+            stoppedTime: stoppedTime
+        )
+    }
+
+    enum RideType: String {
+        case steady = "Steady Endurance"
+        case intervals = "High-Intensity/Intervals"
+        case urban = "Urban/Stop-and-Go"
+        case mixed = "Mixed Terrain"
+    }
+
+    struct RideCharacteristics {
+        let rideType: RideType
+        let highPowerPercentage: Double
+        let accelerationCount: Int
+        let averageToNormalizedRatio: Double
+        let stoppedTime: TimeInterval
+    }
+
     // MARK: - Power Calculations
     
     private func calculateAveragePower(powers: [Double]) -> Double {
@@ -600,44 +703,98 @@ class RideFileAnalyzer {
         intensityFactor: Double,
         segmentComparisons: [SegmentComparison],
         pacingErrors: [PacingError],
-        performanceScore: Double
+        performanceScore: Double,
+        rideCharacteristics: RideCharacteristics,
+        movingTime: TimeInterval,
+        elapsedTime: TimeInterval
     ) -> [RideInsight] {
         var insights: [RideInsight] = []
         
-        // Pacing Insights
+        // ✅ NEW: Ride Type Insight
+        insights.append(RideInsight(
+            id: UUID(),
+            priority: .low,
+            category: .performance,
+            title: "Ride Type: \(rideCharacteristics.rideType.rawValue)",
+            description: rideTypeDescription(for: rideCharacteristics.rideType, characteristics: rideCharacteristics),
+            recommendation: rideTypeRecommendation(for: rideCharacteristics.rideType)
+        ))
+        
+        // ✅ NEW: Stopped Time Analysis
+        if rideCharacteristics.stoppedTime > 60 {
+            let stoppedMinutes = Int(rideCharacteristics.stoppedTime / 60)
+            let stoppedPercentage = (rideCharacteristics.stoppedTime / elapsedTime) * 100
+            
+            insights.append(RideInsight(
+                id: UUID(),
+                priority: stoppedPercentage > 20 ? .medium : .low,
+                category: .efficiency,
+                title: "Stopped Time: \(stoppedMinutes) minutes",
+                description: "You were stopped for \(String(format: "%.0f%%", stoppedPercentage)) of your ride. This is typical for \(stoppedPercentage > 20 ? "urban riding with traffic" : "occasional stops").",
+                recommendation: stoppedPercentage > 20 ?
+                    "Consider route alternatives with fewer stops to improve training efficiency, or embrace this as urban riding reality." :
+                    "Your stop time is minimal - good route planning!"
+            ))
+        }
+        
+        // ✅ ENHANCED: Pacing insights with context
         if consistency >= 85 {
             insights.append(RideInsight(
                 id: UUID(),
                 priority: .low,
                 category: .pacing,
-                title: "Excellent Pacing",
-                description: "You maintained \(Int(consistency))% pacing consistency throughout the ride.",
-                recommendation: "Continue this disciplined approach in future rides."
+                title: "Excellent Pacing Discipline",
+                description: "You maintained \(Int(consistency))% pacing consistency. This shows great discipline and energy management.",
+                recommendation: rideCharacteristics.rideType == .steady ?
+                    "This steady approach is perfect for building aerobic endurance. Continue this for base training." :
+                    "Impressive consistency given the variable nature of your ride!"
             ))
         } else if consistency < 60 {
+            let reason = rideCharacteristics.rideType == .urban ?
+                "This is partly due to the stop-and-go nature of your route" :
+                "indicating frequent power fluctuations"
+            
             insights.append(RideInsight(
                 id: UUID(),
                 priority: .high,
                 category: .pacing,
                 title: "Inconsistent Pacing Detected",
-                description: "Pacing consistency was only \(Int(consistency))%, indicating frequent power fluctuations.",
-                recommendation: "Focus on maintaining steady power output. Use a power target and avoid responding to every change in terrain."
+                description: "Pacing consistency was only \(Int(consistency))%, \(reason).",
+                recommendation: rideCharacteristics.rideType == .urban ?
+                    "For urban rides, focus on smooth restarts and steady effort between stops rather than aggressive accelerations." :
+                    "Focus on maintaining steady power output. Use a power target and avoid responding to every terrain change."
             ))
         }
         
-        // Power Variability
+        // ✅ ENHANCED: Power Variability with ride context
         if variability > 25 {
             insights.append(RideInsight(
                 id: UUID(),
                 priority: .high,
                 category: .power,
                 title: "High Power Variability",
-                description: "Power variability of \(Int(variability))% suggests frequent surges and drops.",
-                recommendation: "Reduce power spikes - they waste energy without proportional speed gains. Aim for smooth, consistent effort."
+                description: "Power variability of \(Int(variability))% suggests frequent surges and drops. VI of \(String(format: "%.2f", rideCharacteristics.averageToNormalizedRatio)) indicates an unsteady effort.",
+                recommendation: rideCharacteristics.rideType == .intervals ?
+                    "This is expected for interval training, but ensure recovery between efforts is truly easy." :
+                    "Smooth out your power - each surge has a metabolic cost. Aim for VI < 1.05 for steady rides."
             ))
         }
         
-        // Surge Detection
+        // ✅ NEW: Acceleration Analysis
+        if rideCharacteristics.accelerationCount > 20 {
+            insights.append(RideInsight(
+                id: UUID(),
+                priority: .medium,
+                category: .efficiency,
+                title: "Frequent Hard Accelerations",
+                description: "Detected \(rideCharacteristics.accelerationCount) significant accelerations. Each costs energy without proportional speed gains.",
+                recommendation: rideCharacteristics.rideType == .urban ?
+                    "In urban riding, minimize your acceleration effort - start smoothly in easier gears and build speed gradually." :
+                    "Anticipate terrain changes and maintain momentum rather than repeatedly accelerating from low speeds."
+            ))
+        }
+        
+        // Surge Detection with context
         if surgeCount > 10 {
             insights.append(RideInsight(
                 id: UUID(),
@@ -645,32 +802,57 @@ class RideFileAnalyzer {
                 category: .efficiency,
                 title: "Frequent Power Spikes",
                 description: "Detected \(surgeCount) power surges above target.",
-                recommendation: "These spikes are metabolically costly. Practice restraint, especially on hills and into headwinds."
+                recommendation: "These spikes are metabolically costly. Practice restraint, especially on hills and into headwinds. Let gradient and wind dictate pace, not emotion."
             ))
         }
         
         // Fatigue Insights
         if fatigueDetected, let onset = fatigueOnset {
             let minutes = Int(onset / 60)
+            let totalMinutes = Int(movingTime / 60)
+            let earlyFatigue = Double(minutes) / Double(totalMinutes) < 0.5
+            
             insights.append(RideInsight(
                 id: UUID(),
-                priority: .high,
+                priority: earlyFatigue ? .high : .medium,
                 category: .fatigue,
-                title: "Early Fatigue Detected",
-                description: "Power output declined significantly after \(minutes) minutes.",
-                recommendation: "Consider starting more conservatively. Early over-exertion leads to premature fatigue and slower overall times."
+                title: earlyFatigue ? "Early Fatigue Detected" : "Fatigue in Late Ride",
+                description: "Power output declined significantly after \(minutes) minutes of moving time.",
+                recommendation: earlyFatigue ?
+                    "Starting too hard leads to premature fatigue. The first 20% of your ride should feel too easy - this conservative start pays huge dividends." :
+                    "Fatigue in the latter portion is normal for long rides. Consider fueling strategy and maintaining consistent hydration."
             ))
         }
         
-        // Intensity Factor
+        // ✅ NEW: Intensity Factor with personalized guidance
         if intensityFactor > 1.05 {
             insights.append(RideInsight(
                 id: UUID(),
                 priority: .medium,
                 category: .performance,
-                title: "High Intensity Effort",
-                description: "Intensity Factor of \(String(format: "%.2f", intensityFactor)) indicates a very hard effort.",
-                recommendation: "This effort level is sustainable for races but may require extended recovery."
+                title: "Very High Intensity Effort",
+                description: "Intensity Factor of \(String(format: "%.2f", intensityFactor)) indicates race-level intensity. TSS per hour: \(Int((intensityFactor * intensityFactor) * 100)).",
+                recommendation: movingTime > 7200 ?
+                    "This intensity sustained for \(Int(movingTime/3600))+ hours is exceptional. Plan 2-3 days recovery." :
+                    "This effort level is sustainable for races but requires extended recovery. Plan easy rides for the next 48 hours."
+            ))
+        } else if intensityFactor > 0.95 {
+            insights.append(RideInsight(
+                id: UUID(),
+                priority: .low,
+                category: .performance,
+                title: "Threshold-Level Effort",
+                description: "IF of \(String(format: "%.2f", intensityFactor)) - you rode at or near your FTP for much of this ride.",
+                recommendation: "This is great threshold training. You're building your ability to sustain high power. Allow 24-36 hours recovery."
+            ))
+        } else if intensityFactor < 0.70 {
+            insights.append(RideInsight(
+                id: UUID(),
+                priority: .low,
+                category: .performance,
+                title: "Easy Endurance Pace",
+                description: "IF of \(String(format: "%.2f", intensityFactor)) indicates easy endurance riding.",
+                recommendation: "Perfect for recovery or building aerobic base. These rides are crucial for long-term development - don't undervalue them."
             ))
         }
         
@@ -683,9 +865,11 @@ class RideFileAnalyzer {
                 id: UUID(),
                 priority: .medium,
                 category: .pacing,
-                title: "Segment Pacing Error",
-                description: "\(worstSegment.segmentName) was \(Int(abs(worstSegment.deviation)))% \(direction).",
-                recommendation: "Review your planned watts for this segment and practice executing at the prescribed power."
+                title: "Segment Execution Error",
+                description: "\(worstSegment.segmentName) was \(Int(abs(worstSegment.deviation)))% \(direction) relative to your plan.",
+                recommendation: worstSegment.deviation > 0 ?
+                    "Going too hard early compromises later performance. Practice starting conservatively and building into efforts." :
+                    "Going easier than planned? Check if FTP is set correctly or if you're adequately recovered."
             ))
         }
         
@@ -696,8 +880,8 @@ class RideFileAnalyzer {
                 priority: .low,
                 category: .performance,
                 title: "Outstanding Execution",
-                description: "Performance score of \(Int(performanceScore))/100 indicates excellent race execution.",
-                recommendation: "This is your best effort yet. Maintain this discipline in your goal event."
+                description: "Performance score of \(Int(performanceScore))/100 indicates excellent pacing and power management.",
+                recommendation: "This is textbook execution. Take note of how this ride felt - replicate this approach in your key events."
             ))
         }
         
@@ -707,13 +891,48 @@ class RideFileAnalyzer {
                 id: UUID(),
                 priority: .high,
                 category: .pacing,
-                title: "Started Too Hard",
+                title: "Started Too Aggressively",
                 description: earlyError.description,
-                recommendation: "The first 15-20 minutes should feel too easy. This conservative start pays dividends later in the ride."
+                recommendation: "The golden rule: the first 15-20 minutes should feel uncomfortably easy. Your HR and RPE will rise over time even at constant power - start conservative."
             ))
         }
         
-        return insights.sorted { $0.priority.rawValue < $1.priority.rawValue }
+        return insights.sorted { insight1, insight2 in
+            if insight1.priority != insight2.priority {
+                return insight1.priority.rawValue < insight2.priority.rawValue
+            }
+            // Within same priority, put ride type first, then performance, then pacing
+            let categoryOrder: [RideInsight.Category: Int] = [
+                .performance: 0, .pacing: 1, .power: 2, .efficiency: 3, .fatigue: 4
+            ]
+            return (categoryOrder[insight1.category] ?? 5) < (categoryOrder[insight2.category] ?? 5)
+        }
+    }
+
+    private func rideTypeDescription(for type: RideType, characteristics: RideCharacteristics) -> String {
+        switch type {
+        case .steady:
+            return "This was a steady-state ride with consistent power output. Great for building aerobic base."
+        case .intervals:
+            return "High-intensity ride with significant power variability (\(Int(characteristics.highPowerPercentage))% above 1.5x average). Excellent for building top-end fitness."
+        case .urban:
+            return "Stop-and-go urban ride with \(Int(characteristics.stoppedTime/60)) minutes of stops. Requires different energy management than continuous rides."
+        case .mixed:
+            return "Mixed terrain ride with varied efforts. This develops all-around cycling fitness."
+        }
+    }
+
+    private func rideTypeRecommendation(for type: RideType) -> String {
+        switch type {
+        case .steady:
+            return "Continue these rides for 2-3 hours to maximize aerobic adaptations. This is your foundation."
+        case .intervals:
+            return "Limit high-intensity rides to 2-3x per week. Ensure full recovery between hard efforts for maximum adaptation."
+        case .urban:
+            return "Focus on smooth restarts and steady cruising between stops. Don't sprint away from every light - save energy for when it matters."
+        case .mixed:
+            return "This variety builds well-rounded fitness. Balance these with dedicated steady and interval sessions."
+        }
     }
     
     // MARK: - Helper Functions
