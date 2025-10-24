@@ -11,7 +11,8 @@ import Combine
 struct RideAnalysisView: View {
     @StateObject private var viewModel = RideAnalysisViewModel()
     @ObservedObject var weatherViewModel: WeatherViewModel
-    
+    @EnvironmentObject var stravaService: StravaService
+
     var body: some View {
         NavigationView {
             Group {
@@ -31,6 +32,12 @@ struct RideAnalysisView: View {
                         Button(action: { viewModel.showingFilePicker = true }) {
                             Label("Import FIT File", systemImage: "square.and.arrow.down")
                         }
+                        if stravaService.isAuthenticated {
+                                 Button(action: { viewModel.showingStravaActivities = true }) {
+                                     Label("Import from Strava", systemImage: "square.and.arrow.down.on.square")
+                                 }
+                             }
+         
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
@@ -58,9 +65,22 @@ struct RideAnalysisView: View {
             .sheet(item: $viewModel.shareItem) { item in
                 ShareSheet(activityItems: [item.url])
             }
+            // ✅ ADD THIS - Strava activities sheet
+            .sheet(isPresented: $viewModel.showingStravaActivities) {
+                StravaActivitiesView()
+                    .environmentObject(stravaService)
+                    .environmentObject(weatherViewModel)
+            }
+            // ✅ ADD THIS - Listen for Strava imports
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NewAnalysisImported"))) { notification in
+                if let analysis = notification.object as? RideAnalysis {
+                    viewModel.currentAnalysis = analysis
+                    viewModel.loadHistory()
+                }
+            }
         }
     }
-    
+ 
     // MARK: - Empty State
     
     private var emptyStateView: some View {
@@ -91,6 +111,26 @@ struct RideAnalysisView: View {
                     .cornerRadius(12)
             }
             .padding(.horizontal, 40)
+            
+            // ✅ ADD THIS - Strava import button
+            if stravaService.isAuthenticated {
+                Button(action: { viewModel.showingStravaActivities = true }) {
+                    HStack(spacing: 12) {
+                        Image("strava_logo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
+                        Text("Import from Strava")
+                            .font(.headline)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.orange)
+                    .cornerRadius(12)
+                }
+                .padding(.horizontal, 40)
+            }
             
             if !viewModel.analysisHistory.isEmpty {
                 Button(action: { viewModel.showingHistory = true }) {
@@ -1055,7 +1095,8 @@ class RideAnalysisViewModel: ObservableObject {
     @Published var showingHistory = false
     @Published var showingExportOptions = false
     @Published var shareItem: ShareItem?
-    
+    @Published var showingStravaActivities = false
+
     private let analyzer = RideFileAnalyzer()
     private let parser = FITFileParser()
     private let storage = AnalysisStorageManager()

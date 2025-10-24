@@ -335,6 +335,7 @@ struct SettingsView: View {
                                 Text("Disconnect")
                             }
                         }
+
                     } else {
                         Button {
                             stravaService.authenticate()
