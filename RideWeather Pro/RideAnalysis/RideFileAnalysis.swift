@@ -752,7 +752,7 @@ class RideFileAnalyzer {
             
             // 🔥 STEP 2: Calculate elevation with threshold
             // Only count changes > 1 meter (filters out GPS noise)
-            let threshold: Double = 2.0  // meters (Garmin uses ~1m threshold)
+            let threshold: Double = 1.0  // meters (Garmin uses ~1m threshold)
             
             var accumulatedGain: Double = 0
             var accumulatedLoss: Double = 0
