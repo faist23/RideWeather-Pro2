@@ -71,7 +71,18 @@ struct StravaActivity: Codable, Identifiable {
         let minutes = (moving_time % 3600) / 60
         return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
     }
+
+    // 🔥 NEW: Stopped time helper
+    var stoppedTime: Int {
+        return elapsed_time - moving_time
+    }
+    
+    // 🔥 NEW: Has significant stops?
+    var hasSignificantStops: Bool {
+        return stoppedTime > 60  // More than 1 minute
+    }
 }
+
 
 struct StravaActivityDetail: Codable {
     let id: Int
@@ -459,9 +470,24 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
 
     // MARK: - Presentation Anchor
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        UIApplication.shared.connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
-            .first ?? UIWindow()
+        if let windowScene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }),
+           let window = windowScene.windows.first(where: { $0.isKeyWindow }) {
+            return window
+        }
+        
+        if let window = UIApplication.shared.connectedScenes
+            .compactMap({ ($0 as? UIWindowScene)?.keyWindow })
+            .first {
+            return window
+        }
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            return UIWindow(windowScene: windowScene)
+        }
+        
+        fatalError("Unable to find window scene")
     }
 
     // MARK: - Athlete Name Persistence
@@ -615,7 +641,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     // MARK: - API Methods
 
     /// Fetches recent activities from Strava
-    func fetchRecentActivities(limit: Int = 30) async throws -> [StravaActivity] {
+    func fetchRecentActivities(limit: Int = 60) async throws -> [StravaActivity] {
         // Ensure we have a valid token
         try await refreshTokenIfNeededAsync()
         

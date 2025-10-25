@@ -82,7 +82,7 @@ struct StravaActivitiesView: View {
                     )
                 }
             }
-            // ✅ ADD THIS - Auto-dismiss when analysis is imported
+            // âœ… ADD THIS - Auto-dismiss when analysis is imported
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NewAnalysisImported"))) { _ in
                 dismiss()
             }
@@ -340,12 +340,40 @@ class StravaActivitiesViewModel: ObservableObject {
                 print("StravaImport: Converted \(dataPoints.count) data points")
                 
                 // Analyze using existing analyzer
+//                let analyzer = RideFileAnalyzer()
+
+                // 🔥 CRITICAL FIX: Calculate BOTH times from Strava's data
+                let elapsedTime: TimeInterval
+                let movingTime: TimeInterval
+
+                if let timeData = streams.time?.data, !timeData.isEmpty {
+                    // Strava's time stream is elapsed time (includes stops)
+                    elapsedTime = TimeInterval(timeData.last ?? 0)
+                    print("StravaImport: Elapsed time from stream: \(elapsedTime)s")
+                } else {
+                    // Fallback to activity metadata
+                    // ✅ NOT optional - access directly
+                    elapsedTime = TimeInterval(activity.elapsed_time)
+                    print("StravaImport: Elapsed time from metadata: \(elapsedTime)s")
+                }
+
+                // 🔥 Get moving time from activity metadata (Strava calculates this)
+                // ✅ NOT optional - access directly
+                movingTime = TimeInterval(activity.moving_time)
+                print("StravaImport: Moving time from activity: \(movingTime)s")
+                print("StravaImport: Time difference: \(elapsedTime - movingTime)s stopped")
+                
+                // Analyze using existing analyzer
                 let analyzer = RideFileAnalyzer()
+ 
                 var analysis = analyzer.analyzeRide(
                     dataPoints: dataPoints,
                     ftp: Double(weatherViewModel.settings.functionalThresholdPower),
                     weight: weatherViewModel.settings.bodyWeight,
-                    plannedRide: nil
+                    plannedRide: nil,
+                    isPreFiltered: true,
+                    elapsedTimeOverride: elapsedTime,
+                    movingTimeOverride: movingTime  // 🔥 NEW PARAMETER
                 )
                 
                 // Update the ride name to match Strava activity name
@@ -355,6 +383,7 @@ class StravaActivitiesViewModel: ObservableObject {
                     rideName: activity.name,  // Use Strava activity name
                     duration: analysis.duration,
                     distance: analysis.distance,
+                    metadata: analysis.metadata,  // âœ… ADD THIS
                     averagePower: analysis.averagePower,
                     normalizedPower: analysis.normalizedPower,
                     intensityFactor: analysis.intensityFactor,
@@ -364,6 +393,8 @@ class StravaActivitiesViewModel: ObservableObject {
                     peakPower1min: analysis.peakPower1min,
                     peakPower5min: analysis.peakPower5min,
                     peakPower20min: analysis.peakPower20min,
+                    terrainSegments: analysis.terrainSegments,  // âœ… ADD THIS
+                    powerAllocation: analysis.powerAllocation,  // âœ… ADD THIS
                     consistencyScore: analysis.consistencyScore,
                     pacingRating: analysis.pacingRating,
                     powerVariability: analysis.powerVariability,
@@ -445,9 +476,25 @@ class StravaActivitiesViewModel: ObservableObject {
         let cadenceData = streams.cadence?.data
         let speedData = streams.velocity_smooth?.data
         let latlngData = streams.latlng?.data
+        let movingData = streams.moving?.data
         
+        // 🔍 DEBUG: Check if moving stream exists
+        if let moving = movingData {
+            let stoppedCount = moving.filter { !$0 }.count
+            print("StravaImport: Moving stream has \(moving.count) points, \(stoppedCount) stopped")
+        } else {
+            print("StravaImport: ⚠️ NO MOVING STREAM - will include all points")
+        }
+
         // Process each time point
+        var skippedCount = 0
         for i in 0..<timeData.count {
+            // Skip points where Strava says we're not moving
+            if let moving = movingData?[safe: i], !moving {
+                skippedCount += 1
+                continue  // Skip this point entirely - not moving
+            }
+
             let timestamp = startDate.addingTimeInterval(timeData[i])
             let power = powerData[safe: i]
             let heartRate = heartrateData?[safe: i].map { Int($0) }
@@ -473,6 +520,8 @@ class StravaActivitiesViewModel: ObservableObject {
                 position: coordinate
             ))
         }
+        
+        print("StravaImport: Created \(dataPoints.count) data points, skipped \(skippedCount) stopped points")
         
         return dataPoints
     }
