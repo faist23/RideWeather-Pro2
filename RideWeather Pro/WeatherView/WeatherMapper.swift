@@ -19,7 +19,7 @@ struct WeatherMapper {
         
         // Check if conditions warrant Heat Index calculation (e.g., > 80F and > 40% humidity)
         // Convert temp to F if necessary for the check
-        let tempInF = temp > 40 ? temp : (temp * 9/5) + 32 // Rough check if temp is already F
+/*        let tempInF = temp > 40 ? temp : (temp * 9/5) + 32 // Rough check if temp is already F
         let heatIndexThresholdTempF: Double = 80.0
         let heatIndexThresholdHumidity: Double = 40.0
         
@@ -27,7 +27,7 @@ struct WeatherMapper {
             let calculatedHeatIndexF = calculateHeatIndex(tempF: tempInF, humidity: humidity)
             // Use the calculated heat index, converting back to C if original was C
             finalFeelsLike = temp > 40 ? calculatedHeatIndexF : (calculatedHeatIndexF - 32) * 5/9
-        }
+        }*/
         // If conditions don't meet the threshold, finalFeelsLike remains the API's value
         
         return DisplayWeatherModel(
@@ -52,7 +52,7 @@ struct WeatherMapper {
         var finalFeelsLike = forecastItem.feelsLike
         
         // Check if conditions warrant Heat Index calculation
-        let tempInF = temp > 40 ? temp : (temp * 9/5) + 32 // Rough check if temp is already F
+/*        let tempInF = temp > 40 ? temp : (temp * 9/5) + 32 // Rough check if temp is already F
         let heatIndexThresholdTempF: Double = 80.0
         let heatIndexThresholdHumidity: Double = 40.0
         
@@ -60,7 +60,7 @@ struct WeatherMapper {
             let calculatedHeatIndexF = calculateHeatIndex(tempF: tempInF, humidity: humidity)
             // Use the calculated heat index, converting back to C if original was C
             finalFeelsLike = temp > 40 ? calculatedHeatIndexF : (calculatedHeatIndexF - 32) * 5/9
-        }
+        }*/
         // If conditions don't meet the threshold, finalFeelsLike remains the API's value
         
         return DisplayWeatherModel(
