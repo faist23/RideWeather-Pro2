@@ -24,20 +24,25 @@ struct PowerRouteSegment {
     let powerRequired: Double // watts
     let segmentType: PowerRouteSegment.SegmentType
 
-    enum SegmentType {
-        case climb, descent, flat
+    enum SegmentType: String, Codable {  // ADD: String, Codable
+        case climb = "climb"
+        case descent = "descent"
+        case flat = "flat"
+        case rolling = "rolling"  // ADD this case if used elsewhere
 
         var description: String {
             switch self {
             case .climb: return "Climb"
             case .descent: return "Descent"
             case .flat: return "Flat"
+            case .rolling: return "Rolling"  // ADD this
             }
         }
 
         static func from(grade: Double) -> SegmentType {
-            if grade > 0.02 { return .climb }
-            if grade < -0.02 { return .descent }
+            if grade > 0.035 { return .climb }      // Steeper threshold for climb
+            if grade < -0.025 { return .descent }   // Threshold for descent
+            if abs(grade) > 0.015 { return .rolling } // ADD: Rolling terrain
             return .flat
         }
     }
@@ -1508,6 +1513,8 @@ final class PowerRouteAnalyticsEngine {
         for s in segments {
             switch s.segmentType {
             case .flat: flat += s.distanceMeters
+            case .rolling:  // ADD THIS CASE
+                flat += s.distanceMeters  // Treat rolling as flat for distance calculation
             case .climb:
                 climb += s.distanceMeters
                 climbGrades.append(s.elevationGrade)

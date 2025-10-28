@@ -275,6 +275,59 @@ struct RouteWeatherPoint: Identifiable {
     let weather: DisplayWeatherModel
 }
 
+extension RouteWeatherPoint: Codable {
+    enum CodingKeys: String, CodingKey {
+        case coordinate_latitude, coordinate_longitude
+        case distance, eta
+        case weather_temp, weather_feelsLike, weather_humidity
+        case weather_windSpeed, weather_windDirection, weather_windDeg
+        case weather_description, weather_iconName, weather_pop
+        case weather_visibility, weather_uvIndex
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(coordinate.latitude, forKey: .coordinate_latitude)
+        try container.encode(coordinate.longitude, forKey: .coordinate_longitude)
+        try container.encode(distance, forKey: .distance)
+        try container.encode(eta, forKey: .eta)
+        try container.encode(weather.temp, forKey: .weather_temp)
+        try container.encode(weather.feelsLike, forKey: .weather_feelsLike)
+        try container.encode(weather.humidity, forKey: .weather_humidity)
+        try container.encode(weather.windSpeed, forKey: .weather_windSpeed)
+        try container.encode(weather.windDirection, forKey: .weather_windDirection)
+        try container.encode(weather.windDeg, forKey: .weather_windDeg)
+        try container.encode(weather.description, forKey: .weather_description)
+        try container.encode(weather.iconName, forKey: .weather_iconName)
+        try container.encode(weather.pop, forKey: .weather_pop)
+        try container.encodeIfPresent(weather.visibility, forKey: .weather_visibility)
+        try container.encodeIfPresent(weather.uvIndex, forKey: .weather_uvIndex)
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let latitude = try container.decode(Double.self, forKey: .coordinate_latitude)
+        let longitude = try container.decode(Double.self, forKey: .coordinate_longitude)
+        coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+        distance = try container.decode(Double.self, forKey: .distance)
+        eta = try container.decode(Date.self, forKey: .eta)
+        
+        weather = DisplayWeatherModel(
+            temp: try container.decode(Double.self, forKey: .weather_temp),
+            feelsLike: try container.decode(Double.self, forKey: .weather_feelsLike),
+            humidity: try container.decode(Int.self, forKey: .weather_humidity),
+            windSpeed: try container.decode(Double.self, forKey: .weather_windSpeed),
+            windDirection: try container.decode(String.self, forKey: .weather_windDirection),
+            windDeg: try container.decode(Int.self, forKey: .weather_windDeg),
+            description: try container.decode(String.self, forKey: .weather_description),
+            iconName: try container.decode(String.self, forKey: .weather_iconName),
+            pop: try container.decode(Double.self, forKey: .weather_pop),
+            visibility: try container.decodeIfPresent(Int.self, forKey: .weather_visibility),
+            uvIndex: try container.decodeIfPresent(Double.self, forKey: .weather_uvIndex)
+        )
+    }
+}
+
 // MARK: - Air Pollution API Models
 struct AirPollutionResponse: Codable {
     let coord: Coordinates

@@ -33,11 +33,22 @@ struct RideAnalysisView: View {
                             Label("Import FIT File", systemImage: "square.and.arrow.down")
                         }
                         if stravaService.isAuthenticated {
-                                 Button(action: { viewModel.showingStravaActivities = true }) {
-                                     Label("Import from Strava", systemImage: "square.and.arrow.down.on.square")
-                                 }
-                             }
-         
+                            Button(action: { viewModel.showingStravaActivities = true }) {
+                                Label("Import from Strava", systemImage: "square.and.arrow.down.on.square")
+                            }
+                        }
+                        // ✅ ADD THIS
+                        if viewModel.currentAnalysis != nil {
+                            Divider()
+                            Button(action: {
+                                if let analysis = viewModel.currentAnalysis {
+                                    viewModel.compareToPlans(analysis)
+                                }
+                            }) {
+                                Label("Compare to Plan", systemImage: "chart.bar.xaxis")
+                            }
+                        }
+
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
@@ -70,6 +81,12 @@ struct RideAnalysisView: View {
                 StravaActivitiesView()
                     .environmentObject(stravaService)
                     .environmentObject(weatherViewModel)
+            }
+            // ADD THIS NEW SHEET:
+            .sheet(isPresented: $viewModel.showingPlanComparison) {
+                if let analysis = viewModel.currentAnalysis {
+                    ComparisonSelectionView(analysis: analysis)
+                }
             }
             // ✅ ADD THIS - Listen for Strava imports
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NewAnalysisImported"))) { notification in
@@ -189,6 +206,42 @@ struct RideAnalysisView: View {
                         
                         // Performance Score Card
                         PerformanceScoreCard(analysis: analysis)
+                        
+                        // Comparison prompt (optional)
+                        if let analysis = viewModel.currentAnalysis {
+                            VStack(spacing: 12) {
+                                HStack {
+                                    Image(systemName: "chart.bar.xaxis")
+                                        .font(.title2)
+                                        .foregroundColor(.blue)
+                                    
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Compare to Pacing Plan")
+                                            .font(.headline)
+                                        Text("See where you could improve time")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    
+                                    Spacer()
+                                }
+                                
+                                Button(action: { viewModel.compareToPlans(analysis) }) {
+                                    Text("Compare Now")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(Color.blue)
+                                        .cornerRadius(12)
+                                }
+                            }
+                            .padding()
+                            .background(Color(.systemBackground))
+                            .cornerRadius(16)
+                            .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+                        }
                         
                         // NEW: Power Allocation Card (critical!)
                         if analysis.powerAllocation != nil {
@@ -1462,6 +1515,9 @@ class RideAnalysisViewModel: ObservableObject {
     @Published var shareItem: ShareItem?
     @Published var showingStravaActivities = false
 
+    @Published var showingPlanComparison = false
+    @Published var showingComparisonSelection = false
+    
     private let analyzer = RideFileAnalyzer()
     private let parser = FITFileParser()
     private let storage = AnalysisStorageManager()
@@ -1519,6 +1575,10 @@ class RideAnalysisViewModel: ObservableObject {
         }
     }
     
+    func compareToPlans(_ analysis: RideAnalysis) {
+        showingPlanComparison = true
+    }
+
     func loadHistory() {
         analysisHistory = storage.loadAllAnalyses()
     }

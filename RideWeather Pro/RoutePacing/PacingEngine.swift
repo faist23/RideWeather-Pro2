@@ -8,12 +8,12 @@ import CoreLocation
 
 // MARK: - Pacing Strategy Types
 
-enum PacingStrategy: CaseIterable {
-    case balanced
-    case conservative
-    case aggressive
-    case negativeSplit
-    case evenEffort
+enum PacingStrategy: String, CaseIterable, Codable {
+    case balanced = "balanced"
+    case conservative = "conservative"
+    case aggressive = "aggressive"
+    case negativeSplit = "negativeSplit"
+    case evenEffort = "evenEffort"
     
     var description: String {
         switch self {
@@ -680,3 +680,14 @@ final class PacingEngine {
         return warnings
     }
 }
+
+// At the end of PacingEngine.swift, ADD these conformances:
+//extension PacingStrategy: Codable {}
+extension DifficultyRating: Codable {}
+extension KeySegmentType: Codable {}
+
+// For KeySegment - add Codable conformance
+extension KeySegment: Codable {}
+
+// For PacedSegment - add Codable conformance
+extension PacedSegment: Codable {}

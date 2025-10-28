@@ -607,8 +607,8 @@ class RideFileAnalyzer {
         
         // 🔥 3. TERRAIN BREAKDOWN
         let climbs = terrainSegments.filter { $0.type == .climb }
-        let flats = terrainSegments.filter { $0.type == .flat || $0.type == .rolling }
-        let descents = terrainSegments.filter { $0.type == .descent }
+//        let flats = terrainSegments.filter { $0.type == .flat || $0.type == .rolling }
+//        let descents = terrainSegments.filter { $0.type == .descent }
         
         let climbTime = climbs.reduce(0.0) { $0 + $1.duration }
         let climbDist = climbs.reduce(0.0) { $0 + $1.distance }

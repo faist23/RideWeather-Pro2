@@ -41,13 +41,13 @@ final class AdvancedCyclingController: ObservableObject {
     func generateAdvancedRacePlan(
         from powerAnalysis: PowerRouteAnalysisResult,
         strategy: PacingStrategy = .balanced,
-        fuelingPreferences: FuelingPreferences = FuelingPreferences(), // Remove default init call
-        startTime: Date = Date().addingTimeInterval(7200) // 2 hours from now
+        fuelingPreferences: FuelingPreferences = FuelingPreferences(),
+        startTime: Date = Date().addingTimeInterval(7200), // 2 hours from now
+        routeName: String = "My Route"  // ✅ ADD THIS PARAMETER
     ) async {
         
         isGeneratingPlan = true
         
-        // Remove the do-catch since no errors are thrown
         print("🚴‍♂️ Generating advanced race plan...")
         
         // Step 1: Generate pacing plan
@@ -63,11 +63,14 @@ final class AdvancedCyclingController: ObservableObject {
         let energy = energyCalculator.calculateEnergyExpenditure(from: pacing)
         
         // Step 3: Generate fueling strategy
-        print("🍌 Creating fueling strategy...")
+        print("🌟 Creating fueling strategy...")
         let fueling = energyCalculator.generateFuelingStrategy(
             from: energy,
             preferences: fuelingPreferences
         )
+        
+        // ✅ SAVE THE PLAN AUTOMATICALLY
+        self.savePacingPlan(pacing, routeName: routeName)  // FIX: Use 'self' and pass routeName
         
         // Update published properties
         self.pacingPlan = pacing
@@ -339,4 +342,57 @@ extension AdvancedCyclingController {
         
         return fitData
     }
+}
+
+extension AdvancedCyclingController {
+    
+    private var planStorageKey: String { "savedPacingPlans" }
+    
+    // Save plan after generation
+    func savePacingPlan(_ plan: PacingPlan, routeName: String) {
+        let planWrapper = StoredPacingPlan(
+            id: UUID(),
+            routeName: routeName,
+            plan: plan,
+            createdDate: Date()
+        )
+        
+        var plans = loadSavedPlans()
+        plans.append(planWrapper)
+        
+        // Keep last 20 plans
+        if plans.count > 20 {
+            plans = Array(plans.suffix(20))
+        }
+        
+        if let encoded = try? JSONEncoder().encode(plans) {
+            UserDefaults.standard.set(encoded, forKey: planStorageKey)
+        }
+        
+        print("✅ Pacing plan saved: \(routeName)")
+    }
+    
+    func loadSavedPlans() -> [StoredPacingPlan] {
+        guard let data = UserDefaults.standard.data(forKey: planStorageKey),
+              let plans = try? JSONDecoder().decode([StoredPacingPlan].self, from: data) else {
+            return []
+        }
+        return plans.sorted { $0.createdDate > $1.createdDate }
+    }
+    
+    func deletePlan(_ plan: StoredPacingPlan) {
+        var plans = loadSavedPlans()
+        plans.removeAll { $0.id == plan.id }
+        
+        if let encoded = try? JSONEncoder().encode(plans) {
+            UserDefaults.standard.set(encoded, forKey: planStorageKey)
+        }
+    }
+}
+
+struct StoredPacingPlan: Codable, Identifiable {
+    let id: UUID
+    let routeName: String
+    let plan: PacingPlan
+    let createdDate: Date
 }

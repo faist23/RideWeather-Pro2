@@ -823,7 +823,7 @@ struct OptimizedPacingPlanTab: View {
         
         await viewModel.generateAdvancedCyclingPlan(
             strategy: viewModel.selectedPacingStrategy,  // Use viewModel property
-            startTime: viewModel.rideDate
+            startTime: viewModel.rideDate,
         )
 
         isGenerating = false

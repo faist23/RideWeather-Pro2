@@ -1,4 +1,3 @@
 project: RideWeather Pro.xcodeproj
-retain_public: true
 schemes:
 - RideWeather Pro

@@ -587,7 +587,8 @@ class WeatherViewModel: ObservableObject {
             from: powerAnalysis,
             strategy: strategy,
             fuelingPreferences: settings.fuelingPreferences,
-            startTime: startTime
+            startTime: startTime,
+            routeName: self.routeDisplayName
         )
         
         await MainActor.run {
