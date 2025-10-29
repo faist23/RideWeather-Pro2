@@ -350,9 +350,19 @@ extension AdvancedCyclingController {
     
     // Save plan after generation
     func savePacingPlan(_ plan: PacingPlan, routeName: String) {
+        // Append strategy abbreviation to route name
+        let strategyAbbrev: String
+        switch plan.strategy {
+        case .balanced: strategyAbbrev = "bal"
+        case .conservative: strategyAbbrev = "con"
+        case .aggressive: strategyAbbrev = "agg"
+        case .negativeSplit: strategyAbbrev = "neg"
+        case .evenEffort: strategyAbbrev = "even"
+        }
+        
         let planWrapper = StoredPacingPlan(
             id: UUID(),
-            routeName: routeName,
+            routeName: "\(routeName) (\(strategyAbbrev))",  // ✅ Strategy appended here
             plan: plan,
             createdDate: Date()
         )

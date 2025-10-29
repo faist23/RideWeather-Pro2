@@ -693,8 +693,8 @@ class RideFileAnalyzer {
             category: .performance,
             title: "📊 Ride Overview",
             description: """
-            Moving Time: \(movingMinutes)m | Elapsed: \(elapsedMinutes)m
-            Stopped: \(stoppedMinutes)m (\(Int((metadata.stoppedTime/metadata.totalTime)*100))%)
+            Moving Time: \(movingMinutes)min | Elapsed: \(elapsedMinutes)min
+            Stopped: \(stoppedMinutes)min (\(Int((metadata.stoppedTime/metadata.totalTime)*100))%)
             Distance: \(String(format: "%.1f", metadata.totalDistance)) \(metadata.distanceUnit)
             Average Speed: \(String(format: "%.1f", metadata.avgSpeed)) \(metadata.speedUnit)
             Elevation: +\(Int(metadata.elevation))\(metadata.elevationUnit)
@@ -737,7 +737,7 @@ class RideFileAnalyzer {
                 category: .pacing,
                 title: "⛰️ Climbing Analysis",
                 description: """
-                Time Climbing: \(Int(climbTime/60))m (\(Int(climbTime/metadata.movingTime*100))% of ride)
+                Time Climbing: \(Int(climbTime/60))min (\(Int(climbTime/metadata.movingTime*100))% of ride)
                 Distance: \(String(format: "%.1f", climbDist/1609.34)) miles
                 Average Power: \(Int(avgClimbPower))W (\(Int(climbPowerPct))% FTP)
                 """,
@@ -745,20 +745,30 @@ class RideFileAnalyzer {
             ))
         }
         
-        // 🔥 4. POWER ALLOCATION INSIGHT
+        // 🔥 IMPROVED: Power allocation insight
         if powerAllocation.allocationEfficiency < 90 {
             let timeSaved = Int(powerAllocation.estimatedTimeSaved)
+            let climbPercent = Int((powerAllocation.wattsUsedOnClimbs / powerAllocation.totalWatts) * 100)
+            
+            var explanation: String
+            if climbPercent < 50 {
+                explanation = "You only used \(climbPercent)% of your energy on climbs. That's the #1 place to push harder for faster times."
+            } else if climbPercent > 75 {
+                explanation = "You used \(climbPercent)% of energy climbing. While climbs are important, you may have overcooked them and fatigued yourself."
+            } else {
+                explanation = "Small power adjustments on key segments could improve your time."
+            }
+            
             insights.append(RideInsight(
                 id: UUID(),
                 priority: .high,
                 category: .efficiency,
                 title: "💡 Power Distribution Opportunity",
                 description: """
-                Allocation Efficiency: \(Int(powerAllocation.allocationEfficiency))%
-                Estimated Time Savings: ~\(timeSaved)s
-                You spent \(Int(powerAllocation.wattsUsedOnClimbs/powerAllocation.totalWatts*100))% of energy climbing
+                You could have finished ~\(timeSaved)s faster with better power distribution.
+                \(explanation)
                 """,
-                recommendation: "Push harder uphill where watts→speed is linear. Recover on flats/descents where aero dominates."
+                recommendation: "On climbs, every watt matters - physics is on your side. On flats, aero position and steady power beat surges. Descents are for recovery."
             ))
         }
         
@@ -773,7 +783,7 @@ class RideFileAnalyzer {
                 category: .fatigue,
                 title: "📉 Fatigue Detected",
                 description: """
-                Power declined at \(String(format: "%.1f", onsetMiles)) miles (\(Int(onset/60))m into ride)
+                Power declined at \(String(format: "%.1f", onsetMiles)) miles (\(Int(onset/60))min into ride)
                 This occurred \(Int(onsetPct))% through your ride
                 """,
                 recommendation: onsetPct < 50 ?
@@ -869,7 +879,7 @@ class RideFileAnalyzer {
     private func formatDuration(_ seconds: TimeInterval) -> String {
         let hours = Int(seconds) / 3600
         let minutes = (Int(seconds) % 3600) / 60
-        return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+        return hours > 0 ? "\(hours)h \(minutes)min" : "\(minutes)min"
     }
     //______________________________________________
     // MARK: - Terrain-Aware Analysis Methods
@@ -2336,6 +2346,21 @@ debugElevationCalculation(
     
     // MARK: - Helper Functions
     
+    // 🔥 ADD THIS helper function
+    private func formatDurationMinutes(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds / 60)
+        return "\(minutes)min"
+    }
+
+    private func formatDurationDetailed(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds / 60)
+        let secs = Int(seconds.truncatingRemainder(dividingBy: 60))
+        if minutes > 0 {
+            return "\(minutes):\(String(format: "%02d", secs))"
+        }
+        return "\(secs)s"
+    }
+
     private func calculateDuration(dataPoints: [FITDataPoint]) -> TimeInterval {
         guard let first = dataPoints.first, let last = dataPoints.last else { return 0 }
         return last.timestamp.timeIntervalSince(first.timestamp)

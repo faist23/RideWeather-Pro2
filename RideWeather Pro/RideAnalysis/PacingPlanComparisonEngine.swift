@@ -431,7 +431,7 @@ class PacingPlanComparisonEngine {
         let durationMins = Int(duration / 60)
         let durationSecs = Int(duration.truncatingRemainder(dividingBy: 60))
         let durationStr = durationMins > 0 ?
-            "\(durationMins):\(String(format: "%02d", durationSecs))" :
+            "\(durationMins):\(String(format: "%02d", durationSecs)) min" :
             "\(durationSecs)s"
         
         // 🔥 Build location string

@@ -10,67 +10,7 @@ import SwiftUI
 import Combine
 import Charts
 
-// MARK: - 1. Update RideAnalysisViewModel
-
-/*extension RideAnalysisViewModel {
-    
-    // Add these properties
-    @Published var showingPlanComparison = false
-    @Published var showingComparisonSelection = false
-    
-    // Add this function
-    func compareToPlans(_ analysis: RideAnalysis) {
-        showingComparisonSelection = true
-    }
-}*/
-
-// MARK: - 2. Update RideAnalysisView Toolbar
-
-/*
-Add this to your RideAnalysisView toolbar section:
-
-.toolbar {
-    ToolbarItem(placement: .navigationBarTrailing) {
-        Menu {
-            Button(action: { viewModel.showingHistory = true }) {
-                Label("View History", systemImage: "clock")
-            }
-            Button(action: { viewModel.showingFilePicker = true }) {
-                Label("Import FIT File", systemImage: "square.and.arrow.down")
-            }
-            if stravaService.isAuthenticated {
-                Button(action: { viewModel.showingStravaActivities = true }) {
-                    Label("Import from Strava", systemImage: "square.and.arrow.down.on.square")
-                }
-            }
-            
-            // ✅ ADD THIS
-            if viewModel.currentAnalysis != nil {
-                Divider()
-                Button(action: {
-                    if let analysis = viewModel.currentAnalysis {
-                        viewModel.compareToPlans(analysis)
-                    }
-                }) {
-                    Label("Compare to Plan", systemImage: "chart.bar.xaxis")
-                }
-            }
- 
-        } label: {
-            Image(systemName: "ellipsis.circle")
-        }
-    }
-}
-
-// ✅ ADD THIS SHEET
-.sheet(isPresented: $viewModel.showingComparisonSelection) {
-    if let analysis = viewModel.currentAnalysis {
-        ComparisonSelectionView(analysis: analysis)
-    }
-}
-*/
-
-// MARK: - 3. Add Comparison Card to Analysis Results
+// Add Comparison Card to Analysis Results
 
 struct ComparisonPromptCard: View {
     let analysis: RideAnalysis
@@ -111,63 +51,6 @@ struct ComparisonPromptCard: View {
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 }
-
-/*
-Add this card in your analysisResultsView, after the PerformanceScoreCard:
-
-// Add comparison prompt
-if viewModel.currentAnalysis != nil {
-    ComparisonPromptCard(
-        analysis: analysis,
-        onCompare: { viewModel.compareToPlans(analysis) }
-    )
-}
-*/
-
-/*// MARK: - 4. Store Pacing Plans for Future Comparison
-
-extension AdvancedCyclingController {
-    
-    // Add this storage manager
-    private var planStorageKey: String { "savedPacingPlans" }
-    
-    // Save plan after generation
-    func savePacingPlan(_ plan: PacingPlan, routeName: String) {
-        let planWrapper = StoredPacingPlan(
-            id: UUID(),
-            routeName: routeName,
-            plan: plan,
-            createdDate: Date()
-        )
-        
-        var plans = loadSavedPlans()
-        plans.append(planWrapper)
-        
-        // Keep last 20 plans
-        if plans.count > 20 {
-            plans = Array(plans.suffix(20))
-        }
-        
-        if let encoded = try? JSONEncoder().encode(plans) {
-            UserDefaults.standard.set(encoded, forKey: planStorageKey)
-        }
-    }
-    
-    func loadSavedPlans() -> [StoredPacingPlan] {
-        guard let data = UserDefaults.standard.data(forKey: planStorageKey),
-              let plans = try? JSONDecoder().decode([StoredPacingPlan].self, from: data) else {
-            return []
-        }
-        return plans.sorted { $0.createdDate > $1.createdDate }
-    }
-}
-
-struct StoredPacingPlan: Codable, Identifiable {
-    let id: UUID
-    let routeName: String
-    let plan: PacingPlan
-    let createdDate: Date
-}*/
 
 
 // MARK: - 5. Updated ComparisonSelectionViewModel
@@ -214,7 +97,7 @@ class ComparisonSelectionViewModelComplete: ObservableObject {
     }
 }
 
-// MARK: - 6. Comparison History View
+// Comparison History View
 
 struct ComparisonHistoryView: View {
     @StateObject private var viewModel = ComparisonHistoryViewModel()
@@ -332,9 +215,9 @@ struct ComparisonHistoryRow: View {
         let minutes = (Int(seconds) % 3600) / 60
         
         if hours > 0 {
-            return "\(hours)h \(minutes)m"
+            return "\(hours)h \(minutes)min"
         } else {
-            return "\(minutes)m"
+            return "\(minutes)min"
         }
     }
 }
@@ -357,60 +240,6 @@ class ComparisonHistoryViewModel: ObservableObject {
         loadComparisons()
     }
 }
-
-// MARK: - 7. Example: Full Integration Flow
-
-/*
-=============================================================================
-COMPLETE INTEGRATION EXAMPLE
-=============================================================================
-
-1. After generating a pacing plan, save it:
-
-```swift
-// In your route planning view after generating plan
-let controller = AdvancedCyclingController(settings: settings)
-await controller.generateAdvancedRacePlan(...)
-
-// Save the plan
-if let plan = controller.pacingPlan {
-    controller.savePacingPlan(plan, routeName: "My Route")
-}
-```
-
-2. After importing a ride (FIT or Strava), show comparison option:
-
-```swift
-// In RideAnalysisView after analysis completes
-if let analysis = viewModel.currentAnalysis {
-    // Show the comparison prompt card
-    ComparisonPromptCard(
-        analysis: analysis,
-        onCompare: { viewModel.compareToPlans(analysis) }
-    )
-}
-```
-
-3. User selects a plan to compare:
-
-```swift
-// ComparisonSelectionView shows available plans
-// User taps one → comparison is generated and displayed
-```
-
-4. View detailed comparison:
-
-```swift
-// PacingComparisonView shows:
-// - Performance grade (A+ to F)
-// - Segment-by-segment power comparison
-// - Time savings opportunities
-// - Actionable insights
-// - Export options
-```
-
-=============================================================================
-*/
 
 // MARK: - 8. Quick Comparison from Ride History
 
@@ -436,47 +265,17 @@ extension RideHistoryView {
 
 class SmartComparisonMatcher {
     
-    /// Automatically find the best matching plan for a ride based on:
-    /// - Distance similarity
-    /// - Elevation similarity
-    /// - Route characteristics
+    /// Automatically find the best matching plan for a ride
     func findBestMatch(
         for analysis: RideAnalysis,
         from plans: [StoredPacingPlan]
     ) -> StoredPacingPlan? {
         
-        guard !plans.isEmpty else { return nil }
-        
-        let rideDistance = analysis.distance / 1000.0 // km
-        let rideElevation = analysis.metadata?.elevationGain ?? 0
-        
-        // Score each plan
-        let scored = plans.map { plan -> (plan: StoredPacingPlan, score: Double) in
-            // Distance similarity (50% weight)
-            let distanceDiff = abs(plan.plan.totalDistance - rideDistance)
-            let distanceScore = max(0, 1.0 - (distanceDiff / rideDistance))
-            
-            // Elevation similarity (30% weight)
-            let planElevation = plan.plan.summary.totalElevation
-            let elevationDiff = abs(planElevation - rideElevation)
-            let elevationScore = rideElevation > 0 ?
-                max(0, 1.0 - (elevationDiff / rideElevation)) : 0.5
-            
-            // Time similarity (20% weight)
-            let rideDuration = analysis.duration / 60.0 // minutes
-            let timeDiff = abs(plan.plan.totalTimeMinutes - rideDuration)
-            let timeScore = max(0, 1.0 - (timeDiff / rideDuration))
-            
-            let totalScore = (distanceScore * 0.5) + (elevationScore * 0.3) + (timeScore * 0.2)
-            
-            return (plan, totalScore)
-        }
-        
-        // Return best match if score is > 0.7 (70% match)
-        let best = scored.max { $0.score < $1.score }
-        return (best?.score ?? 0) > 0.7 ? best?.plan : nil
+        let matcher = SmartPlanMatcher()
+        return matcher.findBestMatch(for: analysis, from: plans)
     }
 }
+
 
 // MARK: - 10. Notification Integration
 
@@ -667,44 +466,3 @@ struct StatBox: View {
 private var cardBackground: some View {
     Color(.systemBackground)
 }
-
-/*
-=============================================================================
-USAGE SUMMARY
-=============================================================================
-
-1. GENERATE PACING PLAN:
-   - User creates route
-   - App generates power-based pacing plan
-   - Plan is automatically saved
-
-2. IMPORT ACTUAL RIDE:
-   - User imports FIT file or Strava activity
-   - App analyzes actual performance
-   - Comparison option appears
-
-3. SELECT PLAN TO COMPARE:
-   - User taps "Compare to Plan"
-   - App shows matching saved plans
-   - Smart matching suggests best fit
-
-4. VIEW COMPARISON:
-   - Detailed segment-by-segment analysis
-   - Performance grade (A+ to F)
-   - Time savings opportunities
-   - Actionable recommendations
-
-5. TRACK IMPROVEMENT:
-   - History of all comparisons
-   - Performance trends over time
-   - Grade improvements
-
-This creates a complete feedback loop for cyclists to:
-- Plan their race/ride strategy
-- Execute the plan
-- Analyze what worked/didn't work
-- Learn where to improve
-- Track progress over time
-
-=============================================================================
-*/

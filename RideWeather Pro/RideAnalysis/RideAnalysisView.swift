@@ -760,30 +760,31 @@ struct ActionableSegmentInsightRow: View {
             }
             
             if isExpanded {
-                Divider()
-                
-                // Details
-                Text(insight.details)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.vertical, 4)
-                
-                // Recommendation
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "lightbulb.fill")
-                        .font(.caption)
-                        .foregroundColor(.yellow)
+                VStack(alignment: .leading, spacing: 8) {
+                    Divider()
                     
-                    Text(insight.recommendation)
+                    // Details
+                    Text(insight.details)
                         .font(.caption)
-                        .foregroundColor(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 4)
+                    
+                    // Recommendation
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.caption)
+                            .foregroundColor(.yellow)
+                        
+                        Text(insight.recommendation)
+                            .font(.caption)
+                            .foregroundColor(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(8)
+                    .background(Color.yellow.opacity(0.1))
+                    .cornerRadius(6)
                 }
-                .padding(8)
-                .background(Color.yellow.opacity(0.1))
-                .cornerRadius(6)
             }
-            
             Button(action: {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     isExpanded.toggle()
@@ -849,50 +850,143 @@ struct TerrainSegmentRow: View {
     }
 }
 
-// MARK: - Power Allocation Card
+// MARK: - Power Allocation Card - REDESIGNED for Clarity
 
 struct PowerAllocationCard: View {
     let analysis: RideAnalysis
     
+    private var timeSavingsMessage: String {
+        guard let allocation = analysis.powerAllocation else { return "" }
+        
+        let seconds = allocation.estimatedTimeSaved
+        if seconds < 5 {
+            return "You distributed power efficiently for the terrain"
+        } else if seconds < 30 {
+            return "Small adjustments could save ~\(Int(seconds))s"
+        } else if seconds < 60 {
+            return "Better power distribution could save ~\(Int(seconds))s"
+        } else {
+            let minutes = Int(seconds / 60)
+            let secs = Int(seconds.truncatingRemainder(dividingBy: 60))
+            return "You could have finished \(minutes):\(String(format: "%02d", secs)) faster"
+        }
+    }
+    
+    private var mainIssue: String? {
+        guard let allocation = analysis.powerAllocation else { return nil }
+        
+        // Calculate where power was allocated
+        let climbPercent = (allocation.wattsUsedOnClimbs / allocation.totalWatts) * 100
+        let flatPercent = (allocation.wattsUsedOnFlats / allocation.totalWatts) * 100
+        
+        // Typical optimal split is 60-70% climbing, 30-40% flats for hilly routes
+        if climbPercent < 50 && allocation.estimatedTimeSaved > 10 {
+            return "You held back too much on climbs. That's where watts = speed."
+        } else if flatPercent > 50 && allocation.estimatedTimeSaved > 10 {
+            return "You used too much energy on flats. Save it for the climbs."
+        }
+        
+        return nil
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Power Distribution Analysis")
+            Text("Power Strategy Analysis")
                 .font(.headline)
             
             if let allocation = analysis.powerAllocation {
                 VStack(spacing: 16) {
-                    // Efficiency Score
-                    HStack {
-                        Text("Allocation Efficiency")
-                            .font(.subheadline)
-                        Spacer()
-                        Text("\(Int(allocation.allocationEfficiency))%")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(efficiencyColor(allocation.allocationEfficiency))
-                    }
-                    
-                    // Time savings potential
-                    if allocation.estimatedTimeSaved > 5 {
-                        HStack(spacing: 8) {
-                            Image(systemName: "clock.arrow.circlepath")
-                                .foregroundColor(.orange)
-                            VStack(alignment: .leading) {
-                                Text("Potential Time Savings")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Text("~\(formatTimeSaved(allocation.estimatedTimeSaved))")
+                    // Main message - what does this mean?
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: allocation.estimatedTimeSaved > 10 ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                                .foregroundColor(allocation.estimatedTimeSaved > 10 ? .orange : .green)
+                                .font(.title2)
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(timeSavingsMessage)
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
+                                
+                                if let issue = mainIssue {
+                                    Text(issue)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
-                        .padding()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.orange.opacity(0.1))
-                        .cornerRadius(8)
                     }
                     
                     Divider()
+                    
+                    // Visual breakdown of where power went
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Where Your Energy Went")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        
+                        PowerBreakdownBar(
+                            climbWatts: allocation.wattsUsedOnClimbs,
+                            flatWatts: allocation.wattsUsedOnFlats,
+                            descentWatts: allocation.wattsUsedOnDescents,
+                            totalWatts: allocation.totalWatts
+                        )
+                        
+                        // Explanation of what this means
+                        if allocation.estimatedTimeSaved > 10 {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(alignment: .top, spacing: 8) {
+                                    Image(systemName: "lightbulb.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.yellow)
+                                    
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Why This Matters")
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                        
+                                        Text("On climbs, every extra watt directly makes you faster. On flats, aero position matters more than raw power. Push harder uphill, recover on flats.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+                            }
+                            .padding(10)
+                            .background(Color.yellow.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+                    }
+                    
+                    // Show specific recommendations if available
+                    if !allocation.recommendations.isEmpty {
+                        Divider()
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Specific Opportunities")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            
+                            ForEach(allocation.recommendations.prefix(3), id: \.segment.id) { rec in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text(rec.segment.type.emoji)
+                                        .font(.title3)
+                                    
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("\(Int(rec.segment.distance))m \(rec.segment.type.rawValue)")
+                                            .font(.caption)
+                                            .fontWeight(.medium)
+                                        
+                                        Text("Push \(Int(rec.optimalPower - rec.actualPower))W harder → save ~\(Int(rec.timeLost))s")
+                                            .font(.caption)
+                                            .foregroundColor(.orange)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+/*                    Divider()
                     
                     // Power breakdown
                     Text("Where Your Watts Went")
@@ -904,7 +998,7 @@ struct PowerAllocationCard: View {
                         flatWatts: allocation.wattsUsedOnFlats,
                         descentWatts: allocation.wattsUsedOnDescents,
                         totalWatts: allocation.totalWatts
-                    )
+                    )*/
                 }
             }
         }
