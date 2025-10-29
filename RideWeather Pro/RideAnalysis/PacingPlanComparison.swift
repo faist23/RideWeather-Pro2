@@ -2,16 +2,18 @@
 //  PacingPlanComparison.swift
 //  RideWeather Pro
 //
-//  Created by Craig Faist on 10/27/25.
-//
-
-
-//
-//  PacingPlanComparison.swift
-//  RideWeather Pro
-//
 
 import Foundation
+
+struct SegmentContext: Codable {
+    let issues: [String]
+    let likelyReason: String?
+    let durationSeconds: TimeInterval
+    
+    var hasIssues: Bool {
+        return !issues.isEmpty
+    }
+}
 
 struct PacingPlanComparison: Codable, Identifiable {
     let id: UUID
@@ -71,10 +73,15 @@ struct PacingPlanComparison: Codable, Identifiable {
         let deviation: Double // percentage
         let timeLost: TimeInterval
         let grade: SegmentGrade
+        let locationMiles: Double      // 🔥 ADD THIS
+        let locationKm: Double          // 🔥 ADD THIS
+        let contextIssues: [String]     // 🔥 ADD THIS
+        let contextReason: String?      // 🔥 ADD THIS
         
         init(id: UUID = UUID(), segmentIndex: Int, segmentName: String,
              plannedPower: Double, actualPower: Double, deviation: Double,
-             timeLost: TimeInterval, grade: SegmentGrade) {
+             timeLost: TimeInterval, grade: SegmentGrade,
+             locationMiles: Double, locationKm: Double, context: SegmentContext) {
             self.id = id
             self.segmentIndex = segmentIndex
             self.segmentName = segmentName
@@ -83,6 +90,10 @@ struct PacingPlanComparison: Codable, Identifiable {
             self.deviation = deviation
             self.timeLost = timeLost
             self.grade = grade
+            self.locationMiles = locationMiles
+            self.locationKm = locationKm
+            self.contextIssues = context.issues
+            self.contextReason = context.likelyReason
         }
     }
     

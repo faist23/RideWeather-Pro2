@@ -53,7 +53,7 @@ class PacingPlanComparisonEngine {
     
     // MARK: - Opportunity Identification
     
-    private func identifyTimeOpportunities(
+/*    private func identifyTimeOpportunities(
         plannedSegments: [PacedSegment],
         actualSegments: [TerrainSegment],
         ftp: Double
@@ -99,10 +99,13 @@ class PacingPlanComparisonEngine {
                 )
                 
                 let segmentName = formatSegmentName(
-                    index: index,
                     type: actualSegment.type,
                     distance: actualSegment.distance,
-                    gradient: actualSegment.gradient
+                    gradient: actualSegment.gradient,
+                    locationMiles: locationMiles,
+                    locationKm: locationKm,
+                    duration: actualSegment.duration,
+                    context: context
                 )
                 
                 opportunities.append(PacingPlanComparison.SegmentResult(
@@ -121,7 +124,7 @@ class PacingPlanComparisonEngine {
         
         // Sort by time impact (biggest opportunities first)
         return opportunities.sorted { abs($0.timeLost) > abs($1.timeLost) }
-    }
+    }*/
     
     private func findMatchingPlannedSegment(
         at distance: Double,
@@ -204,20 +207,253 @@ class PacingPlanComparisonEngine {
     }
     
     private func formatSegmentName(
-        index: Int,
         type: TerrainSegment.TerrainType,
         distance: Double,
-        gradient: Double
+        gradient: Double,
+        locationMiles: Double,
+        locationKm: Double,
+        duration: TimeInterval,
+        context: SegmentContext
     ) -> String {
+        // Format distance
         let distanceStr = distance > 1000 ?
             String(format: "%.1fkm", distance / 1000) :
             "\(Int(distance))m"
         
-        let gradeStr = String(format: "%.1f%%", gradient * 100)
+        // Format gradient
+        let gradeStr = String(format: "%.1f%%", abs(gradient) * 100)
         
-        return "\(type.emoji) \(type.rawValue) • \(distanceStr) at \(gradeStr)"
+        // Format duration
+        let durationMins = Int(duration / 60)
+        let durationSecs = Int(duration.truncatingRemainder(dividingBy: 60))
+        let durationStr = durationMins > 0 ?
+            "\(durationMins):\(String(format: "%02d", durationSecs))" :
+            "\(durationSecs)s"
+        
+        // Build location string
+        let location = "Mile \(String(format: "%.1f", locationMiles))"
+        
+        // Add context flag if there's an issue
+        let contextFlag = context.issues.isEmpty ? "" : " ⚠️"
+        
+        return "\(location) • \(type.emoji) \(type.rawValue) • \(distanceStr) at \(gradeStr) • \(durationStr)\(contextFlag)"
     }
     
+    
+    private func identifyTimeOpportunities(
+        plannedSegments: [PacedSegment],
+        actualSegments: [TerrainSegment],
+        ftp: Double
+    ) -> [PacingPlanComparison.SegmentResult] {
+        
+        var opportunities: [PacingPlanComparison.SegmentResult] = []
+        
+        // Track cumulative distance for location context
+        var cumulativeDistanceMeters: Double = 0
+        var cumulativeDistanceMiles: Double = 0
+        
+        for (index, actualSegment) in actualSegments.enumerated() {
+            // Calculate location at START of segment
+            let locationMiles = cumulativeDistanceMiles
+            let locationKm = cumulativeDistanceMeters / 1000
+            
+            // Find corresponding planned segment
+            let plannedSegment = findMatchingPlannedSegment(
+                at: cumulativeDistanceMeters,
+                in: plannedSegments
+            )
+            
+            guard let planned = plannedSegment else {
+                cumulativeDistanceMeters += actualSegment.distance
+                cumulativeDistanceMiles += actualSegment.distance / 1609.34
+                continue
+            }
+            
+            // Calculate what the rider actually did vs what was planned
+            let actualPower = actualSegment.averagePower
+            let plannedPower = planned.targetPower
+            let deviation = ((actualPower - plannedPower) / plannedPower) * 100
+            
+            // Estimate time lost/gained
+            let timeLost = estimateTimeDifference(
+                actualPower: actualPower,
+                plannedPower: plannedPower,
+                distance: actualSegment.distance,
+                gradient: actualSegment.gradient,
+                duration: actualSegment.duration
+            )
+            
+            // 🔥 Detect potential issues (stops, misclassified terrain, etc.)
+            let context = analyzeSegmentContext(
+                actualSegment: actualSegment,
+                plannedPower: plannedPower,
+                actualPower: actualPower,
+                ftp: ftp
+            )
+            
+            // Only add if it's a meaningful opportunity (>3 seconds)
+            if abs(timeLost) > 3 {
+                let grade = gradeSegmentExecution(
+                    deviation: deviation,
+                    terrainType: actualSegment.type,
+                    timeLost: timeLost/*,
+                    context: context*/
+                )
+                
+                let segmentName = formatSegmentName(
+                    index: index,
+                    type: actualSegment.type,
+                    distance: actualSegment.distance,
+                    gradient: actualSegment.gradient,
+                    locationMiles: locationMiles,
+                    locationKm: locationKm,
+                    duration: actualSegment.duration,
+                    context: context
+                )
+                
+                opportunities.append(PacingPlanComparison.SegmentResult(
+                    segmentIndex: index,
+                    segmentName: segmentName,
+                    plannedPower: plannedPower,
+                    actualPower: actualPower,
+                    deviation: deviation,
+                    timeLost: timeLost,
+                    grade: grade,
+                    locationMiles: locationMiles,  // 🔥 ADD THIS
+                    locationKm: locationKm,        // 🔥 ADD THIS
+                    context: context               // 🔥 ADD THIS
+                ))
+            }
+            
+            cumulativeDistanceMeters += actualSegment.distance
+            cumulativeDistanceMiles += actualSegment.distance / 1609.34
+        }
+        
+        // Sort by time impact (biggest opportunities first)
+        return opportunities.sorted { abs($0.timeLost) > abs($1.timeLost) }
+    }
+
+    // 🔥 NEW: Analyze segment context to detect anomalies
+    private func analyzeSegmentContext(
+        actualSegment: TerrainSegment,
+        plannedPower: Double,
+        actualPower: Double,
+        ftp: Double
+    ) -> SegmentContext {
+        
+        var issues: [String] = []
+        var likelyReason: String?
+        
+        // Detect very low power (possible stop/slow down)
+        if actualPower < plannedPower * 0.5 && actualSegment.duration > 20 {
+            issues.append("Very low power")
+            likelyReason = "Possible traffic stop, intersection, or mechanical issue"
+        }
+        
+        // Detect misclassified flat (high power on "flat")
+        if actualSegment.type == .flat && actualPower > ftp * 0.95 && actualSegment.duration > 30 {
+            issues.append("High power on flat")
+            likelyReason = "This may actually be a climb - check the route profile"
+        }
+        
+        // Detect coasting on descent (very low power)
+        if actualSegment.type == .descent && actualPower < 50 {
+            issues.append("Coasting")
+            likelyReason = "Normal for descents - focus on aero position"
+        }
+        
+        // Detect unsustainable power (way above threshold)
+        if actualPower > ftp * 1.20 && actualSegment.duration > 60 {
+            issues.append("Unsustainable effort")
+            likelyReason = "This hard effort will cause fatigue later"
+        }
+        
+        // Detect terrain mismatch
+        let expectedPowerForTerrain = estimateExpectedPower(
+            terrainType: actualSegment.type,
+            gradient: actualSegment.gradient,
+            ftp: ftp
+        )
+        
+        let powerDiscrepancy = abs(actualPower - expectedPowerForTerrain) / expectedPowerForTerrain
+        if powerDiscrepancy > 0.4 && actualSegment.duration > 30 {
+            issues.append("Unexpected power for terrain")
+            if actualPower > expectedPowerForTerrain {
+                likelyReason = "Terrain may be steeper than classified"
+            } else {
+                likelyReason = "Check for traffic, stops, or route obstacles"
+            }
+        }
+        
+        return SegmentContext(
+            issues: issues,
+            likelyReason: likelyReason,
+            durationSeconds: actualSegment.duration
+        )
+    }
+
+    private func estimateExpectedPower(
+        terrainType: TerrainSegment.TerrainType,
+        gradient: Double,
+        ftp: Double
+    ) -> Double {
+        switch terrainType {
+        case .climb:
+            if gradient > 0.08 { return ftp * 0.95 }
+            if gradient > 0.05 { return ftp * 0.85 }
+            return ftp * 0.80
+        case .flat, .rolling:
+            return ftp * 0.75
+        case .descent:
+            return ftp * 0.40
+        }
+    }
+
+    private func formatSegmentName(
+        index: Int,
+        type: TerrainSegment.TerrainType,
+        distance: Double,
+        gradient: Double,
+        locationMiles: Double,
+        locationKm: Double,
+        duration: TimeInterval,
+        context: SegmentContext
+    ) -> String {
+        // Format distance
+        let distanceStr = distance > 1000 ?
+            String(format: "%.1fkm", distance / 1000) :
+            "\(Int(distance))m"
+        
+        // Format gradient
+        let gradeStr = String(format: "%.1f%%", abs(gradient) * 100)
+        
+        // Format duration
+        let durationMins = Int(duration / 60)
+        let durationSecs = Int(duration.truncatingRemainder(dividingBy: 60))
+        let durationStr = durationMins > 0 ?
+            "\(durationMins):\(String(format: "%02d", durationSecs))" :
+            "\(durationSecs)s"
+        
+        // 🔥 Build location string
+        let location = "Mile \(String(format: "%.1f", locationMiles))"
+        
+        // 🔥 Add context flag if there's an issue
+        let contextFlag = context.issues.isEmpty ? "" : " ⚠️"
+        
+        return "\(location) • \(type.emoji) \(type.rawValue) • \(distanceStr) at \(gradeStr) • \(durationStr)\(contextFlag)"
+    }
+
+/*    // Define context structure
+    struct SegmentContext {
+        let issues: [String]
+        let likelyReason: String?
+        let durationSeconds: TimeInterval
+        
+        var hasIssues: Bool {
+            return !issues.isEmpty
+        }
+    }*/
+
     // MARK: - Metrics Calculation
     
     private func calculateOverallPowerEfficiency(

@@ -152,14 +152,23 @@ struct PacingComparisonView: View {
                                 .fontWeight(.medium)
                                 .foregroundColor(.primary)
                             
-                            if result.timeLost > 0 {
-                                Text("↑ \(formatTime(result.timeLost)) slower than plan")
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                            } else {
-                                Text("↓ \(formatTime(abs(result.timeLost))) faster than plan")
-                                    .font(.caption)
-                                    .foregroundColor(.green)
+                            HStack(spacing: 8) {
+                                if result.timeLost > 0 {
+                                    Text("↑ \(formatTime(result.timeLost)) slower")
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                } else {
+                                    Text("↓ \(formatTime(abs(result.timeLost))) faster")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                }
+                                
+                                // 🔥 Show context issues
+                                if !result.contextIssues.isEmpty {
+                                    Text("• \(result.contextIssues.joined(separator: ", "))")
+                                        .font(.caption)
+                                        .foregroundColor(.orange)
+                                }
                             }
                         }
                         
@@ -176,6 +185,7 @@ struct PacingComparisonView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Divider()
                         
+                        // Power comparison
                         HStack(spacing: 20) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Your Power")
@@ -209,8 +219,25 @@ struct PacingComparisonView: View {
                             }
                         }
                         
+                        // 🔥 Show context reason if available
+                        if let reason = result.contextReason {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "info.circle.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                                
+                                Text(reason)
+                                    .font(.caption)
+                                    .foregroundColor(.primary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .padding(8)
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(6)
+                        }
+                        
                         // Actionable recommendation
-                        if abs(result.deviation) > 5 {
+                        if abs(result.deviation) > 5 && result.contextIssues.isEmpty {
                             HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: "lightbulb.fill")
                                     .font(.caption)

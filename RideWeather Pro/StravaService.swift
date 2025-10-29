@@ -84,7 +84,7 @@ struct StravaActivity: Codable, Identifiable {
 }
 
 
-struct StravaActivityDetail: Codable {
+/*struct StravaActivityDetail: Codable {
     let id: Int
     let name: String
     let distance: Double
@@ -106,7 +106,7 @@ struct StravaActivityDetail: Codable {
         let average_speed: Double
         let average_watts: Double?
     }
-}
+}*/
 
 // MARK: - Strava Streams Models (add after StravaActivityDetail)
 
@@ -678,7 +678,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     }
 
     /// Fetches detailed activity data including power streams
-    func fetchActivityDetail(activityId: Int) async throws -> StravaActivityDetail {
+/*    func fetchActivityDetail(activityId: Int) async throws -> StravaActivityDetail {
         try await refreshTokenIfNeededAsync()
         
         guard let accessToken = currentTokens?.accessToken else {
@@ -698,7 +698,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         }
         
         return try JSONDecoder().decode(StravaActivityDetail.self, from: data)
-    }
+    }*/
 
     // MARK: - Helper Methods
 
