@@ -9,9 +9,16 @@ import Combine
 // MARK: - Main Analysis View
 
 struct RideAnalysisView: View {
-    @StateObject private var viewModel = RideAnalysisViewModel()
+    @StateObject private var viewModel: RideAnalysisViewModel  // Change this
     @ObservedObject var weatherViewModel: WeatherViewModel
     @EnvironmentObject var stravaService: StravaService
+
+    // 🔥 ADD CUSTOM INIT
+    init(weatherViewModel: WeatherViewModel) {
+        self.weatherViewModel = weatherViewModel
+        // Create the viewModel with settings
+        self._viewModel = StateObject(wrappedValue: RideAnalysisViewModel(settings: weatherViewModel.settings))
+    }
 
     var body: some View {
         NavigationView {
@@ -544,15 +551,104 @@ private var cardBackground: some View {
 struct TerrainSegmentsCard: View {
     let analysis: RideAnalysis
     
+    private var actionableSegments: [ActionableSegmentInsight] {
+        guard let segments = analysis.terrainSegments else { return [] }
+        
+        var insights: [ActionableSegmentInsight] = []
+        
+        // Group segments by type and find the most impactful opportunities
+        let climbs = segments.filter { $0.type == .climb }
+        let flats = segments.filter { $0.type == .flat || $0.type == .rolling }
+        
+        // Find significant climbs where power was too low
+        let underPoweredClimbs = climbs.filter {
+            $0.duration > 60 && // At least 1 minute
+            $0.powerEfficiency < 85 && // Less than 85% of optimal
+            $0.distance > 200 // At least 200m
+        }.sorted {
+            // Sort by potential time savings
+            ($0.optimalPowerForTime - $0.averagePower) * $0.duration >
+            ($1.optimalPowerForTime - $1.averagePower) * $1.duration
+        }
+        
+        // Add climb insights (top 3)
+        for climb in underPoweredClimbs.prefix(3) {
+            let timeLost = estimateTimeLost(
+                actualPower: climb.averagePower,
+                optimalPower: climb.optimalPowerForTime,
+                distance: climb.distance,
+                grade: climb.gradient
+            )
+            
+            if timeLost > 3 { // Only show if >3 seconds lost
+                insights.append(ActionableSegmentInsight(
+                    title: "Climb at \(formatDistance(climb.distance))",
+                    terrainType: climb.type,
+                    issue: "Left time on the table",
+                    details: """
+                    Grade: \(String(format: "%.1f%%", climb.gradient * 100))
+                    Duration: \(formatDuration(climb.duration))
+                    You averaged: \(Int(climb.averagePower))W
+                    Optimal would be: \(Int(climb.optimalPowerForTime))W
+                    """,
+                    impact: "~\(Int(timeLost))s slower than optimal",
+                    recommendation: "On climbs this steep, push \(Int(climb.optimalPowerForTime - climb.averagePower))W harder. Watts translate almost linearly to speed uphill.",
+                    priority: timeLost > 15 ? .high : .medium
+                ))
+            }
+        }
+        
+        // Find flats where power was too variable or too high
+        let inefficientFlats = flats.filter {
+            $0.duration > 120 && // At least 2 minutes
+            ($0.powerEfficiency > 110 || $0.powerEfficiency < 70)
+        }
+        
+        for flat in inefficientFlats.prefix(2) {
+            if flat.powerEfficiency > 110 {
+                insights.append(ActionableSegmentInsight(
+                    title: "Flat section at \(formatDistance(flat.distance))",
+                    terrainType: flat.type,
+                    issue: "Wasted energy",
+                    details: """
+                    Duration: \(formatDuration(flat.duration))
+                    You averaged: \(Int(flat.averagePower))W
+                    More efficient: \(Int(flat.optimalPowerForTime))W
+                    """,
+                    impact: "Energy wasted that could be saved for climbs",
+                    recommendation: "On flats, aero matters more than power. Focus on position and steady effort around \(Int(flat.optimalPowerForTime))W.",
+                    priority: .medium
+                ))
+            }
+        }
+        
+        return insights
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Power by Terrain")
+            Text("Where You Can Improve")
                 .font(.headline)
             
-            if let segments = analysis.terrainSegments, !segments.isEmpty {
+            if actionableSegments.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.largeTitle)
+                        .foregroundColor(.green)
+                    Text("Well-executed ride!")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Text("Your power distribution was efficient for the terrain")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+            } else {
                 VStack(spacing: 12) {
-                    ForEach(segments.filter { $0.duration > 30 }.prefix(8)) { segment in
-                        TerrainSegmentRow(segment: segment)
+                    ForEach(actionableSegments) { insight in
+                        ActionableSegmentInsightRow(insight: insight)
                     }
                 }
             }
@@ -561,6 +657,151 @@ struct TerrainSegmentsCard: View {
         .background(cardBackground)
         .cornerRadius(16)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+    
+    private func formatDistance(_ meters: Double) -> String {
+        if meters >= 1000 {
+            return String(format: "%.1fkm", meters / 1000)
+        }
+        return "\(Int(meters))m"
+    }
+    
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        if minutes > 0 {
+            return "\(minutes):\(String(format: "%02d", secs))"
+        }
+        return "\(secs)s"
+    }
+    
+    private func estimateTimeLost(actualPower: Double, optimalPower: Double, distance: Double, grade: Double) -> TimeInterval {
+        guard actualPower > 0 && optimalPower > 0 else { return 0 }
+        
+        // On climbs, power is roughly linear with speed
+        let powerRatio = optimalPower / actualPower
+        let speedImprovement = pow(powerRatio, 0.33) // Physics approximation
+        
+        let estimatedSpeed = actualPower / 10.0 // Very rough m/s estimate
+        let actualTime = distance / estimatedSpeed
+        let optimalTime = distance / (estimatedSpeed * speedImprovement)
+        
+        return max(0, actualTime - optimalTime)
+    }
+}
+
+struct ActionableSegmentInsight: Identifiable {
+    let id = UUID()
+    let title: String
+    let terrainType: TerrainSegment.TerrainType
+    let issue: String
+    let details: String
+    let impact: String
+    let recommendation: String
+    let priority: Priority
+    
+    enum Priority {
+        case high, medium, low
+        
+        var color: Color {
+            switch self {
+            case .high: return .red
+            case .medium: return .orange
+            case .low: return .blue
+            }
+        }
+        
+        var icon: String {
+            switch self {
+            case .high: return "exclamationmark.triangle.fill"
+            case .medium: return "info.circle.fill"
+            case .low: return "lightbulb.fill"
+            }
+        }
+    }
+}
+
+struct ActionableSegmentInsightRow: View {
+    let insight: ActionableSegmentInsight
+    @State private var isExpanded = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack {
+                Image(systemName: insight.terrainType.emoji)
+                    .font(.title3)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(insight.title)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    
+                    Text(insight.issue)
+                        .font(.caption)
+                        .foregroundColor(insight.priority.color)
+                }
+                
+                Spacer()
+                
+                Image(systemName: insight.priority.icon)
+                    .foregroundColor(insight.priority.color)
+                    .font(.title3)
+            }
+            
+            // Impact
+            HStack {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(insight.impact)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            if isExpanded {
+                Divider()
+                
+                // Details
+                Text(insight.details)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 4)
+                
+                // Recommendation
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "lightbulb.fill")
+                        .font(.caption)
+                        .foregroundColor(.yellow)
+                    
+                    Text(insight.recommendation)
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(8)
+                .background(Color.yellow.opacity(0.1))
+                .cornerRadius(6)
+            }
+            
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            }) {
+                HStack {
+                    Text(isExpanded ? "Show Less" : "How to Improve")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                }
+                .foregroundColor(.blue)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
     }
 }
 
@@ -838,9 +1079,28 @@ struct PeakPowerRow: View {
 struct PacingAnalysisCard: View {
     let analysis: RideAnalysis
     
+    private var pacingInterpretation: (rating: String, color: Color, advice: String) {
+        let score = analysis.consistencyScore
+        
+        switch score {
+        case 90...100:
+            return ("Excellent", .green, "You maintained steady power throughout. This is textbook pacing.")
+        case 80..<90:
+            return ("Very Good", .blue, "Solid pacing with minor fluctuations. A few surges but overall controlled.")
+        case 70..<80:
+            return ("Good", .cyan, "Decent pacing with room for improvement. Work on smoothing out power spikes.")
+        case 60..<70:
+            return ("Fair", .yellow, "Inconsistent pacing detected. Focus on maintaining steadier effort.")
+        case 50..<60:
+            return ("Needs Work", .orange, "Significant power variability. This costs energy without speed gains.")
+        default:
+            return ("Poor", .red, "Very erratic pacing. Practice riding at consistent power targets.")
+        }
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Pacing Analysis")
+            Text("Pacing Execution")
                 .font(.headline)
             
             HStack(spacing: 20) {
@@ -852,33 +1112,42 @@ struct PacingAnalysisCard: View {
                         
                         Circle()
                             .trim(from: 0, to: analysis.consistencyScore / 100)
-                            .stroke(consistencyColor, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                            .stroke(pacingInterpretation.color, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                             .rotationEffect(.degrees(-90))
                         
-                        Text("\(Int(analysis.consistencyScore))%")
-                            .font(.title3)
-                            .fontWeight(.bold)
+                        VStack(spacing: 2) {
+                            Text("\(Int(analysis.consistencyScore))")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            Text("/ 100")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
                     }
                     .frame(width: 80, height: 80)
                     
-                    Text("Consistency")
+                    Text(pacingInterpretation.rating)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .fontWeight(.semibold)
+                        .foregroundColor(pacingInterpretation.color)
                 }
                 
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Rating: \(analysis.pacingRating.rawValue)", systemImage: "star.fill")
+                    Text(pacingInterpretation.advice)
                         .font(.subheadline)
-                        .foregroundColor(consistencyColor)
+                        .foregroundColor(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
                     
-                    Label("Variability: \(String(format: "%.1f", analysis.powerVariability))%",
-                          systemImage: "waveform.path.ecg")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    Label("Surges: \(analysis.surgeCount)", systemImage: "chart.line.uptrend.xyaxis")
-                        .font(.subheadline)
-                        .foregroundColor(analysis.surgeCount > 10 ? .orange : .green)
+                    if analysis.surgeCount > 5 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "waveform.path.ecg")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                            Text("\(analysis.surgeCount) power surges detected")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -886,19 +1155,7 @@ struct PacingAnalysisCard: View {
             if analysis.fatigueDetected, let onset = analysis.fatigueOnsetTime {
                 Divider()
                 
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
-                    
-                    VStack(alignment: .leading) {
-                        Text("Fatigue Detected")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("Power declined after \(Int(onset / 60)) minutes")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
+                fatigueCard(onsetTime: onset, totalTime: analysis.duration)
             }
         }
         .padding()
@@ -907,13 +1164,47 @@ struct PacingAnalysisCard: View {
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
     
-    private var consistencyColor: Color {
-        switch analysis.consistencyScore {
-        case 85...100: return .green
-        case 70..<85: return .blue
-        case 50..<70: return .orange
-        default: return .red
+    private func fatigueCard(onsetTime: TimeInterval, totalTime: TimeInterval) -> some View {
+        let onsetMinutes = Int(onsetTime / 60)
+        let totalMinutes = Int(totalTime / 60)
+        let onsetPercentage = (onsetTime / totalTime) * 100
+        
+        let (icon, color, message, advice): (String, Color, String, String) = {
+            if onsetPercentage < 30 {
+                return ("exclamationmark.triangle.fill", .red,
+                       "Fatigue hit early at \(onsetMinutes) minutes",
+                       "You started too hard. The first 20% should feel uncomfortably easy - save your matches for later.")
+            } else if onsetPercentage < 60 {
+                return ("info.circle.fill", .orange,
+                       "Power declined after \(onsetMinutes) minutes",
+                       "Mid-ride fade suggests pacing or nutrition issues. Fuel every 20-30 minutes and pace more conservatively early.")
+            } else {
+                return ("checkmark.circle.fill", .yellow,
+                       "Fatigue in final \(totalMinutes - onsetMinutes) minutes",
+                       "Normal fade for a \(totalMinutes)-minute effort. This is expected - you paced well.")
+            }
+        }()
+        
+        return HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+                .font(.title3)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(message)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(color)
+                
+                Text(advice)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .padding(12)
+        .background(color.opacity(0.1))
+        .cornerRadius(8)
     }
 }
 
@@ -1518,11 +1809,13 @@ class RideAnalysisViewModel: ObservableObject {
     @Published var showingPlanComparison = false
     @Published var showingComparisonSelection = false
     
-    private let analyzer = RideFileAnalyzer()
+//    private let analyzer = RideFileAnalyzer()
     private let parser = FITFileParser()
     private let storage = AnalysisStorageManager()
-    
-    init() {
+    private let settings: AppSettings  // 🔥 ADD THIS
+
+    init(settings: AppSettings = AppSettings()) {  // 🔥 UPDATE INIT
+        self.settings = settings
         loadHistory()
     }
     
@@ -1542,7 +1835,6 @@ class RideAnalysisViewModel: ObservableObject {
         
         Task {
             do {
-                // Start accessing security-scoped resource
                 guard url.startAccessingSecurityScopedResource() else {
                     throw NSError(domain: "FileAccess", code: -1, userInfo: [NSLocalizedDescriptionKey: "Cannot access file"])
                 }
@@ -1552,11 +1844,12 @@ class RideAnalysisViewModel: ObservableObject {
                 let dataPoints = try await parser.parseFile(at: url)
                 
                 analysisStatus = "Analyzing performance..."
+                let analyzer = RideFileAnalyzer(settings: self.settings)  // 🔥 FIX: Use self.settings
                 let analysis = analyzer.analyzeRide(
                     dataPoints: dataPoints,
                     ftp: ftp,
                     weight: weight,
-                    plannedRide: nil // TODO: Match with saved plans
+                    plannedRide: nil
                 )
                 
                 await MainActor.run {

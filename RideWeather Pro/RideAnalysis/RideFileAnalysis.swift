@@ -109,7 +109,7 @@ struct RideAnalysis: Codable, Identifiable {
 }
 
 // Add Codable conformance for new types
-extension RideMetadata: Codable {}
+//extension RideMetadata: Codable {}
 extension TerrainSegment: Codable {}
 extension TerrainSegment.TerrainType: Codable {}
 extension PowerAllocationAnalysis: Codable {}
@@ -232,6 +232,14 @@ struct FITDataPoint {
 
 class RideFileAnalyzer {
        
+    // Add a settings property
+     private let settings: AppSettings
+     
+     // Add initializer
+     init(settings: AppSettings = AppSettings()) {
+         self.settings = settings
+     }
+
     // MARK: - Main Analysis Function
 
     func analyzeRide(
@@ -241,7 +249,7 @@ class RideFileAnalyzer {
         plannedRide: PacingPlan? = nil,
         isPreFiltered: Bool = false,
         elapsedTimeOverride: TimeInterval? = nil,
-        movingTimeOverride: TimeInterval? = nil  // 🔥 ADD THIS
+        movingTimeOverride: TimeInterval? = nil
     ) -> RideAnalysis {
         
         // Filter valid power data
@@ -256,7 +264,10 @@ class RideFileAnalyzer {
             return createEmptyAnalysis()
         }
         
-        // 🔥 FIX 1: Properly calculate moving vs elapsed time
+        // Calculate distance FIRST
+        let totalDistanceMeters = dataPoints.last?.distance ?? calculateDistance(dataPoints: validPoints)
+        
+        // Calculate moving vs elapsed time
         let movingPoints: [FITDataPoint]
         let elapsedTime: TimeInterval
         let movingTime: TimeInterval
@@ -265,19 +276,12 @@ class RideFileAnalyzer {
             movingPoints = validPoints
             elapsedTime = elapsedTimeOverride ?? calculateDuration(dataPoints: validPoints)
             
-            // 🔥 Use the moving time from Strava (most accurate)
             if let stravaMovingTime = movingTimeOverride {
                 movingTime = stravaMovingTime
             } else {
                 movingTime = calculateDuration(dataPoints: movingPoints)
             }
-            
-            print("📊 TIME ANALYSIS:")
-            print("   Elapsed: \(formatDuration(elapsedTime))")
-            print("   Moving: \(formatDuration(movingTime))")
-            print("   Stopped: \(formatDuration(elapsedTime - movingTime))")
         } else {
-            // FIT files - detect stops ourselves
             movingPoints = identifyMovingSegments(dataPoints: validPoints)
             elapsedTime = calculateDuration(dataPoints: validPoints)
             movingTime = calculateDuration(dataPoints: movingPoints)
@@ -285,10 +289,9 @@ class RideFileAnalyzer {
         
         let stoppedTime = elapsedTime - movingTime
         let powers = movingPoints.compactMap { $0.power }
-        let distance = calculateDistance(dataPoints: validPoints)
         
-        // 🔥 FIX 2: Build proper metadata with correct times
-        let metadata = buildRideMetadata(
+        // 🔥 FIX: Build metadata FIRST (without elevation display values)
+        let metadataRaw = buildRideMetadata(
             dataPoints: validPoints,
             movingPoints: movingPoints,
             elapsedTime: elapsedTime,
@@ -296,12 +299,50 @@ class RideFileAnalyzer {
             stoppedTime: stoppedTime
         )
         
-        // 🔥 FIX 3: Smarter terrain segmentation
+        // 🔥 NOW calculate display values using metadata
+        let totalDistance = settings.units == .metric ?
+            totalDistanceMeters / 1000 : // km
+            totalDistanceMeters / 1609.34 // miles
+        let distanceUnit = settings.units == .metric ? "km" : "mi"
+        
+        let avgSpeed = (totalDistance / (movingTime / 3600.0))
+        let speedUnit = settings.units == .metric ? "km/h" : "mph"
+        
+        let elevation = settings.units == .metric ?
+            metadataRaw.elevationGain : // meters
+            metadataRaw.elevationGain * 3.28084 // feet
+        let elevationUnit = settings.units == .metric ? "m" : "ft"
+        
+        // Create final metadata with display values
+        let metadata = RideMetadata(
+            routeName: metadataRaw.routeName,
+            totalTime: metadataRaw.totalTime,
+            movingTime: metadataRaw.movingTime,
+            stoppedTime: metadataRaw.stoppedTime,
+            date: metadataRaw.date,
+            elevationGain: metadataRaw.elevationGain,
+            elevationLoss: metadataRaw.elevationLoss,
+            avgGradient: metadataRaw.avgGradient,
+            maxGradient: metadataRaw.maxGradient,
+            totalDistance: totalDistance,
+            distanceUnit: distanceUnit,
+            avgSpeed: avgSpeed,
+            speedUnit: speedUnit,
+            elevation: elevation,
+            elevationUnit: elevationUnit
+        )
+        
+        print("📊 SPEED VERIFICATION:")
+        print("   Total distance: \(String(format: "%.2f", totalDistance)) \(distanceUnit)")
+        print("   Moving time: \(formatDuration(movingTime))")
+        print("   Calculated avg speed: \(String(format: "%.1f", avgSpeed)) \(speedUnit)")
+        
+        // Terrain segmentation (uses meters internally)
         let terrainSegments = segmentByTerrainImproved(
             dataPoints: movingPoints,
             ftp: ftp,
             weight: weight,
-            totalDistance: distance
+            totalDistance: totalDistanceMeters
         )
         
         print("🎯 SEGMENTATION: \(terrainSegments.count) segments for \(movingPoints.count) data points")
@@ -313,25 +354,21 @@ class RideFileAnalyzer {
             movingTime: movingTime
         )
         
-        // 🔥 FIX 4: Use MOVING time for all calculations
+        // Rest of the analysis
         let avgPower = calculateAveragePower(powers: powers)
         let normalizedPower = calculateNormalizedPower(powers: powers)
         let intensityFactor = normalizedPower / ftp
         let tss = calculateTSS(normalizedPower: normalizedPower, duration: movingTime, ftp: ftp)
         let variabilityIndex = normalizedPower / avgPower
         
-        // Peak powers
         let peaks = calculatePeakPowers(dataPoints: movingPoints)
         
-        // Terrain-aware pacing
         let consistency = calculateTerrainAwarePacingScore(terrainSegments: terrainSegments)
         let powerVariability = calculateCoefficientOfVariation(powers: powers)
         let pacingRating = determinePacingRating(consistency: consistency, variability: powerVariability)
         
-        // Fatigue detection
         let (fatigueDetected, fatigueOnset, declineRate) = detectFatigue(dataPoints: movingPoints)
         
-        // Segment comparison
         var segmentComparisons: [SegmentComparison] = []
         var overallDeviation: Double = 0
         if let plan = plannedRide {
@@ -339,16 +376,13 @@ class RideFileAnalyzer {
             overallDeviation = calculateOverallDeviation(comparisons: segmentComparisons)
         }
         
-        // Terrain-aware surge detection
         let (surgeCount, pacingErrors) = detectTerrainAwarePacingErrors(
             terrainSegments: terrainSegments,
             targetPower: normalizedPower
         )
         
-        // Power zones (using moving time)
         let powerZones = calculatePowerZoneDistribution(dataPoints: movingPoints, ftp: ftp)
         
-        // Performance score
         let perfScore = calculateTerrainAwarePerformanceScore(
             powerAllocation: powerAllocation,
             consistency: consistency,
@@ -357,7 +391,6 @@ class RideFileAnalyzer {
             terrainSegments: terrainSegments
         )
         
-        // 🔥 FIX 5: Smarter insights using moving time
         let insights = generateEnhancedInsights(
             metadata: metadata,
             terrainSegments: terrainSegments,
@@ -368,14 +401,15 @@ class RideFileAnalyzer {
             performanceScore: perfScore,
             ftp: ftp,
             avgPower: avgPower,
-            normalizedPower: normalizedPower
+            normalizedPower: normalizedPower,
+            totalDistance: totalDistance
         )
         
         return RideAnalysis(
             date: dataPoints.first?.timestamp ?? Date(),
             rideName: "Ride Analysis",
-            duration: movingTime,  // ✅ USE MOVING TIME
-            distance: distance,
+            duration: movingTime,
+            distance: totalDistanceMeters,
             metadata: metadata,
             averagePower: avgPower,
             normalizedPower: normalizedPower,
@@ -402,6 +436,77 @@ class RideFileAnalyzer {
             performanceScore: perfScore,
             insights: insights,
             powerZoneDistribution: powerZones
+        )
+    }
+
+    // 🔥 FIX: Simplified buildRideMetadata - just calculates, doesn't format
+    private func buildRideMetadata(
+        dataPoints: [FITDataPoint],
+        movingPoints: [FITDataPoint],
+        elapsedTime: TimeInterval,
+        movingTime: TimeInterval,
+        stoppedTime: TimeInterval
+    ) -> RideMetadata {
+        
+        let altitudes = dataPoints.compactMap { $0.altitude }
+        var elevationGain: Double = 0
+        var elevationLoss: Double = 0
+        var maxGradient: Double = 0
+        
+        if altitudes.count > 1 {
+            let smoothedAltitudes = smoothAltitudeData(altitudes, windowSize: 11)
+            let threshold: Double = 1.0
+            
+            var accumulatedGain: Double = 0
+            var accumulatedLoss: Double = 0
+            
+            for i in 1..<smoothedAltitudes.count {
+                let change = smoothedAltitudes[i] - smoothedAltitudes[i-1]
+                
+                if change > 0 {
+                    accumulatedGain += change
+                    if accumulatedGain >= threshold {
+                        elevationGain += accumulatedGain
+                        accumulatedGain = 0
+                    }
+                } else if change < 0 {
+                    accumulatedLoss += abs(change)
+                    if accumulatedLoss >= threshold {
+                        elevationLoss += accumulatedLoss
+                        accumulatedLoss = 0
+                    }
+                }
+                
+                if let dist1 = dataPoints[i-1].distance, let dist2 = dataPoints[i].distance {
+                    let horizontalDist = dist2 - dist1
+                    if horizontalDist > 0 {
+                        let gradient = (change / horizontalDist) * 100
+                        maxGradient = max(maxGradient, abs(gradient))
+                    }
+                }
+            }
+        }
+        
+        let totalDistance = dataPoints.compactMap { $0.distance }.last ?? 0
+        let avgGradient = totalDistance > 0 ? (elevationGain / totalDistance) * 100 : 0
+        
+        // Return metadata with only calculated values, no display formatting yet
+        return RideMetadata(
+            routeName: "Ride",
+            totalTime: elapsedTime,
+            movingTime: movingTime,
+            stoppedTime: stoppedTime,
+            date: dataPoints.first?.timestamp ?? Date(),
+            elevationGain: elevationGain,
+            elevationLoss: elevationLoss,
+            avgGradient: avgGradient,
+            maxGradient: maxGradient,
+            totalDistance: 0,  // Will be set later
+            distanceUnit: "",  // Will be set later
+            avgSpeed: 0,       // Will be set later
+            speedUnit: "",     // Will be set later
+            elevation: 0,      // Will be set later
+            elevationUnit: "" // Will be set later
         )
     }
 
@@ -551,6 +656,8 @@ class RideFileAnalyzer {
 
     // MARK: - 🔥 ENHANCED INSIGHTS GENERATION
 
+    // MARK: - 🔥 ENHANCED INSIGHTS GENERATION with Location Context
+
     private func generateEnhancedInsights(
         metadata: RideMetadata,
         terrainSegments: [TerrainSegment],
@@ -561,27 +668,36 @@ class RideFileAnalyzer {
         performanceScore: Double,
         ftp: Double,
         avgPower: Double,
-        normalizedPower: Double
+        normalizedPower: Double,
+        totalDistance: Double
     ) -> [RideInsight] {
         
         var insights: [RideInsight] = []
         
-        // 🔥 1. RIDE OVERVIEW (with correct times)
         let movingMinutes = Int(metadata.movingTime / 60)
+        let elapsedMinutes = Int(metadata.totalTime / 60)
         let stoppedMinutes = Int(metadata.stoppedTime / 60)
-        let avgSpeedKph = (metadata.movingTime > 0) ?
-            ((metadata.totalTime > 0 ? metadata.totalTime : metadata.movingTime) / metadata.movingTime) * 20.0 : 0
         
+        // Calculate cumulative distances for location context
+        var cumulativeDistance: Double = 0
+        var segmentLocations: [(segment: TerrainSegment, distanceKm: Double)] = []
+        for segment in terrainSegments {
+            segmentLocations.append((segment, cumulativeDistance / 1000))
+            cumulativeDistance += segment.distance
+        }
+        
+        // 🔥 FIX: Use the units stored in metadata
         insights.append(RideInsight(
             id: UUID(),
             priority: .low,
             category: .performance,
             title: "📊 Ride Overview",
             description: """
-            Moving Time: \(movingMinutes)m | Elapsed: \(Int(metadata.totalTime/60))m
+            Moving Time: \(movingMinutes)m | Elapsed: \(elapsedMinutes)m
             Stopped: \(stoppedMinutes)m (\(Int((metadata.stoppedTime/metadata.totalTime)*100))%)
-            Average Speed: \(String(format: "%.1f", avgSpeedKph)) km/h
-            Elevation: +\(Int(metadata.elevationGain))m
+            Distance: \(String(format: "%.1f", metadata.totalDistance)) \(metadata.distanceUnit)
+            Average Speed: \(String(format: "%.1f", metadata.avgSpeed)) \(metadata.speedUnit)
+            Elevation: +\(Int(metadata.elevation))\(metadata.elevationUnit)
             """,
             recommendation: stoppedMinutes > 10 ?
                 "Consider routes with fewer stops for better training continuity." :
@@ -605,10 +721,8 @@ class RideFileAnalyzer {
             recommendation: interpretIntensityFactor(intensityFactor, duration: metadata.movingTime)
         ))
         
-        // 🔥 3. TERRAIN BREAKDOWN
+        // 🔥 3. TERRAIN BREAKDOWN with LOCATION
         let climbs = terrainSegments.filter { $0.type == .climb }
-//        let flats = terrainSegments.filter { $0.type == .flat || $0.type == .rolling }
-//        let descents = terrainSegments.filter { $0.type == .descent }
         
         let climbTime = climbs.reduce(0.0) { $0 + $1.duration }
         let climbDist = climbs.reduce(0.0) { $0 + $1.distance }
@@ -624,7 +738,7 @@ class RideFileAnalyzer {
                 title: "⛰️ Climbing Analysis",
                 description: """
                 Time Climbing: \(Int(climbTime/60))m (\(Int(climbTime/metadata.movingTime*100))% of ride)
-                Distance: \(String(format: "%.1f", climbDist/1000))km
+                Distance: \(String(format: "%.1f", climbDist/1609.34)) miles
                 Average Power: \(Int(avgClimbPower))W (\(Int(climbPowerPct))% FTP)
                 """,
                 recommendation: interpretClimbPower(climbPowerPct, distance: climbDist)
@@ -651,14 +765,16 @@ class RideFileAnalyzer {
         // 🔥 5. PACING QUALITY
         if fatigueDetected, let onset = fatigueOnset {
             let onsetPct = (onset / metadata.movingTime) * 100
+            let onsetMiles = (onset / metadata.movingTime) * totalDistance
+            
             insights.append(RideInsight(
                 id: UUID(),
                 priority: onsetPct < 50 ? .high : .medium,
                 category: .fatigue,
                 title: "📉 Fatigue Detected",
                 description: """
-                Power declined after \(Int(onset/60))m (\(Int(onsetPct))% into ride)
-                This suggests \(onsetPct < 50 ? "starting too hard" : "normal fatigue for this duration")
+                Power declined at \(String(format: "%.1f", onsetMiles)) miles (\(Int(onset/60))m into ride)
+                This occurred \(Int(onsetPct))% through your ride
                 """,
                 recommendation: onsetPct < 50 ?
                     "Start 10-15% easier. The first 20% should feel uncomfortably easy." :
@@ -666,22 +782,36 @@ class RideFileAnalyzer {
             ))
         }
         
-        // 🔥 6. SEGMENT PERFORMANCE
-        let inefficientSegments = terrainSegments.filter { $0.powerEfficiency < 75 }
+        // 🔥 6. SEGMENT PERFORMANCE with LOCATION
+        let inefficientSegments = segmentLocations.filter {
+            $0.segment.powerEfficiency < 75 && $0.segment.duration > 30
+        }
+        
         if !inefficientSegments.isEmpty {
-            let worstSegment = inefficientSegments.min(by: { $0.powerEfficiency < $1.powerEfficiency })!
+            let worstSegment = inefficientSegments.min(by: {
+                $0.segment.powerEfficiency < $1.segment.powerEfficiency
+            })!
+            
+            let segment = worstSegment.segment
+            let locationMiles = worstSegment.distanceKm / 1.60934
+            let durationMins = Int(segment.duration / 60)
+            let durationSecs = Int(segment.duration.truncatingRemainder(dividingBy: 60))
+            
             insights.append(RideInsight(
                 id: UUID(),
                 priority: .medium,
                 category: .pacing,
-                title: "\(worstSegment.type.emoji) Segment Opportunity",
+                title: "\(segment.type.emoji) Segment Opportunity",
                 description: """
-                \(worstSegment.type.rawValue) segment: \(Int(worstSegment.distance))m at \(String(format: "%.1f", worstSegment.gradient*100))%
-                You averaged \(Int(worstSegment.averagePower))W vs optimal \(Int(worstSegment.optimalPowerForTime))W
-                Power efficiency: \(Int(worstSegment.powerEfficiency))%
+                Location: Mile \(String(format: "%.1f", locationMiles))
+                \(segment.type.rawValue): \(Int(segment.distance/1609.34 * 5280))ft at \(String(format: "%.1f", segment.gradient*100))%
+                Duration: \(durationMins):\(String(format: "%02d", durationSecs))
+                You averaged: \(Int(segment.averagePower))W
+                Optimal would be: \(Int(segment.optimalPowerForTime))W
+                Power efficiency: \(Int(segment.powerEfficiency))%
                 """,
-                recommendation: worstSegment.type == .climb ?
-                    "Don't leave watts in the tank on climbs - you can't make up time elsewhere." :
+                recommendation: segment.type == .climb ?
+                    "Don't leave watts in the tank on climbs - you can't make up time elsewhere. Push \(Int(segment.optimalPowerForTime - segment.averagePower))W harder." :
                     "On flats, focus on aero position and steady power rather than surges."
             ))
         }
@@ -690,6 +820,22 @@ class RideFileAnalyzer {
     }
 
     // MARK: - Helper Functions
+
+    private func formatSegmentDistance(_ meters: Double, unit: String) -> String {
+        if unit == "mi" {
+            let feet = meters * 3.28084
+            if feet < 5280 {
+                return "\(Int(feet))ft"
+            }
+            let miles = meters / 1609.34
+            return String(format: "%.1f mi", miles)
+        } else {
+            if meters < 1000 {
+                return "\(Int(meters))m"
+            }
+            return String(format: "%.1f km", meters / 1000)
+        }
+    }
 
     private func interpretIntensityFactor(_ if: Double, duration: TimeInterval) -> String {
         let hours = duration / 3600.0
@@ -728,12 +874,16 @@ class RideFileAnalyzer {
     //______________________________________________
     // MARK: - Terrain-Aware Analysis Methods
 
-    private func buildRideMetadata(
+/*    private func buildRideMetadata(
         dataPoints: [FITDataPoint],
         movingPoints: [FITDataPoint],
         elapsedTime: TimeInterval,
         movingTime: TimeInterval,
-        stoppedTime: TimeInterval
+        stoppedTime: TimeInterval,
+        totalDistance: Double,
+        distanceUnit: String,
+        avgSpeed: Double,
+        speedUnit: String
     ) -> RideMetadata {
         
         let altitudes = dataPoints.compactMap { $0.altitude }
@@ -784,6 +934,11 @@ class RideFileAnalyzer {
                     }
                 }
             }
+ 
+            let elevation = settings.units == .metric ?
+                elevationGain : // meters
+                elevationGain * 3.28084 // feet
+            let elevationUnit = settings.units == .metric ? "m" : "ft"
             
 /*            // Add any remaining accumulated changes if significant
             if accumulatedGain >= threshold / 2 {
@@ -815,12 +970,18 @@ debugElevationCalculation(
             movingTime: movingTime,
             stoppedTime: stoppedTime,
             date: dataPoints.first?.timestamp ?? Date(),
-            elevationGain: elevationGain,
+            elevationGain: elevationGain,  // Keep in meters
             elevationLoss: elevationLoss,
             avgGradient: avgGradient,
-            maxGradient: maxGradient
+            maxGradient: maxGradient,
+            totalDistance: totalDistance,
+            distanceUnit: distanceUnit,
+            avgSpeed: avgSpeed,
+            speedUnit: speedUnit,
+            elevation: elevation,
+            elevationUnit: elevationUnit
         )
-    }
+    }*/
 
     private func smoothAltitudeData(_ altitudes: [Double], windowSize: Int) -> [Double] {
         guard altitudes.count > windowSize else { return altitudes }
@@ -2190,7 +2351,23 @@ debugElevationCalculation(
             rideName: "Empty Ride",
             duration: 0,
             distance: 0,
-            metadata: nil,  // ✅ ADD THIS
+            metadata: RideMetadata(
+                routeName: "Empty",
+                totalTime: 0,
+                movingTime: 0,
+                stoppedTime: 0,
+                date: Date(),
+                elevationGain: 0,
+                elevationLoss: 0,
+                avgGradient: 0,
+                maxGradient: 0,
+                totalDistance: 0,
+                distanceUnit: "mi",
+                avgSpeed: 0,
+                speedUnit: "mph",
+                elevation: 0,
+                elevationUnit: "ft"
+            ),
             averagePower: 0,
             normalizedPower: 0,
             intensityFactor: 0,
@@ -2200,8 +2377,8 @@ debugElevationCalculation(
             peakPower1min: 0,
             peakPower5min: 0,
             peakPower20min: 0,
-            terrainSegments: nil,  // ✅ ADD THIS
-            powerAllocation: nil,  // ✅ ADD THIS
+            terrainSegments: nil,
+            powerAllocation: nil,
             consistencyScore: 0,
             pacingRating: .poor,
             powerVariability: 0,
@@ -2629,16 +2806,24 @@ struct PowerAllocationRecommendation {
     let description: String
 }
 
-struct RideMetadata {
+struct RideMetadata: Codable {
     let routeName: String
     let totalTime: TimeInterval // Elapsed time
     let movingTime: TimeInterval
     let stoppedTime: TimeInterval
     let date: Date
-    let elevationGain: Double
+    let elevationGain: Double // Still stored in meters for calculations
     let elevationLoss: Double
     let avgGradient: Double
     let maxGradient: Double
+    
+    // 🔥 NEW: User-friendly display values
+    let totalDistance: Double    // In user's preferred unit
+    let distanceUnit: String     // "km" or "mi"
+    let avgSpeed: Double         // In user's preferred unit
+    let speedUnit: String        // "km/h" or "mph"
+    let elevation: Double        // In user's preferred unit
+    let elevationUnit: String    // "m" or "ft"
 }
 
 //            let segmentDisplayName = "Segment \(comparisons.count + 1)"

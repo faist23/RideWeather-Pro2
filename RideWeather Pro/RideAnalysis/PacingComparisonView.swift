@@ -87,16 +87,183 @@ struct PacingComparisonView: View {
     
     private var segmentResultsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Segment Analysis")
-                .font(.headline)
+            HStack {
+                Text("Time Opportunities")
+                    .font(.headline)
+                
+                Spacer()
+                
+                if comparison.totalPotentialTimeSavings > 0 {
+                    Text("↑ \(formatTime(comparison.totalPotentialTimeSavings))")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.orange)
+                }
+            }
             
-            ForEach(comparison.segmentResults) { result in
-                SegmentResultRow(result: result)
+            if comparison.segmentResults.isEmpty {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Text("Nearly perfect execution!")
+                        .font(.subheadline)
+                }
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.green.opacity(0.1))
+                .cornerRadius(12)
+            } else {
+                Text("Biggest opportunities ranked by time impact:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                ForEach(comparison.segmentResults.prefix(10)) { result in
+                    TimeOpportunityRow(result: result)
+                }
+                
+                if comparison.segmentResults.count > 10 {
+                    Text("+ \(comparison.segmentResults.count - 10) more opportunities")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 4)
+                }
             }
         }
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(16)
+    }
+
+    struct TimeOpportunityRow: View {
+        let result: PacingPlanComparison.SegmentResult
+        @State private var isExpanded = false
+        
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Button(action: { withAnimation { isExpanded.toggle() } }) {
+                    HStack {
+                        Circle()
+                            .fill(Color(hex: result.grade.color))
+                            .frame(width: 8, height: 8)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(result.segmentName)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(.primary)
+                            
+                            if result.timeLost > 0 {
+                                Text("↑ \(formatTime(result.timeLost)) slower than plan")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            } else {
+                                Text("↓ \(formatTime(abs(result.timeLost))) faster than plan")
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                            }
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                
+                if isExpanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Divider()
+                        
+                        HStack(spacing: 20) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Your Power")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Text("\(Int(result.actualPower))W")
+                                    .font(.headline)
+                            }
+                            
+                            Image(systemName: "arrow.right")
+                                .foregroundColor(.secondary)
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Planned Power")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Text("\(Int(result.plannedPower))W")
+                                    .font(.headline)
+                                    .foregroundColor(.blue)
+                            }
+                            
+                            Spacer()
+                            
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Text("Difference")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Text("\(result.deviation > 0 ? "+" : "")\(Int(result.deviation))%")
+                                    .font(.headline)
+                                    .foregroundColor(result.deviation > 5 ? .red : result.deviation < -5 ? .green : .primary)
+                            }
+                        }
+                        
+                        // Actionable recommendation
+                        if abs(result.deviation) > 5 {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "lightbulb.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.yellow)
+                                
+                                Text(getRecommendation(for: result))
+                                    .font(.caption)
+                                    .foregroundColor(.primary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .padding(8)
+                            .background(Color.yellow.opacity(0.1))
+                            .cornerRadius(6)
+                        }
+                    }
+                }
+            }
+            .padding(12)
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(8)
+        }
+        
+        private func getRecommendation(for result: PacingPlanComparison.SegmentResult) -> String {
+            let powerDiff = abs(Int(result.plannedPower - result.actualPower))
+            
+            if result.segmentName.contains("Climb") {
+                if result.deviation < 0 {
+                    return "On climbs, push \(powerDiff)W harder. Watts translate almost linearly to speed uphill - this is where you buy time."
+                } else {
+                    return "Good climb execution! You pushed close to the planned power."
+                }
+            } else if result.segmentName.contains("Flat") {
+                if result.deviation > 10 {
+                    return "You over-cooked this flat section. Save \(powerDiff)W for the climbs where it matters more."
+                } else if result.deviation < -10 {
+                    return "Maintain \(powerDiff)W more on flats to keep momentum. Small power increases = big speed gains on flat terrain."
+                }
+            } else { // Descent or rolling
+                return "Focus on aero position and steady power around \(Int(result.plannedPower))W."
+            }
+            
+            return "Stay within ±5% of target power for optimal pacing."
+        }
+        
+        private func formatTime(_ seconds: TimeInterval) -> String {
+            let absSeconds = abs(seconds)
+            if absSeconds >= 60 {
+                let mins = Int(absSeconds / 60)
+                let secs = Int(absSeconds.truncatingRemainder(dividingBy: 60))
+                return "\(mins):\(String(format: "%02d", secs))"
+            }
+            return "\(Int(absSeconds))s"
+        }
     }
     
     private var insightsSection: some View {
