@@ -349,47 +349,6 @@ struct SettingsView: View {
                         }
                     }
                 }
-
-
-/*                Section("Integrations") {
-                    if stravaService.isAuthenticated {
-                        HStack {
-                            Image("strava_logo") // Assuming you add a Strava logo asset
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 24, height: 24)
-                            Text("Strava Connected")
-                            Spacer()
-                            Button("Disconnect") {
-                                stravaService.disconnect()
-                            }
-                            .tint(.red)
-                        }
-                    } else {
-                        Button {
-                            stravaService.authenticate()
-                        } label: {
-                            HStack {
-                                Image("strava_logo_connect") // Add a connect logo asset
-                                    .resizable()
-                                    .renderingMode(.template)
-                                    .foregroundColor(.white) // Or another color
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(width: 20, height: 20)
-                                Text("Connect with Strava")
-                            }
-                        }
-                        // Optional: Add Strava's official connect button styling if desired
-                        // .buttonStyle(...)
-                    }
-                    
-                    // Display error messages
-                    if let error = stravaService.errorMessage {
-                        Text("Error: \(error)")
-                            .font(.caption)
-                            .foregroundColor(.red)
-                    }
-                }*/
                 
                 Section("About") {
                     HStack {

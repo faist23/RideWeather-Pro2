@@ -87,10 +87,6 @@ struct AppSettings: Codable, Equatable {
         return bodyWeight + bikeAndEquipmentWeight
     }
     
-/*    var targetPowerWatts: Double {
-        return Double(functionalThresholdPower) * (powerTargetPercentage / 100.0)
-    }*/
-    
     // MARK: - Enums
     
     enum SpeedCalculationMethod: String, CaseIterable, Identifiable, Codable {

@@ -51,81 +51,6 @@ class PacingPlanComparisonEngine {
         )
     }
     
-    // MARK: - Opportunity Identification
-    
-/*    private func identifyTimeOpportunities(
-        plannedSegments: [PacedSegment],
-        actualSegments: [TerrainSegment],
-        ftp: Double
-    ) -> [PacingPlanComparison.SegmentResult] {
-        
-        var opportunities: [PacingPlanComparison.SegmentResult] = []
-        
-        // Match planned to actual segments by distance/position
-        var cumulativeDistance: Double = 0
-        
-        for (index, actualSegment) in actualSegments.enumerated() {
-            // Find corresponding planned segment
-            let plannedSegment = findMatchingPlannedSegment(
-                at: cumulativeDistance,
-                in: plannedSegments
-            )
-            
-            guard let planned = plannedSegment else {
-                cumulativeDistance += actualSegment.distance
-                continue
-            }
-            
-            // Calculate what the rider actually did vs what was planned
-            let actualPower = actualSegment.averagePower
-            let plannedPower = planned.targetPower
-            let deviation = ((actualPower - plannedPower) / plannedPower) * 100
-            
-            // Estimate time lost/gained
-            let timeLost = estimateTimeDifference(
-                actualPower: actualPower,
-                plannedPower: plannedPower,
-                distance: actualSegment.distance,
-                gradient: actualSegment.gradient,
-                duration: actualSegment.duration
-            )
-            
-            // Only add if it's a meaningful opportunity (>3 seconds)
-            if abs(timeLost) > 3 {
-                let grade = gradeSegmentExecution(
-                    deviation: deviation,
-                    terrainType: actualSegment.type,
-                    timeLost: timeLost
-                )
-                
-                let segmentName = formatSegmentName(
-                    type: actualSegment.type,
-                    distance: actualSegment.distance,
-                    gradient: actualSegment.gradient,
-                    locationMiles: locationMiles,
-                    locationKm: locationKm,
-                    duration: actualSegment.duration,
-                    context: context
-                )
-                
-                opportunities.append(PacingPlanComparison.SegmentResult(
-                    segmentIndex: index,
-                    segmentName: segmentName,
-                    plannedPower: plannedPower,
-                    actualPower: actualPower,
-                    deviation: deviation,
-                    timeLost: timeLost,
-                    grade: grade
-                ))
-            }
-            
-            cumulativeDistance += actualSegment.distance
-        }
-        
-        // Sort by time impact (biggest opportunities first)
-        return opportunities.sorted { abs($0.timeLost) > abs($1.timeLost) }
-    }*/
-    
     private func findMatchingPlannedSegment(
         at distance: Double,
         in plannedSegments: [PacedSegment]
@@ -442,17 +367,6 @@ class PacingPlanComparisonEngine {
         
         return "\(location) • \(type.emoji) \(type.rawValue) • \(distanceStr) at \(gradeStr) • \(durationStr)\(contextFlag)"
     }
-
-/*    // Define context structure
-    struct SegmentContext {
-        let issues: [String]
-        let likelyReason: String?
-        let durationSeconds: TimeInterval
-        
-        var hasIssues: Bool {
-            return !issues.isEmpty
-        }
-    }*/
 
     // MARK: - Metrics Calculation
     

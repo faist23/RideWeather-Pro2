@@ -29,7 +29,9 @@ struct RideAnalysisView: View {
                     analysisResultsView
                 }
             }
-            .navigationTitle("Ride Analysis")
+//            .navigationTitle("Ride Analysis")
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
@@ -44,6 +46,12 @@ struct RideAnalysisView: View {
                                 Label("Import from Strava", systemImage: "square.and.arrow.down.on.square")
                             }
                         }
+                        // ✅ ADD THIS
+                        Divider()
+                        Button(action: { viewModel.showingSavedPlans = true }) {
+                            Label("Saved Pacing Plans", systemImage: "list.bullet.rectangle")
+                        }
+
                         // ✅ ADD THIS
                         if viewModel.currentAnalysis != nil {
                             Divider()
@@ -95,12 +103,22 @@ struct RideAnalysisView: View {
                     ComparisonSelectionView(analysis: analysis)
                 }
             }
+            .sheet(isPresented: $viewModel.showingSavedPlans) {
+                SavedPlansView()
+            }
             // ✅ ADD THIS - Listen for Strava imports
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NewAnalysisImported"))) { notification in
                 if let analysis = notification.object as? RideAnalysis {
                     viewModel.currentAnalysis = analysis
+                    if let source = notification.userInfo?["source"] as? String, source == "strava" {
+                        let sourceInfo = RideSourceInfo(
+                            type: .strava,
+                            fileName: nil
+                        )
+                        viewModel.analysisSources[analysis.id] = sourceInfo
+                        viewModel.storage.saveSource(sourceInfo, for: analysis.id)
+                    }
                     viewModel.loadHistory()
-                    // ✅ The .onChange modifier above will handle the scroll automatically
                 }
             }
         }
@@ -208,8 +226,13 @@ struct RideAnalysisView: View {
                 VStack(spacing: 20) {
                     if let analysis = viewModel.currentAnalysis {
                         // Add an ID to the first element
-                        RideMetadataCard(analysis: analysis, useMetric: weatherViewModel.settings.units == .metric)
-                            .id("top")  // ✅ ADD THIS
+//                        RideMetadataCard(analysis: analysis, useMetric: weatherViewModel.settings.units == .metric)
+                        // ✅ NEW: Compact header replaces RideMetadataCard
+                        CompactRideHeaderCard(
+                            analysis: analysis,
+                            source: viewModel.getRideSource(for: analysis)
+                        )
+                             .id("top")  // ✅ ADD THIS
                         
                         // Performance Score Card
                         PerformanceScoreCard(analysis: analysis)
@@ -544,6 +567,84 @@ struct RideMetadataCard: View {
 
 private var cardBackground: some View {
     Color(.systemBackground)
+}
+
+// MARK: - 🔥 NEW Compact Ride Header (replaces RideMetadataCard)
+
+struct CompactRideHeaderCard: View {
+    let analysis: RideAnalysis
+    let source: RideSource
+    
+    enum RideSource {
+        case strava
+        case fitFile(fileName: String)
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "chart.xyaxis.line")
+                    .foregroundStyle(.blue)
+                    .font(.title2)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Ride Analysis")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Text(analysis.rideName)
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .lineLimit(2)
+                }
+                
+                Spacer()
+            }
+            
+            HStack {
+                Image(systemName: sourceIcon)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                
+                Text("Source: \(sourceText)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            // Date row
+            if let metadata = analysis.metadata {
+                HStack {
+                    Image(systemName: "calendar")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                    
+                    Text(metadata.date.formatted(date: .abbreviated, time: .shortened))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+    
+    private var sourceIcon: String {
+        switch source {
+        case .strava:
+            return "figure.outdoor.cycle"
+        case .fitFile:
+            return "doc.fill"
+        }
+    }
+    
+    private var sourceText: String {
+        switch source {
+        case .strava:
+            return "Strava"  // ✅ Shows "Strava"
+        case .fitFile(let fileName):
+            return fileName  // ✅ Shows full filename with .fit extension
+        }
+    }
 }
 
 // MARK: - Terrain Segments Card
@@ -985,20 +1086,6 @@ struct PowerAllocationCard: View {
                             }
                         }
                     }
-                    
-/*                    Divider()
-                    
-                    // Power breakdown
-                    Text("Where Your Watts Went")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                    
-                    PowerBreakdownBar(
-                        climbWatts: allocation.wattsUsedOnClimbs,
-                        flatWatts: allocation.wattsUsedOnFlats,
-                        descentWatts: allocation.wattsUsedOnDescents,
-                        totalWatts: allocation.totalWatts
-                    )*/
                 }
             }
         }
@@ -1886,6 +1973,18 @@ struct RideAnalysisExportView: View {
     }
 }
 
+// MARK: - Ride Source Info
+
+struct RideSourceInfo: Codable {
+    let type: SourceType
+    let fileName: String?
+    
+    enum SourceType: String, Codable {
+        case strava
+        case fitFile
+    }
+}
+
 // MARK: - View Model
 
 @MainActor
@@ -1899,13 +1998,15 @@ class RideAnalysisViewModel: ObservableObject {
     @Published var showingExportOptions = false
     @Published var shareItem: ShareItem?
     @Published var showingStravaActivities = false
-
+    @Published var showingSavedPlans = false
+    
     @Published var showingPlanComparison = false
     @Published var showingComparisonSelection = false
-    
-//    private let analyzer = RideFileAnalyzer()
+    // ✅ NEW: Track source information
+    @Published var analysisSources: [UUID: RideSourceInfo] = [:]
+
     private let parser = FITFileParser()
-    private let storage = AnalysisStorageManager()
+    let storage = AnalysisStorageManager()
     private let settings: AppSettings  // 🔥 ADD THIS
 
     init(settings: AppSettings = AppSettings()) {  // 🔥 UPDATE INIT
@@ -1913,17 +2014,31 @@ class RideAnalysisViewModel: ObservableObject {
         loadHistory()
     }
     
+    // ✅ NEW: Get ride source for display
+    func getRideSource(for analysis: RideAnalysis) -> CompactRideHeaderCard.RideSource {
+        if let sourceInfo = analysisSources[analysis.id] {
+            switch sourceInfo.type {
+            case .strava:
+                return .strava
+            case .fitFile:
+                return .fitFile(fileName: sourceInfo.fileName ?? "Unknown File")
+            }
+        }
+        return .fitFile(fileName: "Imported Ride")
+    }
+ 
     func handleFileImport(result: Result<[URL], Error>, ftp: Int, weight: Double) {
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
-            analyzeFile(at: url, ftp: Double(ftp), weight: weight)
+            let fileName = url.deletingPathExtension().lastPathComponent
+            analyzeFile(at: url, ftp: Double(ftp), weight: weight, fileName: fileName)
         case .failure(let error):
             print("File import error: \(error)")
         }
     }
     
-    func analyzeFile(at url: URL, ftp: Double, weight: Double) {
+    func analyzeFile(at url: URL, ftp: Double, weight: Double, fileName: String? = nil) {
         isAnalyzing = true
         analysisStatus = "Reading file..."
         
@@ -1934,20 +2049,65 @@ class RideAnalysisViewModel: ObservableObject {
                 }
                 defer { url.stopAccessingSecurityScopedResource() }
                 
+                // ✅ Extract both the name without extension and the full filename
+                let fileNameWithoutExtension = fileName ?? url.deletingPathExtension().lastPathComponent
+                let fullFileName = url.lastPathComponent  // ✅ ADD THIS - includes .fit extension
+
                 analysisStatus = "Parsing FIT data..."
                 let dataPoints = try await parser.parseFile(at: url)
                 
                 analysisStatus = "Analyzing performance..."
-                let analyzer = RideFileAnalyzer(settings: self.settings)  // 🔥 FIX: Use self.settings
-                let analysis = analyzer.analyzeRide(
+                let analyzer = RideFileAnalyzer(settings: self.settings)
+                var analysis = analyzer.analyzeRide(
                     dataPoints: dataPoints,
                     ftp: ftp,
                     weight: weight,
                     plannedRide: nil
                 )
+
+                // ✅ NEW: Update the ride name to use the filename
+                analysis = RideAnalysis(
+                    id: analysis.id,
+                    date: analysis.date,
+                    rideName: fileNameWithoutExtension,  // ✅ Use filename as ride name
+                    duration: analysis.duration,
+                    distance: analysis.distance,
+                    metadata: analysis.metadata,
+                    averagePower: analysis.averagePower,
+                    normalizedPower: analysis.normalizedPower,
+                    intensityFactor: analysis.intensityFactor,
+                    trainingStressScore: analysis.trainingStressScore,
+                    variabilityIndex: analysis.variabilityIndex,
+                    peakPower5s: analysis.peakPower5s,
+                    peakPower1min: analysis.peakPower1min,
+                    peakPower5min: analysis.peakPower5min,
+                    peakPower20min: analysis.peakPower20min,
+                    terrainSegments: analysis.terrainSegments,
+                    powerAllocation: analysis.powerAllocation,
+                    consistencyScore: analysis.consistencyScore,
+                    pacingRating: analysis.pacingRating,
+                    powerVariability: analysis.powerVariability,
+                    fatigueDetected: analysis.fatigueDetected,
+                    fatigueOnsetTime: analysis.fatigueOnsetTime,
+                    powerDeclineRate: analysis.powerDeclineRate,
+                    plannedRideId: analysis.plannedRideId,
+                    segmentComparisons: analysis.segmentComparisons,
+                    overallDeviation: analysis.overallDeviation,
+                    surgeCount: analysis.surgeCount,
+                    pacingErrors: analysis.pacingErrors,
+                    performanceScore: analysis.performanceScore,
+                    insights: analysis.insights,
+                    powerZoneDistribution: analysis.powerZoneDistribution
+                )
                 
                 await MainActor.run {
                     self.currentAnalysis = analysis
+                    // ✅ CHANGED: Store full filename with extension for source
+                    self.analysisSources[analysis.id] = RideSourceInfo(
+                        type: .fitFile,
+                        fileName: fullFileName  // Use full filename with .fit extension
+                    )
+                    self.storage.saveSource(analysisSources[analysis.id]!, for: analysis.id)
                     self.storage.saveAnalysis(analysis)
                     self.loadHistory()
                     self.isAnalyzing = false
@@ -1972,6 +2132,22 @@ class RideAnalysisViewModel: ObservableObject {
     
     func selectAnalysis(_ analysis: RideAnalysis) {
         currentAnalysis = analysis
+        
+        if analysisSources[analysis.id] == nil {
+            if analysis.rideName.contains("Morning Ride") ||
+               analysis.rideName.contains("Afternoon Ride") ||
+               analysis.rideName.contains("Evening Ride") {
+                analysisSources[analysis.id] = RideSourceInfo(
+                    type: .strava,
+                    fileName: nil
+                )
+            } else {
+                analysisSources[analysis.id] = RideSourceInfo(
+                    type: .fitFile,
+                    fileName: "Imported Ride"
+                )
+            }
+        }
     }
     
     func deleteAnalyses(at offsets: IndexSet) {
@@ -2015,3 +2191,26 @@ struct ShareItem: Identifiable {
     let url: URL
 }
 
+// Better approach: Store source info with analysis
+extension AnalysisStorageManager {
+    private var sourceStorageKey: String { "analysisSourceInfo" }
+    
+    // ✅ This doesn't need @MainActor
+    func saveSource(_ source: RideSourceInfo, for analysisId: UUID) {
+        var sources = loadAllSources()
+        sources[analysisId] = source
+        
+        if let encoded = try? JSONEncoder().encode(sources) {
+            UserDefaults.standard.set(encoded, forKey: sourceStorageKey)
+        }
+    }
+    
+    // ✅ This doesn't need @MainActor either
+    func loadAllSources() -> [UUID: RideSourceInfo] {
+        guard let data = UserDefaults.standard.data(forKey: sourceStorageKey),
+              let sources = try? JSONDecoder().decode([UUID: RideSourceInfo].self, from: data) else {
+            return [:]
+        }
+        return sources
+    }
+}

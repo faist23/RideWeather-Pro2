@@ -290,23 +290,6 @@ struct EnhancedSegmentAnalysis {
     let riskLevel: WeatherRiskLevel
 }
 
-/*struct BetterDepartureTime {
-    let startTime: Date
-    let weatherScore: RouteWeatherScore
-    let improvementPercentage: Int
-    let primaryBenefit: String
-    let timeWindow: (start: Date, end: Date)
-}*/
-
-/*struct RouteWeatherScore {
-    let overallScore: Double
-    let temperatureScore: Double
-    let windScore: Double
-    let precipitationScore: Double
-    let comfortScore: Double
-    let primaryBenefit: String
-}*/
-
 enum WeatherRiskLevel: CaseIterable {
     case low, moderate, high
     

@@ -329,7 +329,10 @@ class RideFileAnalyzer {
             avgSpeed: avgSpeed,
             speedUnit: speedUnit,
             elevation: elevation,
-            elevationUnit: elevationUnit
+            elevationUnit: elevationUnit,
+            startCoordinate: metadataRaw.startCoordinate,
+            endCoordinate: metadataRaw.endCoordinate,
+            routeBreadcrumbs: metadataRaw.routeBreadcrumbs       // 🔥 ADD THIS
         )
         
         print("📊 SPEED VERIFICATION:")
@@ -439,6 +442,54 @@ class RideFileAnalyzer {
         )
     }
 
+    // 🔥 NEW: Extract GPS points at regular intervals for route fingerprinting
+    private func extractRouteBreadcrumbs(
+        from dataPoints: [FITDataPoint],
+        intervalMeters: Double = 500
+    ) -> [CLLocationCoordinate2D] {
+        
+        var breadcrumbs: [CLLocationCoordinate2D] = []
+        var lastBreadcrumbDistance: Double = 0
+        
+        for point in dataPoints {
+            guard let coord = point.position,
+                  let distance = point.distance,
+                  coord.latitude != 0,
+                  coord.longitude != 0,
+                  abs(coord.latitude) < 90,
+                  abs(coord.longitude) < 180 else { continue }
+            
+            // Add first point
+            if breadcrumbs.isEmpty {
+                breadcrumbs.append(coord)
+                lastBreadcrumbDistance = distance
+                continue
+            }
+            
+            // Add breadcrumb every intervalMeters
+            if distance - lastBreadcrumbDistance >= intervalMeters {
+                breadcrumbs.append(coord)
+                lastBreadcrumbDistance = distance
+            }
+        }
+        
+        // Always add the last point if we have more than one
+        if breadcrumbs.count > 1,
+           let lastPoint = dataPoints.last?.position,
+           lastPoint.latitude != 0,
+           lastPoint.longitude != 0 {
+            // Only add if it's not too close to the previous breadcrumb
+            if let lastBreadcrumb = breadcrumbs.last,
+               lastPoint.distance(from: lastBreadcrumb) > 100 {
+                breadcrumbs.append(lastPoint)
+            }
+        }
+        
+        print("📍 Route breadcrumbs: \(breadcrumbs.count) points covering \(String(format: "%.1f", lastBreadcrumbDistance/1000))km")
+        
+        return breadcrumbs
+    }
+
     // 🔥 FIX: Simplified buildRideMetadata - just calculates, doesn't format
     private func buildRideMetadata(
         dataPoints: [FITDataPoint],
@@ -490,6 +541,25 @@ class RideFileAnalyzer {
         let totalDistance = dataPoints.compactMap { $0.distance }.last ?? 0
         let avgGradient = totalDistance > 0 ? (elevationGain / totalDistance) * 100 : 0
         
+        // 🔥 NEW: Extract start and end coordinates
+        let startCoordinate = findFirstValidCoordinate(in: dataPoints)
+        let endCoordinate = findLastValidCoordinate(in: dataPoints)
+        
+        if let start = startCoordinate {
+            print("📍 Start location: \(String(format: "%.4f", start.latitude)), \(String(format: "%.4f", start.longitude))")
+        } else {
+            print("⚠️ No start coordinate found")
+        }
+        
+        if let end = endCoordinate {
+            print("📍 End location: \(String(format: "%.4f", end.latitude)), \(String(format: "%.4f", end.longitude))")
+        } else {
+            print("⚠️ No end coordinate found")
+        }
+        
+        // 🔥 NEW: Extract route breadcrumbs
+        let breadcrumbs = extractRouteBreadcrumbs(from: dataPoints, intervalMeters: 500)
+
         // Return metadata with only calculated values, no display formatting yet
         return RideMetadata(
             routeName: "Ride",
@@ -506,10 +576,41 @@ class RideFileAnalyzer {
             avgSpeed: 0,       // Will be set later
             speedUnit: "",     // Will be set later
             elevation: 0,      // Will be set later
-            elevationUnit: "" // Will be set later
+            elevationUnit: "", // Will be set later
+            startCoordinate: startCoordinate,
+            endCoordinate: endCoordinate,
+            routeBreadcrumbs: breadcrumbs
         )
     }
 
+    // 🔥 NEW: Find first valid GPS coordinate (skip initial zeros)
+    private func findFirstValidCoordinate(in dataPoints: [FITDataPoint]) -> CLLocationCoordinate2D? {
+        for point in dataPoints.prefix(100) { // Check first 100 points
+            if let coord = point.position,
+               coord.latitude != 0,
+               coord.longitude != 0,
+               abs(coord.latitude) < 90,  // Sanity check
+               abs(coord.longitude) < 180 {
+                return coord
+            }
+        }
+        return nil
+    }
+
+    // 🔥 NEW: Find last valid GPS coordinate (skip trailing zeros)
+    private func findLastValidCoordinate(in dataPoints: [FITDataPoint]) -> CLLocationCoordinate2D? {
+        for point in dataPoints.suffix(100).reversed() { // Check last 100 points
+            if let coord = point.position,
+               coord.latitude != 0,
+               coord.longitude != 0,
+               abs(coord.latitude) < 90,
+               abs(coord.longitude) < 180 {
+                return coord
+            }
+        }
+        return nil
+    }
+    
     // MARK: - 🔥 IMPROVED TERRAIN SEGMENTATION
 
     private func segmentByTerrainImproved(
@@ -881,118 +982,7 @@ class RideFileAnalyzer {
         let minutes = (Int(seconds) % 3600) / 60
         return hours > 0 ? "\(hours)h \(minutes)min" : "\(minutes)min"
     }
-    //______________________________________________
-    // MARK: - Terrain-Aware Analysis Methods
-
-/*    private func buildRideMetadata(
-        dataPoints: [FITDataPoint],
-        movingPoints: [FITDataPoint],
-        elapsedTime: TimeInterval,
-        movingTime: TimeInterval,
-        stoppedTime: TimeInterval,
-        totalDistance: Double,
-        distanceUnit: String,
-        avgSpeed: Double,
-        speedUnit: String
-    ) -> RideMetadata {
-        
-        let altitudes = dataPoints.compactMap { $0.altitude }
-        var elevationGain: Double = 0
-        var elevationLoss: Double = 0
-        var maxGradient: Double = 0
-        
-        if altitudes.count > 1 {
-            // 🔥 STEP 1: Apply smoothing to reduce GPS noise
-            // Use a 5-point moving average (similar to Garmin/Strava)
-            let smoothedAltitudes = smoothAltitudeData(altitudes, windowSize: 11)
-            
-            print("📊 Elevation Calculation:")
-            print("   Raw data points: \(altitudes.count)")
-            print("   Smoothed data points: \(smoothedAltitudes.count)")
-            
-            // 🔥 STEP 2: Calculate elevation with threshold
-            // Only count changes > 1 meter (filters out GPS noise)
-            let threshold: Double = 1.0  // meters (Garmin uses ~1m threshold)
-            
-            var accumulatedGain: Double = 0
-            var accumulatedLoss: Double = 0
-            
-            for i in 1..<smoothedAltitudes.count {
-                let change = smoothedAltitudes[i] - smoothedAltitudes[i-1]
-                
-                // Accumulate small changes until they exceed threshold
-                if change > 0 {
-                    accumulatedGain += change
-                    if accumulatedGain >= threshold {
-                        elevationGain += accumulatedGain
-                        accumulatedGain = 0
-                    }
-                } else if change < 0 {
-                    accumulatedLoss += abs(change)
-                    if accumulatedLoss >= threshold {
-                        elevationLoss += accumulatedLoss
-                        accumulatedLoss = 0
-                    }
-                }
-                
-                // Calculate gradient for max (using smoothed data)
-                if let dist1 = dataPoints[i-1].distance, let dist2 = dataPoints[i].distance {
-                    let horizontalDist = dist2 - dist1
-                    if horizontalDist > 0 {
-                        let gradient = (change / horizontalDist) * 100
-                        maxGradient = max(maxGradient, abs(gradient))
-                    }
-                }
-            }
  
-            let elevation = settings.units == .metric ?
-                elevationGain : // meters
-                elevationGain * 3.28084 // feet
-            let elevationUnit = settings.units == .metric ? "m" : "ft"
-            
-/*            // Add any remaining accumulated changes if significant
-            if accumulatedGain >= threshold / 2 {
-                elevationGain += accumulatedGain
-            }
-            if accumulatedLoss >= threshold / 2 {
-                elevationLoss += accumulatedLoss
-            }*/
-            
-            print("   Calculated gain: \(Int(elevationGain))m (\(Int(elevationGain * 3.28084))ft)")
-            print("   Calculated loss: \(Int(elevationLoss))m (\(Int(elevationLoss * 3.28084))ft)")
-#if DEBUG
-debugElevationCalculation(
-    rawAltitudes: altitudes,
-    smoothedAltitudes: smoothedAltitudes,
-    calculatedGain: elevationGain
-)
-#endif
-        }
-        
-        
-        
-        let totalDistance = dataPoints.compactMap { $0.distance }.last ?? 0
-        let avgGradient = totalDistance > 0 ? (elevationGain / totalDistance) * 100 : 0
-        
-        return RideMetadata(
-            routeName: "Ride",
-            totalTime: elapsedTime,
-            movingTime: movingTime,
-            stoppedTime: stoppedTime,
-            date: dataPoints.first?.timestamp ?? Date(),
-            elevationGain: elevationGain,  // Keep in meters
-            elevationLoss: elevationLoss,
-            avgGradient: avgGradient,
-            maxGradient: maxGradient,
-            totalDistance: totalDistance,
-            distanceUnit: distanceUnit,
-            avgSpeed: avgSpeed,
-            speedUnit: speedUnit,
-            elevation: elevation,
-            elevationUnit: elevationUnit
-        )
-    }*/
-
     private func smoothAltitudeData(_ altitudes: [Double], windowSize: Int) -> [Double] {
         guard altitudes.count > windowSize else { return altitudes }
         
@@ -2391,7 +2381,10 @@ debugElevationCalculation(
                 avgSpeed: 0,
                 speedUnit: "mph",
                 elevation: 0,
-                elevationUnit: "ft"
+                elevationUnit: "ft",
+                startCoordinate: nil, 
+                endCoordinate: nil,
+                routeBreadcrumbs: nil
             ),
             averagePower: 0,
             normalizedPower: 0,
@@ -2849,7 +2842,32 @@ struct RideMetadata: Codable {
     let speedUnit: String        // "km/h" or "mph"
     let elevation: Double        // In user's preferred unit
     let elevationUnit: String    // "m" or "ft"
+    
+    // 🔥 NEW: GPS coordinates for route matching
+    let startCoordinate: CLLocationCoordinate2D?
+    let endCoordinate: CLLocationCoordinate2D?
+    // 🔥 NEW: GPS breadcrumbs for accurate route matching
+    let routeBreadcrumbs: [CLLocationCoordinate2D]?
 }
 
-//            let segmentDisplayName = "Segment \(comparisons.count + 1)"
+// MARK: - CLLocationCoordinate2D Codable Extension
 
+extension CLLocationCoordinate2D: Codable {
+    enum CodingKeys: String, CodingKey {
+        case latitude
+        case longitude
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let latitude = try container.decode(Double.self, forKey: .latitude)
+        let longitude = try container.decode(Double.self, forKey: .longitude)
+        self.init(latitude: latitude, longitude: longitude)
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(latitude, forKey: .latitude)
+        try container.encode(longitude, forKey: .longitude)
+    }
+}

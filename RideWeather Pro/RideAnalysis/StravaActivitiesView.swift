@@ -427,7 +427,8 @@ class StravaActivitiesViewModel: ObservableObject {
                         // Post notification to show the analysis
                         NotificationCenter.default.post(
                             name: NSNotification.Name("NewAnalysisImported"),
-                            object: analysis
+                            object: analysis,
+                            userInfo: ["source": "strava"]  // ✅ ADD THIS
                         )
                         print("StravaImport: Notification posted")
                     }

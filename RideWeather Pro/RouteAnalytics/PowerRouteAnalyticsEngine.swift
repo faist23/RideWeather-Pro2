@@ -1183,20 +1183,6 @@ final class PowerRouteAnalyticsEngine {
         return 0.0
     }
     
-    /*    private func estimateIntervalGrade(startPoint: RouteWeatherPoint, endPoint: RouteWeatherPoint, distance: Double) -> Double {
-        guard let ea = elevationAnalysis, ea.hasActualData, !ea.elevationProfile.isEmpty else {
-            return 0.0  // No elevation data, assume flat
-        }
-        
-        guard let startElev = findClosestElevation(distance: startPoint.distance, profile: ea.elevationProfile),
-              let endElev = findClosestElevation(distance: endPoint.distance, profile: ea.elevationProfile),
-              distance > 0 else {
-            return 0.0
-        }
-        
-        return (endElev - startElev) / distance
-    }*/
-
     /// Chooses appropriate segment length based on terrain gradient
     private func chooseSegmentLength(for grade: Double, interval: Double) -> Double {
         let absGrade = abs(grade)

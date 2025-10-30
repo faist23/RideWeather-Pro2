@@ -83,31 +83,6 @@ struct StravaActivity: Codable, Identifiable {
     }
 }
 
-
-/*struct StravaActivityDetail: Codable {
-    let id: Int
-    let name: String
-    let distance: Double
-    let moving_time: Int
-    let elapsed_time: Int
-    let total_elevation_gain: Double
-    let average_watts: Double?
-    let weighted_average_watts: Double?
-    let device_watts: Bool?
-    let calories: Double?
-    let splits_metric: [StravaSplit]?
-    
-    struct StravaSplit: Codable {
-        let distance: Double
-        let elapsed_time: Int
-        let elevation_difference: Double
-        let moving_time: Int
-        let split: Int
-        let average_speed: Double
-        let average_watts: Double?
-    }
-}*/
-
 // MARK: - Strava Streams Models (add after StravaActivityDetail)
 
 struct StravaStreams: Codable {
@@ -676,29 +651,6 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         let activities = try JSONDecoder().decode([StravaActivity].self, from: data)
         return activities.filter { $0.type == "Ride" || $0.type == "VirtualRide" }
     }
-
-    /// Fetches detailed activity data including power streams
-/*    func fetchActivityDetail(activityId: Int) async throws -> StravaActivityDetail {
-        try await refreshTokenIfNeededAsync()
-        
-        guard let accessToken = currentTokens?.accessToken else {
-            throw StravaError.notAuthenticated
-        }
-        
-        let url = URL(string: "https://www.strava.com/api/v3/activities/\(activityId)")!
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw StravaError.apiError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? -1)
-        }
-        
-        return try JSONDecoder().decode(StravaActivityDetail.self, from: data)
-    }*/
 
     // MARK: - Helper Methods
 

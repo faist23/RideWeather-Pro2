@@ -114,15 +114,6 @@ class WeatherViewModel: ObservableObject {
     var hourlyForecasts: [HourlyForecast] {
         return allHourlyData.isEmpty ? hourlyForecast : allHourlyData
     }
-    
-/*    var analyticsAvailable: Bool {
-        return !hourlyForecasts.isEmpty
-    }
-
-    var hourlyForecastsForAnalytics: [HourlyForecast] {
-        print("📊 allHourlyData populated with \(allHourlyData.count) forecasts at \(Date())")
-        return allHourlyData
-    }*/
 
     var finalPacingPlan: PacingPlan? {
         // This will return the original plan if adjustment is 0, or the tweaked plan otherwise.
@@ -257,48 +248,6 @@ class WeatherViewModel: ObservableObject {
             }
         }
     }
-
-    // Add this MARK section after your importRoute method and before fetchAllWeather
-    // Around line 200-250 in your WeatherViewModel
-
-    // MARK: - Route and Weather Data Cleanup Methods
-
-    /// Clears all route-related data to free Metal resources
-/*    func clearRouteData() {
-        routePoints.removeAll()
-        enhancedRoutePoints.removeAll()
-        elevationAnalysis = nil
-        powerAnalysisResult = nil
-        
-        // Clear advanced controller data
-        advancedController = nil
-        
-        print("🧹 Route data cleared")
-    }
-
-    /// Clears all weather-related data including annotations
-    func clearWeatherData() {
-        weatherDataForRoute.removeAll()
-        allHourlyData.removeAll()
-        hourlyForecast.removeAll()
-        displayWeather = nil
-        enhancedInsights = nil
-        
-        print("🧹 Weather data cleared")
-    }
-
-    /// Cancels any ongoing weather fetch operations
-    func cancelOngoingWeatherFetch() {
-        // Cancel the loading state
-        if case .loading = uiState {
-            uiState = .loaded
-        }
-        
-        // If you have any Task references stored, cancel them here
-        // For example: weatherFetchTask?.cancel()
-        
-        print("⏹️ Cancelled ongoing weather operations")
-    }*/
     
     // MARK: - Existing Methods (unchanged)
     
@@ -366,10 +315,6 @@ class WeatherViewModel: ObservableObject {
             uiState = .error("Could not load the detailed forecast. Please try again.")
         }
     }
-    
-/*    func closeAnalytics() {
-        showingAnalytics = false
-    }*/
 
     func fetchExtendedHourlyData() async throws {
         guard locationManager.authorizationStatus != .denied else { return }

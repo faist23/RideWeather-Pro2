@@ -117,12 +117,6 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         }
     }
     
-/*    // Force refresh location (for pull-to-refresh scenarios)
-    func forceLocationUpdate() {
-        lastLocationUpdate = nil
-        requestSingleLocation()
-    }*/
-    
     // MARK: - CLLocationManagerDelegate (Swift 6 Compatible)
     
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
