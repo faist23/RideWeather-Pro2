@@ -627,7 +627,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     /// Fetches recent activities from Strava with pagination
     func fetchRecentActivities(page: Int = 1, perPage: Int = 30) async throws -> [StravaActivity] {
         // Ensure we have a valid token
-        try await refreshTokenIfNeededAsync()
+        await refreshTokenIfNeededAsync()
         
         guard let accessToken = currentTokens?.accessToken else {
             throw StravaError.notAuthenticated
@@ -660,11 +660,11 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         }
         
         let activities = try JSONDecoder().decode([StravaActivity].self, from: data)
-        let rideActivities = activities.filter { $0.type == "Ride" || $0.type == "VirtualRide" }
         
-        print("StravaService: Fetched \(activities.count) activities, \(rideActivities.count) are rides")
+        // ✅ DON'T FILTER HERE - return all activities and let the caller decide
+        print("StravaService: Fetched \(activities.count) total activities on page \(page)")
         
-        return rideActivities
+        return activities
     }
     
     // MARK: - Helper Methods

@@ -20,47 +20,11 @@ struct StravaActivitiesView: View {
                 if viewModel.isLoading && viewModel.activities.isEmpty {
                     ProgressView("Loading activities...")
                 } else if let error = viewModel.errorMessage {
-                    VStack(spacing: 16) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 60))
-                            .foregroundColor(.orange)
-                        Text("Error Loading Activities")
-                            .font(.headline)
-                        Text(error)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                        Button("Try Again") {
-                            viewModel.loadActivities(service: stravaService)
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .padding()
+                    errorView(error: error)
                 } else if viewModel.activities.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "bicycle")
-                            .font(.system(size: 60))
-                            .foregroundColor(.secondary)
-                        Text("No Activities Found")
-                            .font(.headline)
-                        Text("Your recent Strava rides will appear here")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
+                    emptyStateView
                 } else {
-                    List {
-                        ForEach(viewModel.activities) { activity in
-                            ActivityRow(activity: activity)
-                                .environmentObject(weatherViewModel)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    viewModel.selectActivity(activity, service: stravaService, weatherViewModel: weatherViewModel)
-                                }
-                        }
-                    }
-                    .refreshable {
-                        viewModel.loadActivities(service: stravaService)
-                    }
+                    activitiesList
                 }
             }
             .navigationTitle("Strava Activities")
@@ -82,7 +46,6 @@ struct StravaActivitiesView: View {
                     )
                 }
             }
-            // âœ… ADD THIS - Auto-dismiss when analysis is imported
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NewAnalysisImported"))) { _ in
                 dismiss()
             }
@@ -92,6 +55,97 @@ struct StravaActivitiesView: View {
                 viewModel.loadActivities(service: stravaService)
             }
         }
+    }
+    
+    // ✅ UPDATE activitiesList to include Load More button
+    private var activitiesList: some View {
+        List {
+            ForEach(viewModel.activities) { activity in
+                ActivityRow(activity: activity)
+                    .environmentObject(weatherViewModel)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        viewModel.selectActivity(activity, service: stravaService, weatherViewModel: weatherViewModel)
+                    }
+            }
+            
+            // ✅ ADD LOAD MORE SECTION
+            if viewModel.hasMorePages {
+                Section {
+                    Button(action: {
+                        viewModel.loadMoreActivities(service: stravaService)
+                    }) {
+                        HStack {
+                            Spacer()
+                            if viewModel.isLoadingMore {
+                                ProgressView()
+                                    .padding(.trailing, 8)
+                                Text("Loading...")
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Image(systemName: "arrow.down.circle")
+                                    .font(.title3)
+                                Text("Load More Activities")
+                            }
+                            Spacer()
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    .disabled(viewModel.isLoadingMore)
+                }
+            } else if !viewModel.activities.isEmpty {
+                Section {
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.title3)
+                                .foregroundColor(.green)
+                            Text("All activities loaded")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+        }
+        .refreshable {
+            viewModel.loadActivities(service: stravaService)
+        }
+    }
+    
+    private var emptyStateView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "bicycle")
+                .font(.system(size: 60))
+                .foregroundColor(.secondary)
+            Text("No Activities Found")
+                .font(.headline)
+            Text("Your recent Strava rides will appear here")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+    }
+    
+    private func errorView(error: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 60))
+                .foregroundColor(.orange)
+            Text("Error Loading Activities")
+                .font(.headline)
+            Text(error)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Try Again") {
+                viewModel.loadActivities(service: stravaService)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
     }
 }
 
@@ -280,17 +334,33 @@ class StravaActivitiesViewModel: ObservableObject {
     @Published var isImporting = false
     @Published var errorMessage: String?
     @Published var showingAnalysisImport = false
+    @Published var isLoadingMore = false  // ✅ ADD
+    @Published var hasMorePages = true    // ✅ ADD
+    
+    private var currentPage = 1           // ✅ ADD
+    private let perPage = 50              // ✅ ADD
     
     func loadActivities(service: StravaService) {
         isLoading = true
         errorMessage = nil
-        
+        currentPage = 1  // ✅ ADD: Reset to first page
+        activities = []  // ✅ ADD: Clear existing
+
         Task {
             do {
-                let activities = try await service.fetchRecentActivities()
+                let allActivities = try await service.fetchRecentActivities(page: currentPage, perPage: perPage)
                 await MainActor.run {
-                    self.activities = activities
+                    // Filter for rides with GPS data
+                    let rides = allActivities.filter {
+                        ($0.type == "Ride" || $0.type == "VirtualRide") &&
+                        !$0.start_date_local.isEmpty
+                    }
+                    
+                    self.activities = rides
+                    self.hasMorePages = allActivities.count == perPage
                     self.isLoading = false
+                    
+                    print("📱 Loaded page \(self.currentPage): \(allActivities.count) total, \(rides.count) rides")
                 }
             } catch {
                 await MainActor.run {
@@ -301,6 +371,43 @@ class StravaActivitiesViewModel: ObservableObject {
         }
     }
     
+    // ✅ ADD THIS METHOD
+    func loadMoreActivities(service: StravaService) {
+        guard !isLoadingMore && hasMorePages else {
+            print("📱 Skipping load more: isLoadingMore=\(isLoadingMore), hasMorePages=\(hasMorePages)")
+            return
+        }
+        
+        print("📱 Loading more activities...")
+        isLoadingMore = true
+        errorMessage = nil
+        currentPage += 1
+        
+        Task {
+            do {
+                let allActivities = try await service.fetchRecentActivities(page: currentPage, perPage: perPage)
+                await MainActor.run {
+                    let newRides = allActivities.filter {
+                        ($0.type == "Ride" || $0.type == "VirtualRide") &&
+                        !$0.start_date_local.isEmpty
+                    }
+                    
+                    self.activities.append(contentsOf: newRides)
+                    self.hasMorePages = allActivities.count == perPage
+                    self.isLoadingMore = false
+                    
+                    print("📱 Loaded page \(self.currentPage): Added \(newRides.count) rides (total: \(self.activities.count))")
+                }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = error.localizedDescription
+                    self.isLoadingMore = false
+                    self.currentPage -= 1
+                }
+            }
+        }
+    }
+
     func selectActivity(_ activity: StravaActivity, service: StravaService, weatherViewModel: WeatherViewModel) {
         selectedActivity = activity
         showingAnalysisImport = true

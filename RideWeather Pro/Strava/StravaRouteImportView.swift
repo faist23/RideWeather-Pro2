@@ -923,7 +923,7 @@ struct StravaActivityDetailView: View {
                 viewModel.importRoute(
                     activityId: activity.id,
                     activityName: activity.name,
-                    activityDate: activity.startDate,
+                    activityDate: nil, //activity.startDate,
                     service: stravaService,
                     weatherViewModel: weatherViewModel,
                     onSuccess: {
@@ -1086,28 +1086,34 @@ class StravaActivitiesImportViewModel: ObservableObject {
     @Published var hasMorePages = true
      
      private var currentPage = 1
-     private let perPage = 30
+     private let perPage = 50
      
     func loadActivities(service: StravaService) {
         isLoading = true
         errorMessage = nil
         currentPage = 1
+        activities = []  // ✅ Clear existing activities
         
         Task {
             do {
-                let activities = try await service.fetchRecentActivities(page: currentPage, perPage: perPage)
+                let allActivities = try await service.fetchRecentActivities(page: currentPage, perPage: perPage)
                 await MainActor.run {
-                    // Only show activities with GPS data
-                    self.activities = activities.filter { $0.start_date_local != "" }
-                    self.hasMorePages = activities.count == perPage
+                    // Filter for rides with GPS data
+                    let rides = allActivities.filter {
+                        ($0.type == "Ride" || $0.type == "VirtualRide") &&
+                        !$0.start_date_local.isEmpty
+                    }
+                    
+                    self.activities = rides
+                    
+                    // ✅ Check if more pages based on total activities returned, not filtered count
+                    self.hasMorePages = allActivities.count == perPage
                     self.isLoading = false
                     
-                    print("📱 Loaded page \(self.currentPage): \(self.activities.count) activities")
-                    if self.hasMorePages {
-                        print("📱 More pages available")
-                    } else {
-                        print("📱 No more pages")
-                    }
+                    print("📱 Loaded page \(self.currentPage):")
+                    print("   - Total activities from Strava: \(allActivities.count)")
+                    print("   - Filtered rides: \(rides.count)")
+                    print("   - Has more pages: \(self.hasMorePages)")
                 }
             } catch {
                 await MainActor.run {
@@ -1117,7 +1123,7 @@ class StravaActivitiesImportViewModel: ObservableObject {
             }
         }
     }
-    
+
     func loadMoreActivities(service: StravaService) {
         guard !isLoadingMore && hasMorePages else {
             print("📱 Skipping load more: isLoadingMore=\(isLoadingMore), hasMorePages=\(hasMorePages)")
@@ -1131,21 +1137,26 @@ class StravaActivitiesImportViewModel: ObservableObject {
         
         Task {
             do {
-                let newActivities = try await service.fetchRecentActivities(page: currentPage, perPage: perPage)
+                let allActivities = try await service.fetchRecentActivities(page: currentPage, perPage: perPage)
                 await MainActor.run {
-                    // Filter and append new activities
-                    let filteredNew = newActivities.filter { $0.start_date_local != "" }
+                    // Filter new activities for rides with GPS data
+                    let newRides = allActivities.filter {
+                        ($0.type == "Ride" || $0.type == "VirtualRide") &&
+                        !$0.start_date_local.isEmpty
+                    }
+                    
                     let oldCount = self.activities.count
-                    self.activities.append(contentsOf: filteredNew)
-                    self.hasMorePages = newActivities.count == perPage
+                    self.activities.append(contentsOf: newRides)
+                    
+                    // ✅ Check based on total activities, not filtered
+                    self.hasMorePages = allActivities.count == perPage
                     self.isLoadingMore = false
                     
-                    print("📱 Loaded page \(self.currentPage): Added \(filteredNew.count) activities (total now: \(self.activities.count))")
-                    if self.hasMorePages {
-                        print("📱 More pages available")
-                    } else {
-                        print("📱 Reached end of activities")
-                    }
+                    print("📱 Loaded page \(self.currentPage):")
+                    print("   - Total activities from Strava: \(allActivities.count)")
+                    print("   - Filtered rides added: \(newRides.count)")
+                    print("   - Total rides now: \(self.activities.count)")
+                    print("   - Has more pages: \(self.hasMorePages)")
                 }
             } catch {
                 await MainActor.run {
@@ -1157,7 +1168,7 @@ class StravaActivitiesImportViewModel: ObservableObject {
             }
         }
     }
-    
+
     func importRoute(
         activityId: Int,
         activityName: String,
@@ -1194,11 +1205,11 @@ class StravaActivitiesImportViewModel: ObservableObject {
                     print("🔵 Step 5: Setting route name to '\(activityName)'")
                     weatherViewModel.routeDisplayName = activityName
                     
-                    // Set ride date to activity date
+/*                    // Set ride date to activity date---don't set the forecast date to date of strava activity
                     if let activityDate = activityDate {
                         print("🔵 Step 6: Setting ride date to \(activityDate)")
                         weatherViewModel.rideDate = activityDate
-                    }
+                    }*/
                     
                     print("🔵 Step 7: Import complete")
                     self.isImporting = false
