@@ -10,7 +10,9 @@ import CoreLocation
 
 struct RouteForecastView: View {
     @EnvironmentObject var viewModel: WeatherViewModel
+    @EnvironmentObject var stravaService: StravaService
     @State private var isImporting = false
+    @State private var showingStravaImport = false
 
     @State private var selectedWeatherPoint: RouteWeatherPoint? = nil
     @State private var showWeatherDetail = false
@@ -152,6 +154,15 @@ struct RouteForecastView: View {
                             Image(systemName: "scope")
                         }
                     }
+                    
+                    // ✅ Strava import button
+                    if stravaService.isAuthenticated {
+                        Button {
+                            showingStravaImport = true
+                        } label: {
+                            Image(systemName: "figure.outdoor.cycle")
+                        }
+                    }
                 }
             }
             // Weather + analytics sheets
@@ -206,6 +217,19 @@ struct RouteForecastView: View {
                         let notificationFeedback = UINotificationFeedbackGenerator()
                         notificationFeedback.notificationOccurred(.error)
                     }
+                }
+            }
+            // ✅ ADD THIS: Strava import sheet
+            .sheet(isPresented: $showingStravaImport) {
+                StravaRouteImportView()
+                    .environmentObject(stravaService)
+                    .environmentObject(viewModel)
+            }
+            // ✅ Add this to debug - watch for route changes
+            .onChange(of: viewModel.routePoints.count) { oldValue, newValue in
+                print("🟢 Route points changed: \(oldValue) -> \(newValue)")
+                if newValue > 0 {
+                    print("🟢 Route loaded with \(newValue) points")
                 }
             }
             .safeAreaInset(edge: .bottom) {

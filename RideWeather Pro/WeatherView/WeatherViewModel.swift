@@ -101,13 +101,18 @@ class WeatherViewModel: ObservableObject {
     
     // NEW: Computed property for route display name
     var routeDisplayName: String {
-        if !importedRouteDisplayName.isEmpty {
-            return importedRouteDisplayName
+        get {
+            if !importedRouteDisplayName.isEmpty {
+                return importedRouteDisplayName
+            }
+            if let fileName = lastImportedFileName, !fileName.isEmpty {
+                return cleanFileName(fileName)
+            }
+            return "Imported Route"
         }
-        if let fileName = lastImportedFileName, !fileName.isEmpty {
-            return cleanFileName(fileName)
+        set {
+            importedRouteDisplayName = newValue
         }
-        return "Imported Route"
     }
 
     // MARK: - Analytics Computed Properties

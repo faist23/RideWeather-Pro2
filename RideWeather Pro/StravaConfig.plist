@@ -4,6 +4,8 @@
 <dict>
 	<key>strava_athlete_name</key>
 	<string></string>
+	<key>strava_athlete_id</key>
+	<string></string>
 	<key>StravaClientID</key>
 	<string>81681</string>
 	<key>StravaClientSecret</key>

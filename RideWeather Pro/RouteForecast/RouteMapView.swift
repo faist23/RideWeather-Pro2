@@ -57,6 +57,7 @@ struct RouteMapView: View {
             loadMapContentProgressively()
         }
         .onChange(of: viewModel.routePoints.count) { oldCount, newCount in
+            print("🗺️ RouteMapView detected route change: \(oldCount) -> \(newCount)")
             // Reset and reload when route changes
             // Force immediate cleanup of old map
             if oldCount > 0 && newCount == 0 {

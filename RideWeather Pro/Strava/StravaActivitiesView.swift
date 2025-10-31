@@ -287,7 +287,7 @@ class StravaActivitiesViewModel: ObservableObject {
         
         Task {
             do {
-                let activities = try await service.fetchRecentActivities(limit: 60)
+                let activities = try await service.fetchRecentActivities()
                 await MainActor.run {
                     self.activities = activities
                     self.isLoading = false

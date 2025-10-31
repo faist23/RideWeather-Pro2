@@ -9,6 +9,7 @@ import Foundation
 import AuthenticationServices
 import Combine
 import UIKit
+import CoreLocation
 
 // MARK: - Data Models
 struct StravaTokens: Codable {
@@ -27,6 +28,7 @@ struct StravaTokenResponse: Decodable {
 }
 
 struct StravaAthlete: Codable {
+    let id: Int?  // ✅ ADD THIS
     let firstname: String?
     let lastname: String?
 }
@@ -123,20 +125,20 @@ struct StravaStreams: Codable {
 // MARK: - Main Service
 @MainActor
 class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
-
+    
     // MARK: - Configuration
     private var stravaConfig: [String: String]?
     private var clientId: String { configValue(forKey: "StravaClientID") ?? "INVALID_CLIENT_ID" }
     private var clientSecret: String { configValue(forKey: "StravaClientSecret") ?? "INVALID_CLIENT_SECRET" }
-
+    
     private let redirectUri = "https://faist23.github.io/rideweatherpro-redirect/strava-redirect.html"
-    private let scope = "activity:read_all,profile:read_all"
+    private let scope = "activity:read_all,profile:read_all"  // Note: route:read_all is not needed, routes are accessible with profile:read_all
 
     // MARK: - Published State
     @Published var isAuthenticated: Bool = false
     @Published var errorMessage: String? = nil
     @Published var athleteName: String? = nil
-
+    
     // MARK: - Internal State
     private var webAuthSession: ASWebAuthenticationSession?
     private var currentTokens: StravaTokens? {
@@ -145,17 +147,17 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             saveTokensToKeychain()
         }
     }
-
+    
     // Separate Keychain slot for athlete name (so we persist connection state even if tokens expire)
     private let athleteNameKey = "strava_athlete_name"
-
+    
     override init() {
         super.init()
         loadConfig()
         loadTokensFromKeychain()
         loadAthleteNameFromKeychain() // ✅ restore athlete name
     }
-
+    
     // MARK: - Config Loading
     private func loadConfig() {
         guard let path = Bundle.main.path(forResource: "StravaConfig", ofType: "plist"),
@@ -168,11 +170,11 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         stravaConfig = dict
         print("StravaService: Configuration loaded.")
     }
-
+    
     private func configValue(forKey key: String) -> String? {
         return stravaConfig?[key]
     }
-
+    
     // MARK: - Authentication
     func authenticate() {
         guard stravaConfig != nil,
@@ -182,7 +184,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             print("StravaService Error: Config invalid.")
             return
         }
-
+        
         print("StravaService: Starting authentication...")
         var components = URLComponents(string: "https://www.strava.com/oauth/authorize")!
         components.queryItems = [
@@ -192,15 +194,15 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             URLQueryItem(name: "approval_prompt", value: "force"),
             URLQueryItem(name: "scope", value: scope)
         ]
-
+        
         guard let authURL = components.url else { return }
-
+        
         webAuthSession = ASWebAuthenticationSession(
             url: authURL,
             callbackURLScheme: "rideweatherpro"
         ) { [weak self] callbackURL, error in
             guard let self else { return }
-
+            
             if let error = error {
                 if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin {
                     print("StravaService: Login canceled.")
@@ -210,18 +212,18 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                 }
                 return
             }
-
+            
             guard let url = callbackURL else { return }
             print("StravaService: Callback received: \(url)")
             self.handleRedirect(url: url)
         }
-
+        
         webAuthSession?.presentationContextProvider = self
         webAuthSession?.prefersEphemeralWebBrowserSession = true
         print("StravaService: Launching auth session...")
         _ = webAuthSession?.start()
     }
-
+    
     // MARK: - Handle Redirect
     func handleRedirect(url: URL) {
         print("StravaService: Handling redirect...")
@@ -232,21 +234,21 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             print("StravaService: Invalid redirect URL.")
             return
         }
-
+        
         print("StravaService: Received authorization code: \(code)")
         exchangeToken(code: code)
     }
-
+    
     // MARK: - Exchange Code → Tokens
     private func exchangeToken(code: String) {
         print("StravaService: Exchanging code for tokens...")
-
+        
         guard let tokenURL = URL(string: "https://www.strava.com/oauth/token") else { return }
-
+        
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-
+        
         var body = URLComponents()
         body.queryItems = [
             URLQueryItem(name: "client_id", value: clientId),
@@ -255,7 +257,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             URLQueryItem(name: "grant_type", value: "authorization_code")
         ]
         request.httpBody = body.percentEncodedQuery?.data(using: .utf8)
-
+        
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
             Task { @MainActor in
@@ -264,16 +266,16 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                     print("StravaService Error: \(error.localizedDescription)")
                     return
                 }
-
+                
                 guard let data = data else {
                     print("StravaService: Empty response.")
                     return
                 }
-
+                
                 if let httpResponse = response as? HTTPURLResponse {
                     print("StravaService: Token exchange response: \(httpResponse.statusCode)")
                 }
-
+                
                 do {
                     let tokenResponse = try JSONDecoder().decode(StravaTokenResponse.self, from: data)
                     self.currentTokens = StravaTokens(
@@ -281,83 +283,90 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                         refreshToken: tokenResponse.refresh_token,
                         expiresAt: tokenResponse.expires_at
                     )
+                    // ✅ CRITICAL: Store athlete ID
+                    if let athleteId = tokenResponse.athlete?.id {
+                        UserDefaults.standard.set(athleteId, forKey: "strava_athlete_id")
+                        print("StravaService: ✅ Stored athlete ID: \(athleteId)")
+                    } else {
+                        print("StravaService: ⚠️ WARNING - No athlete ID in token response!")
+                    }
 
-                    // ✅ Store athlete name and update UI
-                    let name = tokenResponse.athlete?.firstname ?? "Strava User"
-                    self.athleteName = name
-                    self.saveAthleteNameToKeychain(name)
+                     // Store athlete name and update UI
+                     let name = tokenResponse.athlete?.firstname ?? "Strava User"
+                     self.athleteName = name
+                     self.saveAthleteNameToKeychain(name)
 
-                    print("StravaService: Authenticated as \(name).")
-                    self.errorMessage = nil
-                } catch {
-                    print("StravaService Error: \(error.localizedDescription)")
-                    self.errorMessage = "Token decoding failed."
-                }
-            }
-        }.resume()
-    }
-
+                     print("StravaService: Authenticated as \(name).")
+                     self.errorMessage = nil
+                 } catch {
+                     print("StravaService Error: \(error.localizedDescription)")
+                     self.errorMessage = "Token decoding failed."
+                 }
+             }
+         }.resume()
+     }
+    
     // MARK: - Token Refresh
     /// Checks if the access token needs refreshing and performs the refresh if necessary.
     func refreshTokenIfNeeded(completion: @escaping (Result<Void, Error>) -> Void) {
-         guard let tokens = currentTokens else {
-             let error = NSError(domain: "StravaService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
-             print("StravaService: No tokens to refresh.")
-             completion(.failure(error))
-             return
-         }
-
-         // Check if token expires within the next hour (3600 seconds) for a safety margin
-         let needsRefresh = Date().timeIntervalSince1970 >= tokens.expiresAt - 3600
-
-         if !needsRefresh {
-             print("StravaService: Access token still valid (expires at \(Date(timeIntervalSince1970: tokens.expiresAt))).")
-             completion(.success(()))
-             return
-         }
-
-         print("StravaService: Access token expired or nearing expiry. Refreshing...")
+        guard let tokens = currentTokens else {
+            let error = NSError(domain: "StravaService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Not authenticated"])
+            print("StravaService: No tokens to refresh.")
+            completion(.failure(error))
+            return
+        }
+        
+        // Check if token expires within the next hour (3600 seconds) for a safety margin
+        let needsRefresh = Date().timeIntervalSince1970 >= tokens.expiresAt - 3600
+        
+        if !needsRefresh {
+            print("StravaService: Access token still valid (expires at \(Date(timeIntervalSince1970: tokens.expiresAt))).")
+            completion(.success(()))
+            return
+        }
+        
+        print("StravaService: Access token expired or nearing expiry. Refreshing...")
         // Ensure config is available
         guard stravaConfig != nil,
               clientId != "INVALID_CLIENT_ID",
               clientSecret != "INVALID_CLIENT_SECRET" else {
-             errorMessage = "Strava integration is not configured correctly."
-             print("StravaService Error: Attempted token refresh without valid config.")
-              let error = NSError(domain: "StravaService", code: -2, userInfo: [NSLocalizedDescriptionKey: "Configuration Error"])
-              completion(.failure(error))
-             return
-         }
-
-         guard let tokenURL = URL(string: "https://www.strava.com/oauth/token") else {
-              let error = NSError(domain: "StravaService", code: -3, userInfo: [NSLocalizedDescriptionKey: "Invalid token URL"])
-              completion(.failure(error))
-              return
-          }
-
-         // Prepare the refresh request
-         var request = URLRequest(url: tokenURL)
-         request.httpMethod = "POST"
-         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-
-         var components = URLComponents()
-         components.queryItems = [
-             URLQueryItem(name: "client_id", value: clientId),
-             URLQueryItem(name: "client_secret", value: clientSecret), // Use loaded secret
-             URLQueryItem(name: "refresh_token", value: tokens.refreshToken),
-             URLQueryItem(name: "grant_type", value: "refresh_token") // Specify refresh grant
-         ]
-         request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
-
-         // Perform the network request
+            errorMessage = "Strava integration is not configured correctly."
+            print("StravaService Error: Attempted token refresh without valid config.")
+            let error = NSError(domain: "StravaService", code: -2, userInfo: [NSLocalizedDescriptionKey: "Configuration Error"])
+            completion(.failure(error))
+            return
+        }
+        
+        guard let tokenURL = URL(string: "https://www.strava.com/oauth/token") else {
+            let error = NSError(domain: "StravaService", code: -3, userInfo: [NSLocalizedDescriptionKey: "Invalid token URL"])
+            completion(.failure(error))
+            return
+        }
+        
+        // Prepare the refresh request
+        var request = URLRequest(url: tokenURL)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        
+        var components = URLComponents()
+        components.queryItems = [
+            URLQueryItem(name: "client_id", value: clientId),
+            URLQueryItem(name: "client_secret", value: clientSecret), // Use loaded secret
+            URLQueryItem(name: "refresh_token", value: tokens.refreshToken),
+            URLQueryItem(name: "grant_type", value: "refresh_token") // Specify refresh grant
+        ]
+        request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
+        
+        // Perform the network request
         let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
-
+            
             // Capture response INSIDE the Task block
             Task { @MainActor in // Switch back to main thread
                 // Capture httpResponse here so it's available inside this Task
                 let validHttpResponse = response as? HTTPURLResponse // Use this name consistently now
                 // --- END CAPTURE ---
-
+                
                 if let error = error {
                     self.errorMessage = "Token refresh network failed: \(error.localizedDescription)"
                     print("StravaService Error: \(self.errorMessage!)")
@@ -365,7 +374,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                     completion(.failure(error))
                     return
                 }
-
+                
                 // Use the captured validHttpResponse variable
                 guard let validHttpResponse = validHttpResponse, let data = data else { // Make sure to use the captured variable
                     self.errorMessage = "Invalid response during token refresh."
@@ -375,12 +384,12 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                     completion(.failure(error))
                     return
                 }
-
+                
                 if let responseString = String(data: data, encoding: .utf8) {
                     // Use the captured validHttpResponse.statusCode
                     print("StravaService: Refresh Token Response (\(validHttpResponse.statusCode)): \(responseString)")
                 }
-
+                
                 // --- FIX IS HERE (Line 398 area) ---
                 // Use the captured validHttpResponse.statusCode consistently
                 guard validHttpResponse.statusCode == 200 else {
@@ -394,46 +403,46 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                 }
                 
                 // --- END UPDATED GUARD ---
-
+                
                 if let responseString = String(data: data, encoding: .utf8) {
                     // --- UPDATED LOGGING --- Use the captured validHttpResponse.statusCode
                     print("StravaService: Refresh Token Response (\(validHttpResponse.statusCode)): \(responseString)")
                 }
-
+                
                 // --- UPDATED GUARD --- Use the captured validHttpResponse.statusCode
                 guard validHttpResponse.statusCode == 200 else {
                     self.errorMessage = "Token refresh failed: Status \(validHttpResponse.statusCode)"
                     print("StravaService Error: \(self.errorMessage!) - Refresh token might be invalid.")
                     self.disconnect() // Assume refresh token is bad, force re-auth
-                     // --- UPDATED ERROR --- Use the captured validHttpResponse.statusCode
+                    // --- UPDATED ERROR --- Use the captured validHttpResponse.statusCode
                     let error = NSError(domain: "StravaService", code: validHttpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Refresh token failed or revoked"])
                     completion(.failure(error))
                     return
                 }
-                 // Decode the new tokens
-                 do {
-                     let tokenResponse = try JSONDecoder().decode(StravaTokenResponse.self, from: data)
-                     print("StravaService: Tokens refreshed successfully.")
-                     // Update stored tokens with the new ones
-                     self.currentTokens = StravaTokens(
-                         accessToken: tokenResponse.access_token,
-                         refreshToken: tokenResponse.refresh_token, // Update in case it changed
-                         expiresAt: tokenResponse.expires_at
-                     )
-                     self.errorMessage = nil // Clear error on success
-                     completion(.success(())) // Signal success
-                 } catch {
-                     self.errorMessage = "Failed to decode refreshed token response: \(error.localizedDescription)"
-                     print("StravaService Error: \(self.errorMessage!)")
-                     self.disconnect() // Disconnect if decoding fails
-                     completion(.failure(error))
-                 }
-             }
-         }
-         task.resume() // Start the refresh request
-     }
-
-
+                // Decode the new tokens
+                do {
+                    let tokenResponse = try JSONDecoder().decode(StravaTokenResponse.self, from: data)
+                    print("StravaService: Tokens refreshed successfully.")
+                    // Update stored tokens with the new ones
+                    self.currentTokens = StravaTokens(
+                        accessToken: tokenResponse.access_token,
+                        refreshToken: tokenResponse.refresh_token, // Update in case it changed
+                        expiresAt: tokenResponse.expires_at
+                    )
+                    self.errorMessage = nil // Clear error on success
+                    completion(.success(())) // Signal success
+                } catch {
+                    self.errorMessage = "Failed to decode refreshed token response: \(error.localizedDescription)"
+                    print("StravaService Error: \(self.errorMessage!)")
+                    self.disconnect() // Disconnect if decoding fails
+                    completion(.failure(error))
+                }
+            }
+        }
+        task.resume() // Start the refresh request
+    }
+    
+    
     // MARK: - Disconnect
     func disconnect() {
         currentTokens = nil
@@ -442,7 +451,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         isAuthenticated = false
         print("StravaService: User disconnected.")
     }
-
+    
     // MARK: - Presentation Anchor
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         if let windowScene = UIApplication.shared.connectedScenes
@@ -464,7 +473,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         
         fatalError("Unable to find window scene")
     }
-
+    
     // MARK: - Athlete Name Persistence
     private func saveAthleteNameToKeychain(_ name: String) {
         let data = Data(name.utf8)
@@ -477,7 +486,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         SecItemAdd(query as CFDictionary, nil)
         print("StravaService: Athlete name saved.")
     }
-
+    
     private func loadAthleteNameFromKeychain() {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -493,7 +502,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             print("StravaService: Restored athlete name: \(name)")
         }
     }
-
+    
     private func deleteAthleteNameFromKeychain() {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -501,13 +510,13 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         ]
         SecItemDelete(query as CFDictionary)
     }
-
+    
     // MARK: - Token Persistence (Using Keychain)
-
+    
     // Define unique keys for Keychain access
     private let keychainService = Bundle.main.bundleIdentifier ?? "com.yourapp.default.strava" // Use app's bundle ID
     private let keychainAccount = "stravaUserTokensV1" // Add a version if structure changes
-
+    
     /// Saves the current Strava tokens securely to the Keychain.
     private func saveTokensToKeychain() {
         // If tokens are nil (user disconnected), delete from Keychain
@@ -519,18 +528,18 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             ]
             let status = SecItemDelete(query as CFDictionary)
             if status == errSecSuccess || status == errSecItemNotFound {
-                 print("StravaService: Deleted tokens from Keychain.")
+                print("StravaService: Deleted tokens from Keychain.")
             } else {
-                 // Log error, but don't block UI for deletion failure
-                 print("StravaService: Error deleting tokens from Keychain (status: \(status)).")
+                // Log error, but don't block UI for deletion failure
+                print("StravaService: Error deleting tokens from Keychain (status: \(status)).")
             }
             return
         }
-
+        
         // Encode the token struct into Data
         do {
             let data = try JSONEncoder().encode(tokens)
-
+            
             // Prepare Keychain query for saving/updating
             let query: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword, // Store as generic password
@@ -540,21 +549,21 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                 // Recommended security: only accessible when device is unlocked
                 kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
             ]
-
+            
             // Delete any existing item first to ensure an update works reliably
             SecItemDelete(query as CFDictionary) // Ignore error, might not exist yet
-
+            
             // Add the new item to the Keychain
             let status = SecItemAdd(query as CFDictionary, nil)
             if status == errSecSuccess {
                 print("StravaService: Tokens saved securely to Keychain.")
             } else {
                 print("StravaService: Error saving tokens to Keychain (status: \(status)).")
-                 Task { @MainActor in self.errorMessage = "Failed to save Strava connection." }
+                Task { @MainActor in self.errorMessage = "Failed to save Strava connection." }
             }
         } catch {
             print("StravaService: Error encoding tokens for Keychain: \(error)")
-             Task { @MainActor in self.errorMessage = "Failed to prepare Strava connection for saving." }
+            Task { @MainActor in self.errorMessage = "Failed to prepare Strava connection for saving." }
         }
     }
     /// Loads Strava tokens from the Keychain on app launch.
@@ -567,56 +576,56 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             kSecReturnData as String: kCFBooleanTrue!,   // Request the actual data
             kSecMatchLimit as String: kSecMatchLimitOne // We only expect one item
         ]
-
+        
         var item: CFTypeRef? // Variable to hold the retrieved data
         // Attempt to copy the matching item from Keychain
         let status = SecItemCopyMatching(query as CFDictionary, &item)
-
+        
         // Check if item was found successfully
         guard status == errSecSuccess, let data = item as? Data else {
             if status == errSecItemNotFound {
-                 print("StravaService: No tokens found in Keychain.")
+                print("StravaService: No tokens found in Keychain.")
             } else {
-                 // Log other potential Keychain errors
-                 print("StravaService: Error loading tokens from Keychain (status: \(status)).")
+                // Log other potential Keychain errors
+                print("StravaService: Error loading tokens from Keychain (status: \(status)).")
             }
             self.currentTokens = nil // Ensure internal state is nil if loading fails
             return
         }
-
+        
         // Decode the retrieved data back into StravaTokens struct
         do {
             let decodedTokens = try JSONDecoder().decode(StravaTokens.self, from: data)
             // Assign to internal state (triggers didSet and saves again if needed, also updates isAuthenticated)
             self.currentTokens = decodedTokens
             print("StravaService: Tokens loaded securely from Keychain.")
-
+            
             // Immediately check if the loaded token needs refreshing
-             Task { @MainActor in
-                 // Check if expired or expires within the next hour
-                 if Date().timeIntervalSince1970 >= (currentTokens?.expiresAt ?? 0) - 3600 {
-                     print("StravaService: Loaded token needs refresh.")
-                     // Attempt refresh silently in the background
-                     refreshTokenIfNeeded { result in
-                         if case .failure(let error) = result {
-                             print("StravaService: Auto-refresh failed on load: \(error.localizedDescription)")
-                             // Error message is set within refreshTokenIfNeeded if it fails
-                         }
-                     }
-                 }
-             }
+            Task { @MainActor in
+                // Check if expired or expires within the next hour
+                if Date().timeIntervalSince1970 >= (currentTokens?.expiresAt ?? 0) - 3600 {
+                    print("StravaService: Loaded token needs refresh.")
+                    // Attempt refresh silently in the background
+                    refreshTokenIfNeeded { result in
+                        if case .failure(let error) = result {
+                            print("StravaService: Auto-refresh failed on load: \(error.localizedDescription)")
+                            // Error message is set within refreshTokenIfNeeded if it fails
+                        }
+                    }
+                }
+            }
         } catch {
             print("StravaService: Error decoding tokens from Keychain: \(error). Removing invalid data.")
             self.currentTokens = nil // Clear invalid tokens from memory
             // Attempt to delete the invalid item from keychain to prevent future errors
-             saveTokensToKeychain() // Calling save with nil currentTokens deletes the item
+            saveTokensToKeychain() // Calling save with nil currentTokens deletes the item
         }
     }
-
+    
     // MARK: - API Methods
-
-    /// Fetches recent activities from Strava
-    func fetchRecentActivities(limit: Int = 60) async throws -> [StravaActivity] {
+    
+    /// Fetches recent activities from Strava with pagination
+    func fetchRecentActivities(page: Int = 1, perPage: Int = 30) async throws -> [StravaActivity] {
         // Ensure we have a valid token
         try await refreshTokenIfNeededAsync()
         
@@ -626,13 +635,15 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         
         var components = URLComponents(string: "https://www.strava.com/api/v3/athlete/activities")!
         components.queryItems = [
-            URLQueryItem(name: "per_page", value: String(limit)),
-            URLQueryItem(name: "page", value: "1")
+            URLQueryItem(name: "per_page", value: String(perPage)),
+            URLQueryItem(name: "page", value: String(page))
         ]
         
         guard let url = components.url else {
             throw StravaError.invalidURL
         }
+        
+        print("StravaService: Fetching activities page \(page) (\(perPage) per page)")
         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -649,22 +660,37 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         }
         
         let activities = try JSONDecoder().decode([StravaActivity].self, from: data)
-        return activities.filter { $0.type == "Ride" || $0.type == "VirtualRide" }
+        let rideActivities = activities.filter { $0.type == "Ride" || $0.type == "VirtualRide" }
+        
+        print("StravaService: Fetched \(activities.count) activities, \(rideActivities.count) are rides")
+        
+        return rideActivities
+    }
+    
+    // MARK: - Helper Methods
+    
+    // Helper to get current athlete ID (you'll need to store this during auth)
+    private func getCurrentAthleteId() -> Int {
+        // You can store this in UserDefaults during authentication
+        return UserDefaults.standard.integer(forKey: "strava_athlete_id")
     }
 
-    // MARK: - Helper Methods
+    // Update the token response to store athlete ID
+    // In exchangeToken and refreshTokenIfNeeded, add:
+    // UserDefaults.standard.set(tokenResponse.athlete?.id ?? 0, forKey: "strava_athlete_id")
 
-    private func refreshTokenIfNeededAsync() async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+    private func refreshTokenIfNeededAsync() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             refreshTokenIfNeeded { result in
-                continuation.resume(with: result)
+                // We'll ignore the result here since we handle auth errors elsewhere
+                continuation.resume()
             }
         }
     }
     
     /// Fetches activity streams (second-by-second data) from Strava
     func fetchActivityStreams(activityId: Int) async throws -> StravaStreams {
-        try await refreshTokenIfNeededAsync()
+        await refreshTokenIfNeededAsync()
         
         guard let accessToken = currentTokens?.accessToken else {
             throw StravaError.notAuthenticated
@@ -703,14 +729,218 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         
         return try JSONDecoder().decode(StravaStreams.self, from: data)
     }
+    
+    
+    /// Fetches the athlete's saved routes
+    func fetchRoutes(limit: Int = 30) async throws -> [StravaRoute] {
+        await refreshTokenIfNeededAsync()
+        
+        guard let accessToken = currentTokens?.accessToken else {
+            print("StravaService Error: No access token available")
+            throw StravaError.notAuthenticated
+        }
 
+        // Get athlete ID with detailed logging
+        let athleteId = UserDefaults.standard.integer(forKey: "strava_athlete_id")
+        print("StravaService: Attempting to fetch routes for athlete ID: \(athleteId)")
+        
+        guard athleteId > 0 else {
+            print("StravaService Error: Invalid athlete ID (\(athleteId)). User needs to re-authenticate.")
+            throw StravaError.notAuthenticated
+        }
+
+        var components = URLComponents(string: "https://www.strava.com/api/v3/athletes/\(athleteId)/routes")!
+        components.queryItems = [
+            URLQueryItem(name: "per_page", value: String(limit)),
+            URLQueryItem(name: "page", value: "1")
+        ]
+        
+        guard let url = components.url else {
+            throw StravaError.invalidURL
+        }
+        
+        print("StravaService: Fetching routes from: \(url.absoluteString)")
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw StravaError.invalidResponse
+        }
+        
+        print("StravaService: Routes API response status: \(httpResponse.statusCode)")
+        
+        if httpResponse.statusCode == 401 {
+            print("StravaService Error: Unauthorized - token may be expired")
+            throw StravaError.notAuthenticated
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("StravaService Error Response: \(responseString)")
+            }
+            throw StravaError.apiError(statusCode: httpResponse.statusCode)
+        }
+        
+        let routes = try JSONDecoder().decode([StravaRoute].self, from: data)
+        let cyclingRoutes = routes.filter { $0.type == 1 }
+        print("StravaService: Successfully fetched \(cyclingRoutes.count) cycling routes (out of \(routes.count) total)")
+        
+        return cyclingRoutes
+    }
+    
+    /// Fetches detailed route information including GPS data
+    func fetchRouteDetail(routeId: Int) async throws -> StravaRouteDetail {
+        await refreshTokenIfNeededAsync()
+        
+        guard let accessToken = currentTokens?.accessToken else {
+            throw StravaError.notAuthenticated
+        }
+        
+        guard let url = URL(string: "https://www.strava.com/api/v3/routes/\(routeId)") else {
+            throw StravaError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw StravaError.invalidResponse
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            throw StravaError.apiError(statusCode: httpResponse.statusCode)
+        }
+        
+        return try JSONDecoder().decode(StravaRouteDetail.self, from: data)
+    }
+    
+    /// Extracts GPS route from a Strava Route (planned route)
+    func extractRouteFromStravaRoute(routeId: Int) async throws -> [CLLocationCoordinate2D] {
+        print("StravaService: Fetching route detail for route \(routeId)")
+        
+        // Fetch route detail
+        let routeDetail = try await fetchRouteDetail(routeId: routeId)
+        
+        guard let map = routeDetail.map,
+              let polyline = map.polyline ?? map.summary_polyline else {
+            throw StravaError.noRouteData
+        }
+        
+        print("StravaService: Decoding polyline for route")
+        
+        // Decode polyline to coordinates
+        let coordinates = decodePolyline(polyline)
+        
+        guard !coordinates.isEmpty else {
+            throw StravaError.noRouteData
+        }
+        
+        print("StravaService: Extracted \(coordinates.count) GPS points from route")
+        return coordinates
+    }
+    
+    /// Extracts GPS route from a Strava activity for weather analysis
+    func extractRouteFromActivity(activityId: Int) async throws -> [CLLocationCoordinate2D] {
+        await refreshTokenIfNeededAsync()
+        
+        guard let accessToken = currentTokens?.accessToken else {
+            throw StravaError.notAuthenticated
+        }
+        
+        // Fetch streams with latlng data
+        let streams = try await fetchActivityStreams(activityId: activityId)
+        
+        guard let latlngData = streams.latlng?.data, !latlngData.isEmpty else {
+            throw StravaError.noRouteData
+        }
+        
+        // Convert to CLLocationCoordinate2D array
+        let coordinates = latlngData.compactMap { pair -> CLLocationCoordinate2D? in
+            guard pair.count == 2 else { return nil }
+            let lat = pair[0]
+            let lon = pair[1]
+            
+            // Validate coordinates
+            guard abs(lat) <= 90, abs(lon) <= 180, lat != 0, lon != 0 else {
+                return nil
+            }
+            
+            return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        }
+        
+        guard !coordinates.isEmpty else {
+            throw StravaError.noRouteData
+        }
+        
+        print("StravaService: Extracted \(coordinates.count) GPS points from activity")
+        return coordinates
+    }
+    
+    /// Decodes Google's encoded polyline format to coordinates
+    private func decodePolyline(_ polyline: String) -> [CLLocationCoordinate2D] {
+        var coordinates: [CLLocationCoordinate2D] = []
+        var index = polyline.startIndex
+        var lat = 0
+        var lng = 0
+        
+        while index < polyline.endIndex {
+            var result = 1
+            var shift = 0
+            var b: Int
+            
+            repeat {
+                b = Int(polyline[index].asciiValue! - 63) - 1
+                index = polyline.index(after: index)
+                result += b << shift
+                shift += 5
+            } while b >= 0x1f
+            
+            lat += (result & 1) != 0 ? ~(result >> 1) : (result >> 1)
+            
+            result = 1
+            shift = 0
+            
+            repeat {
+                b = Int(polyline[index].asciiValue! - 63) - 1
+                index = polyline.index(after: index)
+                result += b << shift
+                shift += 5
+            } while b >= 0x1f
+            
+            lng += (result & 1) != 0 ? ~(result >> 1) : (result >> 1)
+            
+            let coordinate = CLLocationCoordinate2D(
+                latitude: Double(lat) / 1e5,
+                longitude: Double(lng) / 1e5
+            )
+            coordinates.append(coordinate)
+        }
+        
+        return coordinates
+    }
+
+    // MARK: - Debug Helper
+    func getStoredAthleteId() -> Int? {
+        let athleteId = UserDefaults.standard.integer(forKey: "strava_athlete_id")
+        print("StravaService: Stored athlete ID: \(athleteId)")
+        return athleteId > 0 ? athleteId : nil
+    }
+    
     // MARK: - Error Types
     enum StravaError: LocalizedError {
         case notAuthenticated
         case invalidURL
         case invalidResponse
         case apiError(statusCode: Int)
-        case streamsNotAvailable  // ✅ ADD THIS
+        case streamsNotAvailable
+        case noRouteData
         
         var errorDescription: String? {
             switch self {
@@ -722,9 +952,70 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                 return "Invalid response from Strava"
             case .apiError(let code):
                 return "Strava API error: \(code)"
-            case .streamsNotAvailable:  // ✅ ADD THIS
+            case .streamsNotAvailable:
                 return "Detailed activity data not available for this ride"
+            case .noRouteData:  // ✅ ADD THIS
+                return "No GPS route data available"
             }
         }
     }
 }
+
+// MARK: - Strava Routes Models
+
+struct StravaRoute: Codable, Identifiable {
+    let id: Int
+    let name: String
+    let description: String?
+    let distance: Double // meters
+    let elevation_gain: Double // meters
+    let type: Int // 1 = ride, 2 = run
+    let sub_type: Int // 1 = road, 2 = mtb, etc.
+    let isPrivate: Bool
+    let starred: Bool
+    let timestamp: Int
+    
+    enum CodingKeys: String, CodingKey {
+         case id, name, description, distance, elevation_gain, type, sub_type, starred, timestamp
+         case isPrivate = "private"
+     }
+      
+    var distanceKm: Double {
+        distance / 1000.0
+    }
+    
+    var distanceMiles: Double {
+        distance / 1609.34
+    }
+    
+    var routeType: String {
+        switch sub_type {
+        case 1: return "Road"
+        case 2: return "MTB"
+        case 3: return "Cross"
+        case 4: return "Trail"
+        case 5: return "Mixed"
+        default: return "Ride"
+        }
+    }
+    
+    var createdDate: Date {
+        Date(timeIntervalSince1970: TimeInterval(timestamp))
+    }
+}
+
+struct StravaRouteDetail: Codable {
+    let id: Int
+    let name: String
+    let description: String?
+    let distance: Double
+    let elevation_gain: Double
+    let map: RouteMap?
+    
+    struct RouteMap: Codable {
+        let id: String
+        let polyline: String?
+        let summary_polyline: String?
+    }
+}
+

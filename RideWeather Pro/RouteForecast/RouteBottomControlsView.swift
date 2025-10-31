@@ -6,7 +6,9 @@ import SwiftUI
 import CoreLocation
 
 struct ModernRouteBottomControlsView: View {
+    @State private var showingStravaImport = false
     @EnvironmentObject var viewModel: WeatherViewModel
+    @EnvironmentObject var stravaService: StravaService  // ✅ ADD THIS
     @Binding var isImporting: Bool
     @Binding var showBottomControls: Bool
     @Binding var importedFileName: String
@@ -53,6 +55,29 @@ struct ModernRouteBottomControlsView: View {
                 .buttonStyle(.bordered)
                 .frame(width: 56, height: 56)
                 .disabled(viewModel.isLoading) // ✅ ADDED: Also disable settings while parsing
+ 
+                if stravaService.isAuthenticated {
+                    Button {
+                        showingStravaImport = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image("strava_logo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 50, height: 16)
+                            Text("Import")
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .font(.headline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .tint(.orange)
+                    .disabled(viewModel.isLoading)
+                }
+
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 12)
@@ -82,6 +107,12 @@ struct ModernRouteBottomControlsView: View {
             SettingsView()
                 .environmentObject(viewModel)
         }
+        .sheet(isPresented: $showingStravaImport) {
+            StravaRouteImportView()
+                .environmentObject(viewModel)
+                .environmentObject(stravaService)
+        }
+
     }
     
     // MARK: - Import Button Label
