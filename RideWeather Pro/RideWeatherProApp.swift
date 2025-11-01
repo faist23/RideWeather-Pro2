@@ -10,7 +10,7 @@ struct RideWeatherProApp: App {
     @StateObject private var weatherViewModel = WeatherViewModel()
     @StateObject private var stravaService = StravaService() // Add this
     @State private var showLaunchView = true
-
+    
     var body: some Scene {
         WindowGroup {
             ZStack {
@@ -35,7 +35,6 @@ struct RideWeatherProApp: App {
                 // Initialize MapKit early to reduce first-time loading lag
                 await initializeMapKit()
             }
-            // V V V ADD THIS MODIFIER V V V
             .onOpenURL { url in
                 print("App received URL via onOpenURL: \(url.absoluteString)")
                 // Check if it's the Strava callback URL based on scheme and host
@@ -43,12 +42,27 @@ struct RideWeatherProApp: App {
                     // Pass the URL to your StravaService instance
                     // Since StravaService is @MainActor, this call is safe
                     stravaService.handleRedirect(url: url)
+                    // Check for the new Wahoo callback URL
+                } else if url.scheme == "rideweatherpro" && url.host == "wahoo-auth" {
+                    print("Handling Wahoo auth redirect...")
+                    // You will need to create a WahooService that mirrors
+                    // your StravaService and has its own handleRedirect method.
+                    
+                    // wahooService.handleRedirect(url: url)
+                    
+                    // For now, you can print to confirm it works:
+                    print("Wahoo auth code received: \(url.absoluteString)")
+                    
+                    // --- END OF NEW BLOCK ---
+                    
+                } else if url.isFileURL {
+                    print("Handling imported file URL...")
+                    weatherViewModel.importRoute(from: url)
+                    
                 } else {
-                    print("URL is not the expected Strava callback.")
-                    // Handle other URL schemes if your app supports them
+                    print("URL is not a file or a known auth callback.")
                 }
             }
-            // ^ ^ ^ ADD THIS MODIFIER ^ ^ ^
         }
     }
     

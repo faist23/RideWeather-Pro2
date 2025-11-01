@@ -132,8 +132,8 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     private var clientSecret: String { configValue(forKey: "StravaClientSecret") ?? "INVALID_CLIENT_SECRET" }
     
     private let redirectUri = "https://faist23.github.io/rideweatherpro-redirect/strava-redirect.html"
-    private let scope = "activity:read_all,profile:read_all"  // Note: route:read_all is not needed, routes are accessible with profile:read_all
-
+    private let scope = "activity:read_all,profile:read_all,read_all"
+    
     // MARK: - Published State
     @Published var isAuthenticated: Bool = false
     @Published var errorMessage: String? = nil
