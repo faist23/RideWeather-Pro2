@@ -1,0 +1,413 @@
+//
+//  TrainingLoadManager.swift
+//  RideWeather Pro
+//
+//  Manager for calculating and persisting training load metrics
+//
+
+import Foundation
+
+class TrainingLoadManager {
+    static let shared = TrainingLoadManager()
+    
+    private let userDefaults = UserDefaults.standard
+    private let storageKey = "trainingLoadData"
+    private let emaATLDays = 7
+    private let emaCTLDays = 42
+    
+    private init() {}
+    
+    // MARK: - Public Methods
+    
+    /// Adds a new ride to training load calculations
+    func addRide(analysis: RideAnalysis) {
+        let calendar = Calendar.current
+        let rideDate = calendar.startOfDay(for: analysis.date)
+        
+        var dailyLoads = loadAllDailyLoads()
+        
+        // Find or create daily load for this date
+        if let existingIndex = dailyLoads.firstIndex(where: {
+            calendar.isDate($0.date, inSameDayAs: rideDate)
+        }) {
+            // Add to existing day
+            dailyLoads[existingIndex].tss += analysis.trainingStressScore
+            dailyLoads[existingIndex].rideCount += 1
+            dailyLoads[existingIndex].totalDistance += analysis.distance
+            dailyLoads[existingIndex].totalDuration += analysis.duration
+        } else {
+            // Create new day
+            let newLoad = DailyTrainingLoad(
+                date: rideDate,
+                tss: analysis.trainingStressScore,
+                rideCount: 1,
+                totalDistance: analysis.distance,
+                totalDuration: analysis.duration
+            )
+            dailyLoads.append(newLoad)
+        }
+        
+        // Sort by date
+        dailyLoads.sort { $0.date < $1.date }
+        
+        // Recalculate all metrics
+        let updatedLoads = recalculateMetrics(for: dailyLoads)
+        
+        // Save
+        saveDailyLoads(updatedLoads)
+        
+        print("✅ Training Load: Added ride with \(Int(analysis.trainingStressScore)) TSS on \(rideDate)")
+    }
+    
+    /// Gets current training load summary
+    func getCurrentSummary() -> TrainingLoadSummary? {
+        let loads = loadAllDailyLoads()
+        guard !loads.isEmpty else { return nil }
+        
+        let sortedLoads = loads.sorted { $0.date > $1.date }
+        guard let latest = sortedLoads.first,
+              let atl = latest.atl,
+              let ctl = latest.ctl,
+              let tsb = latest.tsb else {
+            return nil
+        }
+        
+        // Calculate weekly TSS
+        let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+        let weeklyTSS = loads.filter { $0.date >= weekAgo }
+            .reduce(0.0) { $0 + $1.tss }
+        
+        // Calculate ramp rate (CTL change over last 7 days)
+        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: latest.date)!
+        let previousCTL = loads.first(where: { Calendar.current.isDate($0.date, inSameDayAs: sevenDaysAgo) })?.ctl ?? ctl
+        let rampRate = ctl - previousCTL
+        
+        let recommendation = generateRecommendation(
+            atl: atl,
+            ctl: ctl,
+            tsb: tsb,
+            rampRate: rampRate
+        )
+        
+        return TrainingLoadSummary(
+            currentATL: atl,
+            currentCTL: ctl,
+            currentTSB: tsb,
+            weeklyTSS: weeklyTSS,
+            rampRate: rampRate,
+            formStatus: latest.formStatus,
+            recommendation: recommendation
+        )
+    }
+    
+    /// Gets daily loads for a specific period
+    func getDailyLoads(for period: TrainingLoadPeriod) -> [DailyTrainingLoad] {
+        let loads = loadAllDailyLoads()
+        let cutoffDate = Calendar.current.date(byAdding: .day, value: -period.days, to: Date())!
+        
+        return loads.filter { $0.date >= cutoffDate }
+            .sorted { $0.date > $1.date }
+    }
+    
+    /// Gets insights based on current training load
+    func getInsights() -> [TrainingLoadInsight] {
+        guard let summary = getCurrentSummary() else {
+            return [TrainingLoadInsight(
+                priority: .info,
+                title: "No Training Data",
+                message: "Import rides from Strava to start tracking your training load.",
+                recommendation: "Your fitness (CTL), fatigue (ATL), and form (TSB) will appear here.",
+                icon: "figure.outdoor.cycle"
+            )]
+        }
+        
+        var insights: [TrainingLoadInsight] = []
+        
+        // Form status insight
+        switch summary.formStatus {
+        case .veryFatigued:
+            insights.append(TrainingLoadInsight(
+                priority: .critical,
+                title: "High Fatigue Level",
+                message: "TSB: \(Int(summary.currentTSB)). Your body needs recovery.",
+                recommendation: "Take 2-3 easy days or rest completely. Fatigue this high increases injury risk.",
+                icon: "exclamationmark.triangle.fill"
+            ))
+            
+        case .fatigued:
+            insights.append(TrainingLoadInsight(
+                priority: .warning,
+                title: "Building Fatigue",
+                message: "TSB: \(Int(summary.currentTSB)). You're carrying significant fatigue.",
+                recommendation: "Schedule an easy day or rest day in the next 48 hours.",
+                icon: "battery.25"
+            ))
+            
+        case .fresh, .veryFresh:
+            insights.append(TrainingLoadInsight(
+                priority: .success,
+                title: "Well Recovered",
+                message: "TSB: \(Int(summary.currentTSB)). You're fresh and ready for hard efforts.",
+                recommendation: "Good time for high-intensity training or racing.",
+                icon: "bolt.fill"
+            ))
+            
+        default:
+            break
+        }
+        
+        // Ramp rate insight
+        if !summary.isSafeRampRate {
+            if summary.rampRate > 8 {
+                insights.append(TrainingLoadInsight(
+                    priority: .warning,
+                    title: "Building Too Fast",
+                    message: "CTL increasing by \(String(format: "%.1f", summary.rampRate)) TSS/week.",
+                    recommendation: "Safe rate is 5-8 TSS/week. Slow down to avoid overtraining or injury.",
+                    icon: "speedometer"
+                ))
+            } else if summary.rampRate < -8 {
+                insights.append(TrainingLoadInsight(
+                    priority: .info,
+                    title: "Fitness Declining",
+                    message: "CTL decreasing by \(String(format: "%.1f", abs(summary.rampRate))) TSS/week.",
+                    recommendation: "If intentional taper, perfect. Otherwise, increase training volume gradually.",
+                    icon: "arrow.down.circle"
+                ))
+            }
+        } else if summary.rampRate > 5 {
+            insights.append(TrainingLoadInsight(
+                priority: .success,
+                title: "Building Fitness Safely",
+                message: "CTL increasing by \(String(format: "%.1f", summary.rampRate)) TSS/week.",
+                recommendation: "You're in the optimal building range. Keep this up for sustained improvement.",
+                icon: "arrow.up.circle.fill"
+            ))
+        }
+        
+        // CTL vs ATL relationship
+        let fitnessToFatigueRatio = summary.currentCTL / max(summary.currentATL, 1)
+        if fitnessToFatigueRatio < 0.9 {
+            insights.append(TrainingLoadInsight(
+                priority: .warning,
+                title: "Fatigue Exceeds Fitness",
+                message: "Short-term load is higher than long-term fitness.",
+                recommendation: "You're accumulating fatigue faster than building fitness. Consider a recovery week.",
+                icon: "chart.line.downtrend.xyaxis"
+            ))
+        }
+        
+        // Weekly TSS targets
+        let targetWeeklyTSS = summary.currentCTL * 0.7  // Rough target
+        if summary.weeklyTSS < targetWeeklyTSS * 0.5 {
+            insights.append(TrainingLoadInsight(
+                priority: .info,
+                title: "Low Training Volume",
+                message: "Weekly TSS: \(Int(summary.weeklyTSS)), Target: ~\(Int(targetWeeklyTSS))",
+                recommendation: "Increase weekly volume gradually to maintain fitness.",
+                icon: "arrow.up"
+            ))
+        }
+        
+        return insights.sorted { 
+            let priorityOrder: [TrainingLoadInsight.Priority: Int] = [
+                .critical: 0, .warning: 1, .info: 2, .success: 3
+            ]
+            return (priorityOrder[$0.priority] ?? 4) < (priorityOrder[$1.priority] ?? 4)
+        }
+    }
+    
+    /// Deletes a ride from training load (call when deleting ride analysis)
+    func deleteRide(analysisId: UUID, tss: Double, date: Date) {
+        let calendar = Calendar.current
+        let rideDate = calendar.startOfDay(for: date)
+        
+        var dailyLoads = loadAllDailyLoads()
+        
+        if let existingIndex = dailyLoads.firstIndex(where: {
+            calendar.isDate($0.date, inSameDayAs: rideDate)
+        }) {
+            dailyLoads[existingIndex].tss = max(0, dailyLoads[existingIndex].tss - tss)
+            dailyLoads[existingIndex].rideCount = max(0, dailyLoads[existingIndex].rideCount - 1)
+            
+            // Remove day if no rides left
+            if dailyLoads[existingIndex].rideCount == 0 {
+                dailyLoads.remove(at: existingIndex)
+            }
+            
+            // Recalculate metrics
+            let updatedLoads = recalculateMetrics(for: dailyLoads)
+            saveDailyLoads(updatedLoads)
+            
+            print("✅ Training Load: Removed ride with \(Int(tss)) TSS from \(rideDate)")
+        }
+    }
+    
+    /// Clears all training load data
+    func clearAll() {
+        userDefaults.removeObject(forKey: storageKey)
+        print("🗑️ Training Load: All data cleared")
+    }
+    
+    /// Exports training load data to CSV
+    func exportToCSV() -> String {
+        let loads = loadAllDailyLoads()
+        var csv = "Date,TSS,ATL,CTL,TSB,Rides,Distance(km),Duration(min)\n"
+        
+        for load in loads.sorted(by: { $0.date < $1.date }) {
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd"
+            let dateStr = dateFormatter.string(from: load.date)
+            
+            let atl = load.atl.map { String(format: "%.1f", $0) } ?? ""
+            let ctl = load.ctl.map { String(format: "%.1f", $0) } ?? ""
+            let tsb = load.tsb.map { String(format: "%.1f", $0) } ?? ""
+            let distance = String(format: "%.1f", load.totalDistance / 1000)
+            let duration = String(format: "%.0f", load.totalDuration / 60)
+            
+            csv += "\(dateStr),\(Int(load.tss)),\(atl),\(ctl),\(tsb),\(load.rideCount),\(distance),\(duration)\n"
+        }
+        
+        return csv
+    }
+    
+    // MARK: - Private Methods
+    
+    private func loadAllDailyLoads() -> [DailyTrainingLoad] {
+        guard let data = userDefaults.data(forKey: storageKey),
+              let loads = try? JSONDecoder().decode([DailyTrainingLoad].self, from: data) else {
+            return []
+        }
+        return loads
+    }
+    
+    private func saveDailyLoads(_ loads: [DailyTrainingLoad]) {
+        if let encoded = try? JSONEncoder().encode(loads) {
+            userDefaults.set(encoded, forKey: storageKey)
+        }
+    }
+    
+    private func recalculateMetrics(for loads: [DailyTrainingLoad]) -> [DailyTrainingLoad] {
+        var updatedLoads = loads.sorted { $0.date < $1.date }
+        var previousATL: Double = 0
+        var previousCTL: Double = 0
+        
+        for i in 0..<updatedLoads.count {
+            let todayTSS = updatedLoads[i].tss
+            
+            // Calculate ATL (7-day exponential moving average)
+            let atl = calculateEMA(
+                previousValue: previousATL,
+                newValue: todayTSS,
+                days: emaATLDays
+            )
+            
+            // Calculate CTL (42-day exponential moving average)
+            let ctl = calculateEMA(
+                previousValue: previousCTL,
+                newValue: todayTSS,
+                days: emaCTLDays
+            )
+            
+            // Calculate TSB (Training Stress Balance)
+            let tsb = ctl - atl
+            
+            updatedLoads[i].atl = atl
+            updatedLoads[i].ctl = ctl
+            updatedLoads[i].tsb = tsb
+            
+            previousATL = atl
+            previousCTL = ctl
+        }
+        
+        return updatedLoads
+    }
+    
+    private func calculateEMA(previousValue: Double, newValue: Double, days: Int) -> Double {
+        let alpha = 2.0 / Double(days + 1)
+        return previousValue + alpha * (newValue - previousValue)
+    }
+    
+    private func generateRecommendation(atl: Double, ctl: Double, tsb: Double, rampRate: Double) -> String {
+        // Very fatigued
+        if tsb < -30 {
+            return "Take 2-3 rest days. Your fatigue is very high and needs immediate recovery."
+        }
+        
+        // Fatigued
+        if tsb < -10 {
+            return "Schedule an easy day or rest day soon. You're building significant fatigue."
+        }
+        
+        // Very fresh
+        if tsb > 15 {
+            if rampRate < -5 {
+                return "You're fresh but detraining. Consider increasing training volume gradually."
+            }
+            return "Perfect time for a hard workout or race. You're well-recovered and ready."
+        }
+        
+        // Fresh
+        if tsb > 5 {
+            return "Good recovery status. You can handle high-intensity training today."
+        }
+        
+        // Building too fast
+        if rampRate > 8 {
+            return "Slow down your build. Increase training load by no more than 5-8 TSS/week."
+        }
+        
+        // Building safely
+        if rampRate > 3 && rampRate <= 8 {
+            return "Excellent! You're building fitness at a sustainable rate."
+        }
+        
+        // Maintaining
+        if abs(rampRate) <= 3 {
+            return "Maintaining current fitness level. Increase volume gradually if you want to improve."
+        }
+        
+        // Default
+        return "Continue with balanced training. Mix hard and easy days appropriately."
+    }
+    
+    /// Ensures we have data for every day (fills gaps with zero TSS)
+    func fillMissingDays() {
+        var loads = loadAllDailyLoads()
+        guard !loads.isEmpty else { return }
+        
+        let sortedLoads = loads.sorted { $0.date < $1.date }
+        guard let firstDate = sortedLoads.first?.date,
+              let lastDate = sortedLoads.last?.date else {
+            return
+        }
+        
+        let calendar = Calendar.current
+        var currentDate = firstDate
+        var filledLoads: [DailyTrainingLoad] = []
+        
+        // Go through each day from first to last
+        while currentDate <= lastDate {
+            if let existing = sortedLoads.first(where: { calendar.isDate($0.date, inSameDayAs: currentDate) }) {
+                filledLoads.append(existing)
+            } else {
+                // Create zero TSS day
+                filledLoads.append(DailyTrainingLoad(date: currentDate, tss: 0))
+            }
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+        }
+        
+        // Add any days from last ride to today
+        let today = calendar.startOfDay(for: Date())
+        currentDate = calendar.date(byAdding: .day, value: 1, to: lastDate)!
+        while currentDate <= today {
+            filledLoads.append(DailyTrainingLoad(date: currentDate, tss: 0))
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+        }
+        
+        let recalculated = recalculateMetrics(for: filledLoads)
+        saveDailyLoads(recalculated)
+        
+        print("✅ Training Load: Filled missing days. Now have \(recalculated.count) days of data.")
+    }
+}

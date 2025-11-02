@@ -9,6 +9,7 @@ import MapKit
 struct RideWeatherProApp: App {
     @StateObject private var weatherViewModel = WeatherViewModel()
     @StateObject private var stravaService = StravaService() // Add this
+    @StateObject private var wahooService = WahooService() // Add this
     @State private var showLaunchView = true
     
     var body: some Scene {
@@ -18,6 +19,7 @@ struct RideWeatherProApp: App {
                 MainView()
                     .environmentObject(weatherViewModel)
                     .environmentObject(stravaService) // Pass it down
+                    .environmentObject(wahooService) // Pass it down
                 
                 if showLaunchView {
                     LaunchView()
@@ -48,7 +50,7 @@ struct RideWeatherProApp: App {
                     // You will need to create a WahooService that mirrors
                     // your StravaService and has its own handleRedirect method.
                     
-                    // wahooService.handleRedirect(url: url)
+                    wahooService.handleRedirect(url: url)
                     
                     // For now, you can print to confirm it works:
                     print("Wahoo auth code received: \(url.absoluteString)")
@@ -84,5 +86,10 @@ struct RideWeatherProApp: App {
                 }
             }
         }
+    }
+
+    func applicationDidBecomeActive() {
+        // Fill any missing days with zero TSS
+        TrainingLoadManager.shared.fillMissingDays()
     }
 }
