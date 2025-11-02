@@ -100,6 +100,39 @@ struct WahooWorkoutSummary: Codable, Identifiable {
 }
 
 extension WahooWorkoutSummary {
+    var movingTimeSeconds: Int {
+        Int(Double(workoutSummary?.durationActiveAccum ?? "0") ?? 0)
+    }
+    var elapsedTimeSeconds: Int {
+        Int(Double(workoutSummary?.durationTotalAccum ?? "0") ?? 0)
+    }
+    var movingTimeFormatted: String {
+        formatDuration(seconds: movingTimeSeconds)
+    }
+    var elapsedTimeFormatted: String {
+        formatDuration(seconds: elapsedTimeSeconds)
+    }
+    private func formatDuration(seconds: Int) -> String {
+        let h = seconds / 3600
+        let m = (seconds % 3600) / 60
+        let s = seconds % 60
+        if h > 0 {
+            return String(format: "%dh %dm", h, m)
+        } else if m > 0 {
+            return String(format: "%dm %ds", m, s)
+        } else {
+            return String(format: "%ds", s)
+        }
+    }
+    var distanceMiles: Double {
+        (Double(workoutSummary?.distanceAccum ?? "0") ?? 0) / 1609.34
+    }
+    var distanceKm: Double {
+        (Double(workoutSummary?.distanceAccum ?? "0") ?? 0) / 1000.0
+    }
+}
+
+extension WahooWorkoutSummary {
     // Get duration in seconds from nested summary (which is a string)
     var durationTotal: Int {
         Int(workoutSummary?.durationTotalAccum ?? "0") ?? 0
@@ -652,7 +685,7 @@ extension Data {
         return data
     }
 }
-
+/*
 extension WahooWorkoutSummary {
     var distanceKm: Double {
         Double(workoutSummary?.distanceAccum ?? "0")! / 1000.0
@@ -660,4 +693,4 @@ extension WahooWorkoutSummary {
     var distanceMiles: Double {
         Double(workoutSummary?.distanceAccum ?? "0")! / 1609.34
     }
-}
+}*/

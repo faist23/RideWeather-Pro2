@@ -2076,6 +2076,7 @@ struct RideSourceInfo: Codable {
     
     enum SourceType: String, Codable {
         case strava
+        case wahoo
         case fitFile
     }
 }
@@ -2108,6 +2109,7 @@ class RideAnalysisViewModel: ObservableObject {
     init(settings: AppSettings = AppSettings()) {  // 🔥 UPDATE INIT
         self.settings = settings
         loadHistory()
+        self.analysisSources = AnalysisStorageManager().loadAllSources()
     }
     
     // ✅ NEW: Get ride source for display
@@ -2116,6 +2118,8 @@ class RideAnalysisViewModel: ObservableObject {
             switch sourceInfo.type {
             case .strava:
                 return .strava
+            case .wahoo:
+                return .wahoo
             case .fitFile:
                 return .fitFile(fileName: sourceInfo.fileName ?? "Unknown File")
             }

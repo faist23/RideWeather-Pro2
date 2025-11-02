@@ -141,7 +141,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     
     // MARK: - Internal State
     private var webAuthSession: ASWebAuthenticationSession?
-    private var currentTokens: StravaTokens? {
+    internal var currentTokens: StravaTokens? {
         didSet {
             isAuthenticated = currentTokens != nil
             saveTokensToKeychain()
@@ -1019,3 +1019,80 @@ struct StravaRouteDetail: Codable {
     }
 }
 
+extension StravaService {
+    
+    /// Fetches ALL activities (not just rides) for training load calculation
+    /// This is a simple wrapper that uses the existing fetchRecentActivities method
+    func fetchAllActivitiesForTrainingLoad(
+        startDate: Date,
+        endDate: Date = Date()
+    ) async throws -> [StravaActivitySummary] {
+        
+        // Calculate how many days of activities to fetch
+        let daysSinceStart = Calendar.current.dateComponents([.day], from: startDate, to: endDate).day ?? 90
+        
+        // Fetch in batches to get all activities
+        var allActivities: [StravaActivity] = []
+        var currentPage = 1
+        let perPage = 200 // Strava max
+        
+        // Keep fetching until we get activities older than startDate
+        while true {
+            let pageActivities = try await fetchRecentActivities(page: currentPage, perPage: perPage)
+            
+            if pageActivities.isEmpty {
+                break // No more activities
+            }
+            
+            // Filter activities within date range
+            let filteredActivities = pageActivities.filter { activity in
+                guard let activityDate = activity.startDate else { return false }
+                return activityDate >= startDate && activityDate <= endDate
+            }
+            
+            allActivities.append(contentsOf: filteredActivities)
+            
+            // Check if we've gone past the start date
+            if let oldestActivityDate = pageActivities.last?.startDate,
+               oldestActivityDate < startDate {
+                break // We've fetched everything in range
+            }
+            
+            // If we got fewer than perPage, we've reached the end
+            if pageActivities.count < perPage {
+                break
+            }
+            
+            currentPage += 1
+            
+            // Safety check to prevent infinite loops
+            if currentPage > 50 { // Max 10,000 activities
+                print("⚠️ Training Load Sync: Reached maximum page limit")
+                break
+            }
+        }
+        
+        // Convert to summary format
+        let summaries = allActivities.map { activity in
+            StravaActivitySummary(
+                id: activity.id,
+                name: activity.name,
+                type: activity.type,
+                startDate: activity.startDate ?? Date(),
+                movingTime: activity.moving_time,
+                elapsedTime: activity.elapsed_time,
+                distance: activity.distance,
+                averageWatts: activity.average_watts,
+                weightedAverageWatts: activity.average_watts,
+                sufferScore: activity.suffer_score,
+                averageHeartrate: activity.average_heartrate,
+                maxHeartrate: activity.max_heartrate,
+                kilojoules: activity.kilojoules
+            )
+        }
+        
+        print("📊 Strava Sync: Fetched \(summaries.count) activities from \(startDate.formatted(date: .abbreviated, time: .omitted))")
+        
+        return summaries
+    }
+}

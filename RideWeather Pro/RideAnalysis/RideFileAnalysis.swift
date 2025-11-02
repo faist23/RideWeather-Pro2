@@ -12,7 +12,7 @@ import FitFileParser
 struct RideAnalysis: Codable, Identifiable {
     let id: UUID
     let date: Date
-    let rideName: String
+    var rideName: String
     let duration: TimeInterval // Moving time
     let distance: Double // meters
     

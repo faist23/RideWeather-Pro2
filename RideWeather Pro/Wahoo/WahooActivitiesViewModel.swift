@@ -17,6 +17,7 @@ class WahooActivitiesViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var showingAnalysisImport = false
     @Published var analysis: RideAnalysis?
+    @Published var analysisSources: [UUID: RideSourceInfo] = [:]
 
     private let settings: AppSettings  // 🔥 ADD THIS
 
@@ -114,13 +115,14 @@ class WahooActivitiesViewModel: ObservableObject {
                     print("WahooImport: Parsed \(fitDataPoints.count) FIT data points.")
 
                     let analyzer = RideFileAnalyzer(settings: self.settings)
-                    let rideAnalysis = analyzer.analyzeRide(
+                    let rideName = activity.workoutSummary?.name ?? activity.name ?? "Wahoo Ride"
+                    var rideAnalysis = analyzer.analyzeRide(
                         dataPoints: fitDataPoints,
                         ftp: Double(settings.functionalThresholdPower),
                         weight: settings.bodyWeight,
                         plannedRide: nil
                     )
-                    // Assign to published property for UI
+                    rideAnalysis.rideName = rideName // <-- Set correct name on the mutable copy
                     self.analysis = rideAnalysis
                     print("WahooImport: Analysis complete - Score: \(rideAnalysis.performanceScore)")
 
@@ -128,6 +130,10 @@ class WahooActivitiesViewModel: ObservableObject {
                     let storage = AnalysisStorageManager()
                     storage.saveAnalysis(rideAnalysis)
                     print("WahooImport: Analysis saved")
+
+                    let sourceInfo = RideSourceInfo(type: .wahoo, fileName: nil) 
+                    self.analysisSources[rideAnalysis.id] = sourceInfo
+                    storage.saveSource(sourceInfo, for: rideAnalysis.id)
 
                     await MainActor.run {
                         self.isImporting = false

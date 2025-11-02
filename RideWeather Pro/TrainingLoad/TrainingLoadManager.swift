@@ -209,7 +209,7 @@ class TrainingLoadManager {
             ))
         }
         
-        return insights.sorted { 
+        return insights.sorted {
             let priorityOrder: [TrainingLoadInsight.Priority: Int] = [
                 .critical: 0, .warning: 1, .info: 2, .success: 3
             ]
@@ -377,37 +377,29 @@ class TrainingLoadManager {
         guard !loads.isEmpty else { return }
         
         let sortedLoads = loads.sorted { $0.date < $1.date }
-        guard let firstDate = sortedLoads.first?.date,
-              let lastDate = sortedLoads.last?.date else {
-            return
-        }
+        guard let firstDate = sortedLoads.first?.date else { return }
         
         let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
         var currentDate = firstDate
         var filledLoads: [DailyTrainingLoad] = []
         
-        // Go through each day from first to last
-        while currentDate <= lastDate {
+        // Go through each day from first activity to today
+        while currentDate <= today {
             if let existing = sortedLoads.first(where: { calendar.isDate($0.date, inSameDayAs: currentDate) }) {
                 filledLoads.append(existing)
             } else {
-                // Create zero TSS day
+                // Create zero TSS day (important for CTL/ATL decay)
                 filledLoads.append(DailyTrainingLoad(date: currentDate, tss: 0))
             }
             currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
         }
         
-        // Add any days from last ride to today
-        let today = calendar.startOfDay(for: Date())
-        currentDate = calendar.date(byAdding: .day, value: 1, to: lastDate)!
-        while currentDate <= today {
-            filledLoads.append(DailyTrainingLoad(date: currentDate, tss: 0))
-            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
-        }
-        
+        // Recalculate ALL metrics with filled data
         let recalculated = recalculateMetrics(for: filledLoads)
         saveDailyLoads(recalculated)
         
-        print("✅ Training Load: Filled missing days. Now have \(recalculated.count) days of data.")
+        print("✅ Training Load: Filled to \(recalculated.count) days (\(firstDate.formatted(date: .abbreviated, time: .omitted)) to today)")
     }
 }

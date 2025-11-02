@@ -50,8 +50,11 @@ struct WahooActivitiesView: View {
                             WahooActivityRow(activity: activity)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
-                                    viewModel.selectActivity(activity, service: wahooService)
-                                }
+ //                                   viewModel.selectActivity(activity, service: wahooService)
+                                    viewModel.selectedActivityDetail = activity
+                                    viewModel.importActivity(service: wahooService, weatherViewModel: weatherViewModel)
+                                    // Optionally show analysis results UI or update a @Published property to display results
+                               }
                         }
                     }
                     .refreshable {
@@ -89,7 +92,7 @@ struct WahooActivitiesView: View {
     }
 }
 
-struct WahooActivityRow: View {
+/*struct WahooActivityRow: View {
     let activity: WahooWorkoutSummary
     var body: some View {
         VStack(alignment: .leading) {
@@ -105,6 +108,84 @@ struct WahooActivityRow: View {
                     .foregroundColor(.secondary)
             }
         }
+    }
+}*/
+/*struct WahooActivityRow: View {
+    let activity: WahooWorkoutSummary
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(activity.workoutSummary?.name ?? activity.name ?? "Wahoo Ride")
+                .font(.headline)
+            HStack {
+                if let date = activity.rideDate {
+                    Text(date.formatted(date: .abbreviated, time: .shortened))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("No Date")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Text(String(format: "%.1f mi", activity.distanceMiles))
+                    .font(.caption)
+                Text(activity.movingTimeFormatted)
+                    .font(.caption)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}*/
+
+struct WahooActivityRow: View {
+    let activity: WahooWorkoutSummary
+    @EnvironmentObject var weatherViewModel: WeatherViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Ride name and cycling device indicator
+            HStack {
+                Text(activity.workoutSummary?.name ?? activity.name ?? "Wahoo Ride")
+                    .font(.headline)
+                
+                Spacer()
+                
+                // Power meter indicator (if you have a boolean available; remove if N/A for Wahoo)
+                if let avgPower = Double(activity.workoutSummary?.powerAvg ?? "0"), avgPower > 0 {
+                    Image(systemName: "bolt.fill")
+                        .foregroundColor(.orange)
+                        .font(.caption)
+                }
+            }
+            
+            // Duration, distance, and (if available) avg power
+            HStack(spacing: 16) {
+                Label(activity.movingTimeFormatted, systemImage: "clock")
+                    .font(.caption)
+                
+                Label(
+                    weatherViewModel.settings.units == .metric ?
+                        String(format: "%.1f km", activity.distanceKm) :
+                        String(format: "%.1f mi", activity.distanceMiles),
+                    systemImage: "figure.outdoor.cycle"
+                )
+                .font(.caption)
+                
+                if let avgPower = Double(activity.workoutSummary?.powerAvg ?? "0"), avgPower > 0 {
+                    Label("\(Int(avgPower))W", systemImage: "bolt")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+            }
+            .foregroundColor(.secondary)
+            
+            // Ride start date/time
+            if let startDate = activity.rideDate {
+                Text(startDate.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -146,11 +227,11 @@ struct WahooImportSheet: View {
                                     String(format: "%.1f km", activity.distanceKm) :
                                     String(format: "%.1f mi", activity.distanceMiles)
                             )
-                            WahooInfoRow(label: "Duration", value: activity.durationFormatted) // <-- RENAMED
+                            WahooInfoRow(label: "Duration", value: activity.movingTimeFormatted) // <-- RENAMED
                             
                             if activity.work > 0 {
                                 let work = activity.work
-                                WahooInfoRow(label: "Work", value: "\(Int(work)) kJ") // <-- RENAMED
+                                WahooInfoRow(label: "Work", value: "\(Int(work/1000)) kJ") // <-- RENAMED
                             } else {
                                 WahooInfoRow(label: "Work", value: "N/A") // <-- RENAMED
                             }

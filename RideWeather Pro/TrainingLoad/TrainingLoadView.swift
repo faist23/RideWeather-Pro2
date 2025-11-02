@@ -11,6 +11,9 @@ import Combine
 
 struct TrainingLoadView: View {
     @StateObject private var viewModel = TrainingLoadViewModel()
+    @StateObject private var syncManager = TrainingLoadSyncManager()
+    @EnvironmentObject private var stravaService: StravaService
+    @EnvironmentObject private var weatherViewModel: WeatherViewModel
     @State private var selectedPeriod: TrainingLoadPeriod = .month
     @State private var showingExplanation = false
     
@@ -19,6 +22,23 @@ struct TrainingLoadView: View {
             ScrollView {
                 VStack(spacing: 20) {
                     if let summary = viewModel.summary {
+                        // Sync Status Banner (if applicable)
+                        if stravaService.isAuthenticated {
+                            SyncStatusBanner(
+                                syncManager: syncManager,
+                                onSync: {
+                                    Task {
+                                        await syncManager.syncFromStrava(
+                                            stravaService: stravaService,
+                                            userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                                            userLTHR: nil
+                                        )
+                                        viewModel.refresh()
+                                    }
+                                }
+                            )
+                        }
+                        
                         // Current Status Card
                         CurrentFormCard(summary: summary)
                         
@@ -35,7 +55,7 @@ struct TrainingLoadView: View {
                         MetricsGrid(summary: summary)
                         
                         // Insights
-                        TrainingInsightsSection(insights: viewModel.insights)
+                        TrainingLoadInsightsSection(insights: viewModel.insights)
                         
                     } else {
                         emptyStateView
@@ -46,6 +66,24 @@ struct TrainingLoadView: View {
             .navigationTitle("Training Load")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if stravaService.isAuthenticated && !syncManager.isSyncing {
+                        Button {
+                            Task {
+                                await syncManager.syncFromStrava(
+                                    stravaService: stravaService,
+                                    userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                                    userLTHR: nil
+                                )
+                                viewModel.refresh()
+                            }
+                        } label: {
+                            Label("Sync", systemImage: syncManager.needsSync ? "exclamationmark.arrow.triangle.2.circlepath" : "arrow.triangle.2.circlepath")
+                                .foregroundColor(syncManager.needsSync ? .orange : .blue)
+                        }
+                    }
+                }
+                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         showingExplanation = true
@@ -54,12 +92,41 @@ struct TrainingLoadView: View {
                     }
                 }
             }
+            .overlay {
+                if syncManager.isSyncing {
+                    syncingOverlay
+                }
+            }
             .sheet(isPresented: $showingExplanation) {
                 TrainingLoadExplanationView()
             }
             .onAppear {
+                syncManager.loadSyncDate()
                 viewModel.refresh()
             }
+        }
+    }
+    
+    private var syncingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+            
+            VStack(spacing: 16) {
+                ProgressView(value: syncManager.syncProgress)
+                    .progressViewStyle(.linear)
+                    .tint(.blue)
+                    .frame(width: 200)
+                
+                Text(syncManager.syncStatus)
+                    .font(.headline)
+                    .foregroundColor(.white)
+            }
+            .padding(32)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(.systemGray6))
+            )
         }
     }
     
@@ -100,11 +167,54 @@ struct TrainingLoadView: View {
                 .font(.title2)
                 .fontWeight(.bold)
             
-            Text("Import rides from Strava or analyze FIT files to track your fitness, fatigue, and form over time.")
-                .font(.body)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+            if stravaService.isAuthenticated {
+                Text("Sync your activities from Strava to start tracking your fitness, fatigue, and form over time.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                
+                Button {
+                    Task {
+                        await syncManager.syncFromStrava(
+                            stravaService: stravaService,
+                            userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                            userLTHR: nil
+                        )
+                        viewModel.refresh()
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text("Sync from Strava")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.orange)
+                    .cornerRadius(12)
+                }
                 .padding(.horizontal, 40)
+                .disabled(syncManager.isSyncing)
+                
+                if let lastSync = syncManager.lastSyncDate {
+                    Text("Last synced: \(lastSync.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            } else {
+                Text("Connect to Strava in Settings to automatically track your training load from all activities.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                
+                Text("Connect in Settings → Strava")
+                    .font(.subheadline)
+                    .foregroundColor(.blue)
+                    .padding(.top, 8)
+            }
             
             Button {
                 showingExplanation = true
@@ -270,9 +380,9 @@ struct TrainingLoadChart: View {
                 
                 // Legend
                 HStack(spacing: 20) {
-                    TrainingLegendItem(color: .blue, label: "Fitness (CTL)")
-                    TrainingLegendItem(color: .orange, label: "Fatigue (ATL)")
-                    TrainingLegendItem(color: .green, label: "Form (TSB)")
+                    TrainingLoadLegendItem(color: .blue, label: "Fitness (CTL)")
+                    TrainingLoadLegendItem(color: .orange, label: "Fatigue (ATL)")
+                    TrainingLoadLegendItem(color: .green, label: "Form (TSB)")
                 }
                 .font(.caption)
                 .padding(.top, 8)
@@ -285,7 +395,7 @@ struct TrainingLoadChart: View {
     }
 }
 
-struct TrainingLegendItem: View {
+struct TrainingLoadLegendItem: View {
     let color: Color
     let label: String
     
@@ -376,7 +486,7 @@ struct MetricCard: View {
 
 // MARK: - Insights Section
 
-struct TrainingInsightsSection: View {
+struct TrainingLoadInsightsSection: View {
     let insights: [TrainingLoadInsight]
     
     var body: some View {
@@ -394,14 +504,14 @@ struct TrainingInsightsSection: View {
                     .cornerRadius(12)
             } else {
                 ForEach(insights) { insight in
-                    TrainingInsightCard(insight: insight)
+                    TrainingLoadInsightCard(insight: insight)
                 }
             }
         }
     }
 }
 
-struct TrainingInsightCard: View {
+struct TrainingLoadInsightCard: View {
     let insight: TrainingLoadInsight
     @State private var isExpanded = false
     
@@ -463,6 +573,53 @@ struct TrainingInsightCard: View {
             withAnimation(.easeInOut(duration: 0.2)) {
                 isExpanded.toggle()
             }
+        }
+    }
+}
+
+// MARK: - Sync Status Banner
+
+struct SyncStatusBanner: View {
+    @ObservedObject var syncManager: TrainingLoadSyncManager
+    let onSync: () -> Void
+    
+    var body: some View {
+        if syncManager.needsSync || syncManager.lastSyncDate != nil {
+            HStack(spacing: 12) {
+                Image(systemName: syncManager.needsSync ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .foregroundColor(syncManager.needsSync ? .orange : .green)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(syncManager.needsSync ? "Sync Needed" : "Synced")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    
+                    if let lastSync = syncManager.lastSyncDate {
+                        Text("Last sync: \(lastSync.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Spacer()
+                
+                if syncManager.needsSync {
+                    Button(action: onSync) {
+                        Text("Sync Now")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.orange)
+                            .cornerRadius(8)
+                    }
+                    .disabled(syncManager.isSyncing)
+                }
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
         }
     }
 }
