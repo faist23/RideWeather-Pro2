@@ -54,6 +54,7 @@ struct StravaActivity: Codable, Identifiable {
     let average_heartrate: Double?
     let max_heartrate: Double?
     let suffer_score: Double?
+    let trainer: Bool?
     
     var startDate: Date? {
         let formatter = ISO8601DateFormatter()

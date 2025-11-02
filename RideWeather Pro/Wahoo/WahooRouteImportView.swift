@@ -17,6 +17,8 @@ struct WahooRouteImportView: View {
     @StateObject private var viewModel = WahooActivitiesImportViewModel()
     let onDismiss: () -> Void
     
+    @State private var importingId: Int? = nil // ✅ ADDED: For per-row loading
+    
     var body: some View {
         NavigationStack {
             Group {
@@ -49,7 +51,7 @@ struct WahooRouteImportView: View {
     
     private var activitiesList: some View {
         List {
-            // Activity count header
+            // ... (your existing activity count Section) ...
             Section {
                 HStack {
                     Image(systemName: "figure.outdoor.cycle")
@@ -69,22 +71,44 @@ struct WahooRouteImportView: View {
             
             // Activity list
             ForEach(viewModel.activities) { activity in
-                NavigationLink {
-                    WahooActivityDetailView(
-                        activity: activity,
-                        viewModel: viewModel,
-                        wahooService: wahooService,
+                // ✅ CHANGED: Replaced NavigationLink with Button
+                Button(action: {
+                    importingId = activity.id
+                    viewModel.importRouteFromActivity(
+                        activityId: activity.id,
+                        activityName: activity.displayName,
+                        activityDate: activity.rideDate,
+                        service: wahooService,
                         weatherViewModel: weatherViewModel,
-                        onDismiss: onDismiss
+                        onSuccess: {
+                            importingId = nil
+                            onDismiss()
+                        },
+                        onFailure: { // ✅ ADDED: Handle failure
+                            importingId = nil
+                        }
                     )
-                } label: {
-                    // Re-using the row from WahooActivitiesView.swift
-                    WahooActivityRow(activity: activity)
-                        .environmentObject(weatherViewModel)
+                }) {
+                    HStack {
+                        // Re-using the row from WahooActivitiesView.swift
+                        WahooActivityRow(activity: activity)
+                            .environmentObject(weatherViewModel)
+                        Spacer()
+                        if importingId == activity.id {
+                            ProgressView()
+                                .frame(width: 20)
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(.secondary.opacity(0.5))
+                        }
+                    }
                 }
+                .buttonStyle(.plain)
+                .disabled(importingId != nil) // Disable all rows while importing
             }
             
-            // Load More section
+            // ... (your existing Load More section) ...
             if viewModel.hasMorePages {
                 Section {
                     Button(action: {
@@ -148,116 +172,6 @@ struct WahooRouteImportView: View {
     }
 }
 
-// MARK: - Activity Detail/Confirmation View
-
-struct WahooActivityDetailView: View {
-    let activity: WahooWorkoutSummary
-    @ObservedObject var viewModel: WahooActivitiesImportViewModel
-    @ObservedObject var wahooService: WahooService
-    @ObservedObject var weatherViewModel: WeatherViewModel
-    let onDismiss: () -> Void
-    
-    @Environment(\.dismiss) private var dismiss // For popping this detail view
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            if viewModel.isImporting {
-                importingView
-            } else {
-                activityInfoView
-            }
-        }
-        .navigationTitle("Import Route")
-        .navigationBarTitleDisplayMode(.inline)
-        .padding()
-    }
-    
-    private var importingView: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-                .scaleEffect(1.5)
-            Text("Importing route from activity...")
-                .font(.headline)
-            Text("Extracting GPS data for weather analysis")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding()
-    }
-    
-    private var activityInfoView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(activity.displayName)
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            VStack(alignment: .leading, spacing: 12) {
-                InfoRow(
-                    label: "Distance",
-                    value: weatherViewModel.settings.units == .metric ?
-                        String(format: "%.1f km", activity.distanceKm) :
-                        String(format: "%.1f mi", activity.distanceMiles)
-                )
-                
-                InfoRow(label: "Duration", value: activity.movingTimeFormatted)
-                
-                if let date = activity.rideDate {
-                    InfoRow(
-                        label: "Date",
-                        value: date.formatted(date: .abbreviated, time: .shortened)
-                    )
-                }
-            }
-            
-            if let error = viewModel.errorMessage {
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.red)
-                    Text(error)
-                        .font(.subheadline)
-                        .foregroundColor(.red)
-                }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.red.opacity(0.1))
-                .cornerRadius(8)
-            }
-            
-            Spacer()
-            
-            Button(action: {
-                viewModel.importRouteFromActivity(
-                    activityId: activity.id,
-                    activityName: activity.displayName,
-                    activityDate: activity.rideDate,
-                    service: wahooService,
-                    weatherViewModel: weatherViewModel,
-                    onSuccess: {
-                        dismiss()  // Pop this detail view
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            onDismiss()  // Dismiss the main sheet
-                        }
-                    }
-                )
-            }) {
-                HStack {
-                    Image(systemName: "cloud.sun")
-                    Text("Analyze Weather on This Route")
-                }
-                .font(.headline)
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.blue)
-                .cornerRadius(12)
-            }
-            .disabled(viewModel.isImporting)
-        }
-        .padding()
-    }
-}
-
 // MARK: - View Model for this specific import flow
 
 @MainActor
@@ -280,6 +194,7 @@ class WahooActivitiesImportViewModel: ObservableObject {
         
         Task {
             do {
+                // This already filters for workout_type_id=0 (Cycling)
                 let allActivities = try await service.fetchRecentWorkouts()
                 await MainActor.run {
                     self.activities = allActivities
@@ -302,13 +217,15 @@ class WahooActivitiesImportViewModel: ObservableObject {
         self.hasMorePages = false // Assume no more pages for now
     }
 
+    // ✅ UPDATED: Added onFailure callback
     func importRouteFromActivity(
         activityId: Int,
         activityName: String,
         activityDate: Date?,
         service: WahooService,
         weatherViewModel: WeatherViewModel,
-        onSuccess: @escaping () -> Void
+        onSuccess: @escaping () -> Void,
+        onFailure: @escaping () -> Void // ✅ ADDED
     ) {
         isImporting = true
         errorMessage = nil
@@ -326,7 +243,6 @@ class WahooActivitiesImportViewModel: ObservableObject {
                 await MainActor.run {
                     weatherViewModel.routePoints = coordinates
                     weatherViewModel.routeDisplayName = activityName
-                    // Do NOT set the rideDate, as the user wants to forecast
                     
                     self.isImporting = false
                     
@@ -340,9 +256,12 @@ class WahooActivitiesImportViewModel: ObservableObject {
                 await MainActor.run {
                     self.errorMessage = "Failed to import route: \(error.localizedDescription)"
                     self.isImporting = false
+                    onFailure() // ✅ ADDED: Call failure callback
                 }
             }
         }
     }
 }
 
+// NOTE: WahooActivityRow and InfoRow are intentionally omitted
+// as they are correctly defined in WahooActivitiesView.swift

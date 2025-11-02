@@ -1,4 +1,3 @@
-
 //
 //  StravaActivitiesView.swift
 //  RideWeather Pro
@@ -14,6 +13,8 @@ struct StravaActivitiesView: View {
     @StateObject private var viewModel = StravaActivitiesViewModel()
     @Environment(\.dismiss) private var dismiss
     
+    @State private var importingId: Int? = nil // ✅ ADDED: For per-row loading
+
     var body: some View {
         NavigationStack {
             Group {
@@ -36,16 +37,7 @@ struct StravaActivitiesView: View {
                     }
                 }
             }
-            .sheet(isPresented: $viewModel.showingAnalysisImport) {
-                if let activity = viewModel.selectedActivity {
-                    StravaImportSheet(
-                        activity: activity,
-                        viewModel: viewModel,
-                        stravaService: stravaService,
-                        weatherViewModel: weatherViewModel
-                    )
-                }
-            }
+            // ✅ REMOVED: .sheet(isPresented: $viewModel.showingAnalysisImport)
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NewAnalysisImported"))) { _ in
                 dismiss()
             }
@@ -57,19 +49,57 @@ struct StravaActivitiesView: View {
         }
     }
     
-    // ✅ UPDATE activitiesList to include Load More button
     private var activitiesList: some View {
         List {
             ForEach(viewModel.activities) { activity in
-                ActivityRow(activity: activity)
-                    .environmentObject(weatherViewModel)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        viewModel.selectActivity(activity, service: stravaService, weatherViewModel: weatherViewModel)
+                // ✅ CHANGED: Replaced .onTapGesture with a Button
+                Button(action: {
+                    guard activity.device_watts == true else {
+                        // Optionally show an alert here
+                        viewModel.errorMessage = "This activity does not have power data and cannot be analyzed."
+                        return
                     }
+                    importingId = activity.id
+                    viewModel.importActivity(
+                        service: stravaService,
+                        weatherViewModel: weatherViewModel,
+                        activity: activity, // Pass activity directly
+                        onSuccess: {
+                            importingId = nil
+                            dismiss()
+                        },
+                        onFailure: {
+                            importingId = nil
+                            // Error message is already set by the view model
+                        }
+                    )
+                }) {
+                    HStack {
+                        ActivityRow(activity: activity)
+                            .environmentObject(weatherViewModel)
+                        
+                        Spacer()
+                        
+                        if importingId == activity.id {
+                            ProgressView()
+                                .frame(width: 20)
+                        } else if activity.device_watts != true {
+                            Image(systemName: "bolt.slash.fill")
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(.gray.opacity(0.5))
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(.secondary.opacity(0.5))
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                // Disable all rows if importing, or just this one if it has no power
+                .disabled(importingId != nil || activity.device_watts != true)
             }
             
-            // ✅ ADD LOAD MORE SECTION
+            // ... (Your existing 'Load More' button/section) ...
             if viewModel.hasMorePages {
                 Section {
                     Button(action: {
@@ -158,6 +188,7 @@ struct ActivityRow: View {
             HStack {
                 Text(activity.name)
                     .font(.headline)
+                    .opacity(activity.device_watts == true ? 1.0 : 0.4) // Dim if no power
                 
                 Spacer()
                 
@@ -187,11 +218,13 @@ struct ActivityRow: View {
                 }
             }
             .foregroundColor(.secondary)
+            .opacity(activity.device_watts == true ? 1.0 : 0.4) // Dim if no power
             
             if let date = activity.startDate {
                 Text(date.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption2)
                     .foregroundColor(.secondary)
+                    .opacity(activity.device_watts == true ? 1.0 : 0.4) // Dim if no power
             }
         }
         .padding(.vertical, 4)
@@ -199,152 +232,30 @@ struct ActivityRow: View {
 }
 
 // MARK: - Import Sheet
+// ✅ DELETED: The `StravaImportSheet` and `InfoRow` structs are no longer needed.
 
-struct StravaImportSheet: View {
-    let activity: StravaActivity
-    @ObservedObject var viewModel: StravaActivitiesViewModel
-    @ObservedObject var stravaService: StravaService
-    @ObservedObject var weatherViewModel: WeatherViewModel
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 24) {
-                if viewModel.isImporting {
-                    VStack(spacing: 16) {
-                        ProgressView()
-                            .scaleEffect(1.5)
-                        Text("Importing from Strava...")
-                            .font(.headline)
-                        Text("Fetching activity streams and analyzing performance")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding()
-                } else {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(activity.name)
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        VStack(alignment: .leading, spacing: 12) {
-                            InfoRow(
-                                label: "Distance",
-                                value: weatherViewModel.settings.units == .metric ?
-                                    String(format: "%.1f km", activity.distanceKm) :
-                                    String(format: "%.1f mi", activity.distanceMiles)
-                            )
-                            InfoRow(label: "Duration", value: activity.durationFormatted)
-                            
-                            if let watts = activity.average_watts, watts > 0 {
-                                InfoRow(label: "Avg Power", value: "\(Int(watts))W")
-                            } else {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundColor(.orange)
-                                    Text("No power data available")
-                                        .font(.subheadline)
-                                }
-                                .padding()
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.orange.opacity(0.1))
-                                .cornerRadius(8)
-                            }
-                        }
-                        
-                        if let error = viewModel.errorMessage {
-                            HStack(spacing: 8) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.red)
-                                Text(error)
-                                    .font(.subheadline)
-                                    .foregroundColor(.red)
-                            }
-                            .padding()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.red.opacity(0.1))
-                            .cornerRadius(8)
-                        }
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            viewModel.importActivity(service: stravaService, weatherViewModel: weatherViewModel)
-                        }) {
-                            HStack {
-                                Image(systemName: "chart.xyaxis.line")
-                                Text("Analyze This Ride")
-                            }
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(activity.device_watts == true ? Color.blue : Color.gray)
-                            .cornerRadius(12)
-                        }
-                        .disabled(activity.device_watts != true)
-                        
-                        if activity.device_watts != true {
-                            Text("Power data is required for ride analysis")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .padding()
-                }
-            }
-            .navigationTitle("Import from Strava")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct InfoRow: View {
-    let label: String
-    let value: String
-    
-    var body: some View {
-        HStack {
-            Text(label)
-                .foregroundColor(.secondary)
-            Spacer()
-            Text(value)
-                .fontWeight(.semibold)
-        }
-    }
-}
 
 // MARK: - View Model
 
 @MainActor
 class StravaActivitiesViewModel: ObservableObject {
     @Published var activities: [StravaActivity] = []
-    @Published var selectedActivity: StravaActivity?
+    // ✅ REMOVED: @Published var selectedActivity: StravaActivity?
     @Published var isLoading = false
     @Published var isImporting = false
     @Published var errorMessage: String?
-    @Published var showingAnalysisImport = false
-    @Published var isLoadingMore = false  // ✅ ADD
-    @Published var hasMorePages = true    // ✅ ADD
+    // ✅ REMOVED: @Published var showingAnalysisImport = false
+    @Published var isLoadingMore = false
+    @Published var hasMorePages = true
     
-    private var currentPage = 1           // ✅ ADD
-    private let perPage = 50              // ✅ ADD
-    
+     private var currentPage = 1
+     private let perPage = 50
+     
     func loadActivities(service: StravaService) {
         isLoading = true
         errorMessage = nil
-        currentPage = 1  // ✅ ADD: Reset to first page
-        activities = []  // ✅ ADD: Clear existing
+        currentPage = 1
+        activities = []
 
         Task {
             do {
@@ -352,7 +263,8 @@ class StravaActivitiesViewModel: ObservableObject {
                 await MainActor.run {
                     // Filter for rides with GPS data
                     let rides = allActivities.filter {
-                        ($0.type == "Ride" || $0.type == "VirtualRide") &&
+                        ($0.type == "Ride") &&
+                        ($0.trainer == nil || $0.trainer == false) &&
                         !$0.start_date_local.isEmpty
                     }
                     
@@ -371,7 +283,6 @@ class StravaActivitiesViewModel: ObservableObject {
         }
     }
     
-    // ✅ ADD THIS METHOD
     func loadMoreActivities(service: StravaService) {
         guard !isLoadingMore && hasMorePages else {
             print("📱 Skipping load more: isLoadingMore=\(isLoadingMore), hasMorePages=\(hasMorePages)")
@@ -388,7 +299,8 @@ class StravaActivitiesViewModel: ObservableObject {
                 let allActivities = try await service.fetchRecentActivities(page: currentPage, perPage: perPage)
                 await MainActor.run {
                     let newRides = allActivities.filter {
-                        ($0.type == "Ride" || $0.type == "VirtualRide") &&
+                        ($0.type == "Ride") &&
+                        ($0.trainer == nil || $0.trainer == false) &&
                         !$0.start_date_local.isEmpty
                     }
                     
@@ -408,13 +320,17 @@ class StravaActivitiesViewModel: ObservableObject {
         }
     }
 
-    func selectActivity(_ activity: StravaActivity, service: StravaService, weatherViewModel: WeatherViewModel) {
-        selectedActivity = activity
-        showingAnalysisImport = true
-    }
-    
-    func importActivity(service: StravaService, weatherViewModel: WeatherViewModel) {
-        guard let activity = selectedActivity else { return }
+    // ✅ REMOVED: func selectActivity(...)
+
+    // ✅ UPDATED: Function signature now takes activity and callbacks
+    func importActivity(
+        service: StravaService,
+        weatherViewModel: WeatherViewModel,
+        activity: StravaActivity,
+        onSuccess: @escaping () -> Void,
+        onFailure: @escaping () -> Void
+    ) {
+        // ✅ REMOVED: guard let activity = selectedActivity else { return }
         
         isImporting = true
         errorMessage = nil
@@ -446,32 +362,23 @@ class StravaActivitiesViewModel: ObservableObject {
                 
                 print("StravaImport: Converted \(dataPoints.count) data points")
                 
-                // Analyze using existing analyzer
-//                let analyzer = RideFileAnalyzer()
-
-                // 🔥 CRITICAL FIX: Calculate BOTH times from Strava's data
                 let elapsedTime: TimeInterval
                 let movingTime: TimeInterval
 
                 if let timeData = streams.time?.data, !timeData.isEmpty {
-                    // Strava's time stream is elapsed time (includes stops)
                     elapsedTime = TimeInterval(timeData.last ?? 0)
                     print("StravaImport: Elapsed time from stream: \(elapsedTime)s")
                 } else {
-                    // Fallback to activity metadata
-                    // ✅ NOT optional - access directly
                     elapsedTime = TimeInterval(activity.elapsed_time)
                     print("StravaImport: Elapsed time from metadata: \(elapsedTime)s")
                 }
 
-                // 🔥 Get moving time from activity metadata (Strava calculates this)
-                // ✅ NOT optional - access directly
                 movingTime = TimeInterval(activity.moving_time)
                 print("StravaImport: Moving time from activity: \(movingTime)s")
                 print("StravaImport: Time difference: \(elapsedTime - movingTime)s stopped")
                 
                 // Analyze using existing analyzer
-                let analyzer = RideFileAnalyzer()
+                let analyzer = RideFileAnalyzer(settings: weatherViewModel.settings) // ✅ PASS SETTINGS
  
                 var analysis = analyzer.analyzeRide(
                     dataPoints: dataPoints,
@@ -480,7 +387,7 @@ class StravaActivitiesViewModel: ObservableObject {
                     plannedRide: nil,
                     isPreFiltered: true,
                     elapsedTimeOverride: elapsedTime,
-                    movingTimeOverride: movingTime  // 🔥 NEW PARAMETER
+                    movingTimeOverride: movingTime
                 )
                 
                 // Update the ride name to match Strava activity name
@@ -490,7 +397,7 @@ class StravaActivitiesViewModel: ObservableObject {
                     rideName: activity.name,  // Use Strava activity name
                     duration: analysis.duration,
                     distance: analysis.distance,
-                    metadata: analysis.metadata,  // âœ… ADD THIS
+                    metadata: analysis.metadata,
                     averagePower: analysis.averagePower,
                     normalizedPower: analysis.normalizedPower,
                     intensityFactor: analysis.intensityFactor,
@@ -500,8 +407,8 @@ class StravaActivitiesViewModel: ObservableObject {
                     peakPower1min: analysis.peakPower1min,
                     peakPower5min: analysis.peakPower5min,
                     peakPower20min: analysis.peakPower20min,
-                    terrainSegments: analysis.terrainSegments,  // âœ… ADD THIS
-                    powerAllocation: analysis.powerAllocation,  // âœ… ADD THIS
+                    terrainSegments: analysis.terrainSegments,
+                    powerAllocation: analysis.powerAllocation,
                     consistencyScore: analysis.consistencyScore,
                     pacingRating: analysis.pacingRating,
                     powerVariability: analysis.powerVariability,
@@ -527,7 +434,7 @@ class StravaActivitiesViewModel: ObservableObject {
                 
                 await MainActor.run {
                     self.isImporting = false
-                    self.showingAnalysisImport = false
+                    // ✅ REMOVED: self.showingAnalysisImport = false
                     
                     // Small delay to ensure sheet dismisses first
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -535,36 +442,27 @@ class StravaActivitiesViewModel: ObservableObject {
                         NotificationCenter.default.post(
                             name: NSNotification.Name("NewAnalysisImported"),
                             object: analysis,
-                            userInfo: ["source": "strava"]  // ✅ ADD THIS
+                            userInfo: ["source": "strava"]
                         )
                         print("StravaImport: Notification posted")
                     }
                     TrainingLoadManager.shared.addRide(analysis: analysis)
                     
+                    onSuccess() // ✅ Call success callback
                 }
-            } catch ImportError.noPowerData {
-                print("StravaImport Error: No power data")
-                await MainActor.run {
-                    self.errorMessage = "This activity doesn't have power data"
-                    self.isImporting = false
-                }
-            } catch ImportError.conversionFailed {
-                print("StravaImport Error: Conversion failed")
-                await MainActor.run {
-                    self.errorMessage = "Failed to convert activity data"
-                    self.isImporting = false
-                }
-            } catch let error as StravaService.StravaError {
+            } catch { // ✅ Handle all errors
                 print("StravaImport Error: \(error.localizedDescription)")
                 await MainActor.run {
-                    self.errorMessage = error.localizedDescription
+                    // Set specific error messages
+                    if let importError = error as? ImportError {
+                        self.errorMessage = importError.errorDescription
+                    } else if let stravaError = error as? StravaService.StravaError {
+                        self.errorMessage = stravaError.errorDescription
+                    } else {
+                        self.errorMessage = "Import failed: \(error.localizedDescription)"
+                    }
                     self.isImporting = false
-                }
-            } catch {
-                print("StravaImport Error: \(error)")
-                await MainActor.run {
-                    self.errorMessage = "Import failed: \(error.localizedDescription)"
-                    self.isImporting = false
+                    onFailure() // ✅ Call failure callback
                 }
             }
         }
@@ -579,7 +477,6 @@ class StravaActivitiesViewModel: ObservableObject {
         let startDate = activity.startDate ?? Date()
         var dataPoints: [FITDataPoint] = []
         
-        // Get other streams if available
         let distanceData = streams.distance?.data
         let altitudeData = streams.altitude?.data
         let heartrateData = streams.heartrate?.data
@@ -588,7 +485,6 @@ class StravaActivitiesViewModel: ObservableObject {
         let latlngData = streams.latlng?.data
         let movingData = streams.moving?.data
         
-        // 🔍 DEBUG: Check if moving stream exists
         if let moving = movingData {
             let stoppedCount = moving.filter { !$0 }.count
             print("StravaImport: Moving stream has \(moving.count) points, \(stoppedCount) stopped")
@@ -596,24 +492,31 @@ class StravaActivitiesViewModel: ObservableObject {
             print("StravaImport: ⚠️ NO MOVING STREAM - will include all points")
         }
 
-        // Process each time point
         var skippedCount = 0
         for i in 0..<timeData.count {
-            // Skip points where Strava says we're not moving
-            if let moving = movingData?[safe: i], !moving {
+            // ✅ UPDATED: Use a nil-coalescing check for movingData
+            // If movingData is nil, we assume we are moving (isMoving = true)
+            let isMoving = movingData?[safe: i] ?? true
+            
+            if !isMoving {
                 skippedCount += 1
-                continue  // Skip this point entirely - not moving
+                continue
+            }
+            
+            // ✅ FIX: Ensure powerData has an entry for this index
+            guard let power = powerData[safe: i] else {
+                // If power data is missing for this timestamp, skip the point
+                skippedCount += 1
+                continue
             }
 
             let timestamp = startDate.addingTimeInterval(timeData[i])
-            let power = powerData[safe: i]
             let heartRate = heartrateData?[safe: i].map { Int($0) }
             let cadence = cadenceData?[safe: i].map { Int($0) }
             let speed = speedData?[safe: i]
             let distance = distanceData?[safe: i]
             let altitude = altitudeData?[safe: i]
             
-            // Parse coordinates if available
             var coordinate: CLLocationCoordinate2D?
             if let latlng = latlngData?[safe: i], latlng.count == 2 {
                 coordinate = CLLocationCoordinate2D(latitude: latlng[0], longitude: latlng[1])
@@ -621,7 +524,7 @@ class StravaActivitiesViewModel: ObservableObject {
             
             dataPoints.append(FITDataPoint(
                 timestamp: timestamp,
-                power: power,
+                power: power, // power is now non-optional here
                 heartRate: heartRate,
                 cadence: cadence,
                 speed: speed,
@@ -631,7 +534,7 @@ class StravaActivitiesViewModel: ObservableObject {
             ))
         }
         
-        print("StravaImport: Created \(dataPoints.count) data points, skipped \(skippedCount) stopped points")
+        print("StravaImport: Created \(dataPoints.count) data points, skipped \(skippedCount) points")
         
         return dataPoints
     }
@@ -650,3 +553,10 @@ class StravaActivitiesViewModel: ObservableObject {
         }
     }
 }
+
+/*// ✅ ADDED: Safe collection access
+extension Array {
+    subscript(safe index: Int) -> Element? {
+        return indices.contains(index) ? self[index] : nil
+    }
+}*/

@@ -33,13 +33,11 @@ struct StravaRouteImportView: View {
                 // Content
                 TabView(selection: $selectedTab) {
                     StravaRoutesTab(onDismiss: {
-                        print("🔴 onDismiss called - closing main sheet")
                         dismiss()
                     })
                     .tag(ImportTab.routes)
                     
                     StravaActivitiesTab(onDismiss: {
-                        print("🔴 onDismiss called - closing main sheet")
                         dismiss()
                     })
                     .tag(ImportTab.activities)
@@ -51,7 +49,6 @@ struct StravaRouteImportView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
-                        print("🔴 Cancel tapped - closing main sheet")
                         dismiss()
                     }
                 }
@@ -68,18 +65,19 @@ struct StravaRoutesTab: View {
     @StateObject private var viewModel = StravaRoutesViewModel()
     let onDismiss: () -> Void
     
+    @State private var importingId: Int? = nil // ✅ ADDED: For per-row loading
+    
     var body: some View {
-        NavigationStack {  // ✅ Wrap in NavigationStack
-            Group {
-                if viewModel.isLoading && viewModel.routes.isEmpty {
-                    ProgressView("Loading routes...")
-                } else if let error = viewModel.errorMessage {
-                    errorView(error: error)
-                } else if viewModel.routes.isEmpty {
-                    emptyRoutesView
-                } else {
-                    routesList
-                }
+        // ✅ REMOVED: Redundant NavigationStack
+        Group {
+            if viewModel.isLoading && viewModel.routes.isEmpty {
+                ProgressView("Loading routes...")
+            } else if let error = viewModel.errorMessage {
+                errorView(error: error)
+            } else if viewModel.routes.isEmpty {
+                emptyRoutesView
+            } else {
+                routesList
             }
         }
         .onAppear {
@@ -92,19 +90,39 @@ struct StravaRoutesTab: View {
     private var routesList: some View {
         List {
             ForEach(viewModel.routes) { route in
-                // ✅ Use NavigationLink instead of onTapGesture
-                NavigationLink {
-                    StravaRouteDetailView(
-                        route: route,
-                        viewModel: viewModel,
-                        stravaService: stravaService,
+                // ✅ CHANGED: Replaced NavigationLink with Button
+                Button(action: {
+                    importingId = route.id
+                    viewModel.importRoute(
+                        routeId: route.id,
+                        routeName: route.name,
+                        service: stravaService,
                         weatherViewModel: weatherViewModel,
-                        onDismiss: onDismiss
+                        onSuccess: {
+                            importingId = nil
+                            onDismiss()
+                        },
+                        onFailure: { // ✅ ADDED: Handle failure
+                            importingId = nil
+                        }
                     )
-                } label: {
-                    StravaRouteRow(route: route)
-                        .environmentObject(weatherViewModel)
+                }) {
+                    HStack {
+                        StravaRouteRow(route: route)
+                            .environmentObject(weatherViewModel)
+                        Spacer()
+                        if importingId == route.id {
+                            ProgressView()
+                                .frame(width: 20)
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(.secondary.opacity(0.5))
+                        }
+                    }
                 }
+                .buttonStyle(.plain)
+                .disabled(importingId != nil) // Disable all rows while importing
             }
         }
         .refreshable {
@@ -155,18 +173,19 @@ struct StravaActivitiesTab: View {
     @StateObject private var viewModel = StravaActivitiesImportViewModel()
     let onDismiss: () -> Void
     
+    @State private var importingId: Int? = nil // ✅ ADDED: For per-row loading
+    
     var body: some View {
-        NavigationStack {  // ✅ Wrap in NavigationStack
-            Group {
-                if viewModel.isLoading && viewModel.activities.isEmpty {
-                    ProgressView("Loading activities...")
-                } else if let error = viewModel.errorMessage {
-                    errorView(error: error)
-                } else if viewModel.activities.isEmpty {
-                    emptyActivitiesView
-                } else {
-                    activitiesList
-                }
+        // ✅ REMOVED: Redundant NavigationStack
+        Group {
+            if viewModel.isLoading && viewModel.activities.isEmpty {
+                ProgressView("Loading activities...")
+            } else if let error = viewModel.errorMessage {
+                errorView(error: error)
+            } else if viewModel.activities.isEmpty {
+                emptyActivitiesView
+            } else {
+                activitiesList
             }
         }
         .onAppear {
@@ -178,7 +197,7 @@ struct StravaActivitiesTab: View {
     
     private var activitiesList: some View {
         List {
-            // Activity count header
+            // ... (your existing activity count Section) ...
             Section {
                 HStack {
                     Image(systemName: "figure.outdoor.cycle")
@@ -198,21 +217,43 @@ struct StravaActivitiesTab: View {
             
             // Activity list
             ForEach(viewModel.activities) { activity in
-                NavigationLink {
-                    StravaActivityDetailView(
-                        activity: activity,
-                        viewModel: viewModel,
-                        stravaService: stravaService,
+                // ✅ CHANGED: Replaced NavigationLink with Button
+                Button(action: {
+                    importingId = activity.id
+                    viewModel.importRoute(
+                        activityId: activity.id,
+                        activityName: activity.name,
+                        activityDate: activity.startDate,
+                        service: stravaService,
                         weatherViewModel: weatherViewModel,
-                        onDismiss: onDismiss
+                        onSuccess: {
+                            importingId = nil
+                            onDismiss()
+                        },
+                        onFailure: { // ✅ ADDED: Handle failure
+                            importingId = nil
+                        }
                     )
-                } label: {
-                    StravaActivityRow(activity: activity)
-                        .environmentObject(weatherViewModel)
+                }) {
+                    HStack {
+                        StravaActivityRow(activity: activity)
+                            .environmentObject(weatherViewModel)
+                        Spacer()
+                        if importingId == activity.id {
+                            ProgressView()
+                                .frame(width: 20)
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(.secondary.opacity(0.5))
+                        }
+                    }
                 }
+                .buttonStyle(.plain)
+                .disabled(importingId != nil) // Disable all rows while importing
             }
             
-            // Load More section
+            // ... (your existing Load More section) ...
             if viewModel.hasMorePages {
                 Section {
                     Button(action: {
@@ -397,576 +438,15 @@ struct StravaActivityRow: View {
     }
 }
 
-// MARK: - Route Detail View (replaces the sheet)
-
-struct StravaRouteDetailView: View {
-    let route: StravaRoute
-    @ObservedObject var viewModel: StravaRoutesViewModel
-    @ObservedObject var stravaService: StravaService
-    @ObservedObject var weatherViewModel: WeatherViewModel
-    let onDismiss: () -> Void
-    
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            if viewModel.isImporting {
-                importingView
-            } else {
-                routeInfoView
-            }
-        }
-        .navigationTitle("Import Route")
-        .navigationBarTitleDisplayMode(.inline)
-        .padding()
-    }
-    
-    private var importingView: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-                .scaleEffect(1.5)
-            Text("Importing route from Strava...")
-                .font(.headline)
-            Text("Loading GPS data for weather analysis")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding()
-    }
-    
-    private var routeInfoView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(route.name)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                if let description = route.description, !description.isEmpty {
-                    Text(description)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-            }
-            
-            VStack(alignment: .leading, spacing: 12) {
-                InfoRow(
-                    label: "Type",
-                    value: route.routeType
-                )
-                
-                InfoRow(
-                    label: "Distance",
-                    value: weatherViewModel.settings.units == .metric ?
-                        String(format: "%.1f km", route.distanceKm) :
-                        String(format: "%.1f mi", route.distanceMiles)
-                )
-                
-                if route.elevation_gain > 0 {
-                    let elevation = weatherViewModel.settings.units == .metric ?
-                        route.elevation_gain :
-                        route.elevation_gain * 3.28084
-                    let unit = weatherViewModel.settings.units == .metric ? "m" : "ft"
-                    
-                    InfoRow(
-                        label: "Elevation Gain",
-                        value: "\(Int(elevation)) \(unit)"
-                    )
-                }
-                
-                InfoRow(
-                    label: "Created",
-                    value: route.createdDate.formatted(date: .abbreviated, time: .omitted)
-                )
-            }
-            
-            if let error = viewModel.errorMessage {
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.red)
-                    Text(error)
-                        .font(.subheadline)
-                        .foregroundColor(.red)
-                }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.red.opacity(0.1))
-                .cornerRadius(8)
-            }
-            
-            Spacer()
-            
-            Button(action: {
-                viewModel.importRoute(
-                    routeId: route.id,
-                    routeName: route.name,
-                    service: stravaService,
-                    weatherViewModel: weatherViewModel,
-                    onSuccess: {
-                        dismiss()  // Pop the detail view
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            onDismiss()  // Dismiss the main sheet
-                        }
-                    }
-                )
-            }) {
-                HStack {
-                    Image(systemName: "cloud.sun")
-                    Text("Analyze Weather on This Route")
-                }
-                .font(.headline)
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.blue)
-                .cornerRadius(12)
-            }
-            .disabled(viewModel.isImporting)
-            
-            Text("This will load the route and analyze weather conditions")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-        }
-        .padding()
-    }
-}
-
-/*// MARK: - Route Preview Sheet
-
-struct StravaRoutePreviewSheet: View {
-    let route: StravaRoute
-    @ObservedObject var viewModel: StravaRoutesViewModel
-    @ObservedObject var stravaService: StravaService
-    @ObservedObject var weatherViewModel: WeatherViewModel
-    let onDismiss: () -> Void
-    
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 24) {
-                if viewModel.isImporting {
-                    importingView
-                } else if !weatherViewModel.routePoints.isEmpty && viewModel.selectedRoute?.id == route.id {
-                    // ✅ Show success state
-                    successView
-                } else {
-                    routeInfoView
-                }
-            }
-            .navigationTitle("Import Route")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(viewModel.isImporting ? "Importing..." : "Cancel") {
-                        viewModel.showingRoutePreview = false
-                    }
-                    .disabled(viewModel.isImporting)
-                }
-            }
-        }
-    }
-    
-    // ✅ ADD SUCCESS VIEW
-    private var successView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 60))
-                .foregroundColor(.green)
-            
-            Text("Route Imported!")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            Text("\(weatherViewModel.routePoints.count) GPS points loaded")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            
-            Button("Continue") {
-                viewModel.showingRoutePreview = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    onDismiss()
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .padding(.top)
-        }
-        .padding()
-    }
-
-    private var importingView: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-                .scaleEffect(1.5)
-            Text("Importing route from Strava...")
-                .font(.headline)
-            Text("Loading GPS data for weather analysis")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding()
-    }
-    
-    private var routeInfoView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(route.name)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                if let description = route.description, !description.isEmpty {
-                    Text(description)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-            }
-            
-            VStack(alignment: .leading, spacing: 12) {
-                InfoRow(
-                    label: "Type",
-                    value: route.routeType
-                )
-                
-                InfoRow(
-                    label: "Distance",
-                    value: weatherViewModel.settings.units == .metric ?
-                    String(format: "%.1f km", route.distanceKm) :
-                        String(format: "%.1f mi", route.distanceMiles)
-                )
-                
-                if route.elevation_gain > 0 {
-                    let elevation = weatherViewModel.settings.units == .metric ?
-                    route.elevation_gain :
-                    route.elevation_gain * 3.28084
-                    let unit = weatherViewModel.settings.units == .metric ? "m" : "ft"
-                    
-                    InfoRow(
-                        label: "Elevation Gain",
-                        value: "\(Int(elevation)) \(unit)"
-                    )
-                }
-                
-                InfoRow(
-                    label: "Created",
-                    value: route.createdDate.formatted(date: .abbreviated, time: .omitted)
-                )
-            }
-            
-            if let error = viewModel.errorMessage {
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.red)
-                    Text(error)
-                        .font(.subheadline)
-                        .foregroundColor(.red)
-                }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.red.opacity(0.1))
-                .cornerRadius(8)
-            }
-            
-            Spacer()
-            
-            Button(action: {
-                viewModel.importRoute(
-                    service: stravaService,
-                    weatherViewModel: weatherViewModel,
-                    onSuccess: onDismiss
-                )
-            }) {
-                HStack {
-                    Image(systemName: "cloud.sun")
-                    Text("Analyze Weather on This Route")
-                }
-                .font(.headline)
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.blue)
-                .cornerRadius(12)
-            }
-            .disabled(viewModel.isImporting)
-            
-            Text("This will load the route and analyze weather conditions")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-        }
-        .padding()
-    }
-}
-
-// MARK: - Activity Preview Sheet
-
-struct StravaActivityPreviewSheet: View {
-    let activity: StravaActivity
-    @ObservedObject var viewModel: StravaActivitiesImportViewModel
-    @ObservedObject var stravaService: StravaService
-    @ObservedObject var weatherViewModel: WeatherViewModel
-    let onDismiss: () -> Void
-    
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 24) {
-                if viewModel.isImporting {
-                    importingView
-                } else {
-                    activityInfoView
-                }
-            }
-            .navigationTitle("Import Activity Route")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Cancel") {
-                        viewModel.showingActivityPreview = false
-                    }
-                }
-            }
-        }
-    }
-    
-    private var importingView: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-                .scaleEffect(1.5)
-            Text("Importing route from activity...")
-                .font(.headline)
-            Text("Extracting GPS data for weather analysis")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding()
-    }
-    
-    private var activityInfoView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(activity.name)
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            VStack(alignment: .leading, spacing: 12) {
-                InfoRow(
-                    label: "Distance",
-                    value: weatherViewModel.settings.units == .metric ?
-                    String(format: "%.1f km", activity.distanceKm) :
-                        String(format: "%.1f mi", activity.distanceMiles)
-                )
-                
-                InfoRow(label: "Duration", value: activity.durationFormatted)
-                
-                if activity.total_elevation_gain > 0 {
-                    let elevation = weatherViewModel.settings.units == .metric ?
-                    activity.total_elevation_gain :
-                    activity.total_elevation_gain * 3.28084
-                    let unit = weatherViewModel.settings.units == .metric ? "m" : "ft"
-                    
-                    InfoRow(
-                        label: "Elevation Gain",
-                        value: "\(Int(elevation)) \(unit)"
-                    )
-                }
-                
-                if let date = activity.startDate {
-                    InfoRow(
-                        label: "Date",
-                        value: date.formatted(date: .abbreviated, time: .shortened)
-                    )
-                }
-            }
-            
-            if let error = viewModel.errorMessage {
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.red)
-                    Text(error)
-                        .font(.subheadline)
-                        .foregroundColor(.red)
-                }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.red.opacity(0.1))
-                .cornerRadius(8)
-            }
-            
-            Spacer()
-            
-            Button(action: {
-                viewModel.importRoute(
-                    service: stravaService,
-                    weatherViewModel: weatherViewModel,
-                    onSuccess: onDismiss
-                )
-            }) {
-                HStack {
-                    Image(systemName: "cloud.sun")
-                    Text("Analyze Weather on This Route")
-                }
-                .font(.headline)
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.blue)
-                .cornerRadius(12)
-            }
-            .disabled(viewModel.isImporting)
-            
-            Text("This will import the GPS route and analyze weather conditions")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-        }
-        .padding()
-    }
-}*/
-
-// MARK: - Route Detail View (replaces the sheet)
-
-// MARK: - Activity Detail View (replaces the sheet)
-
-struct StravaActivityDetailView: View {
-    let activity: StravaActivity
-    @ObservedObject var viewModel: StravaActivitiesImportViewModel
-    @ObservedObject var stravaService: StravaService
-    @ObservedObject var weatherViewModel: WeatherViewModel
-    let onDismiss: () -> Void
-    
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            if viewModel.isImporting {
-                importingView
-            } else {
-                activityInfoView
-            }
-        }
-        .navigationTitle("Import Activity Route")
-        .navigationBarTitleDisplayMode(.inline)
-        .padding()
-    }
-    
-    private var importingView: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-                .scaleEffect(1.5)
-            Text("Importing route from activity...")
-                .font(.headline)
-            Text("Extracting GPS data for weather analysis")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding()
-    }
-    
-    private var activityInfoView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(activity.name)
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            VStack(alignment: .leading, spacing: 12) {
-                InfoRow(
-                    label: "Distance",
-                    value: weatherViewModel.settings.units == .metric ?
-                        String(format: "%.1f km", activity.distanceKm) :
-                        String(format: "%.1f mi", activity.distanceMiles)
-                )
-                
-                InfoRow(label: "Duration", value: activity.durationFormatted)
-                
-                if activity.total_elevation_gain > 0 {
-                    let elevation = weatherViewModel.settings.units == .metric ?
-                        activity.total_elevation_gain :
-                        activity.total_elevation_gain * 3.28084
-                    let unit = weatherViewModel.settings.units == .metric ? "m" : "ft"
-                    
-                    InfoRow(
-                        label: "Elevation Gain",
-                        value: "\(Int(elevation)) \(unit)"
-                    )
-                }
-                
-                if let date = activity.startDate {
-                    InfoRow(
-                        label: "Date",
-                        value: date.formatted(date: .abbreviated, time: .shortened)
-                    )
-                }
-            }
-            
-            if let error = viewModel.errorMessage {
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.red)
-                    Text(error)
-                        .font(.subheadline)
-                        .foregroundColor(.red)
-                }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.red.opacity(0.1))
-                .cornerRadius(8)
-            }
-            
-            Spacer()
-            
-            Button(action: {
-                viewModel.importRoute(
-                    activityId: activity.id,
-                    activityName: activity.name,
-                    activityDate: nil, //activity.startDate,
-                    service: stravaService,
-                    weatherViewModel: weatherViewModel,
-                    onSuccess: {
-                        dismiss()  // Pop the detail view
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            onDismiss()  // Dismiss the main sheet
-                        }
-                    }
-                )
-            }) {
-                HStack {
-                    Image(systemName: "cloud.sun")
-                    Text("Analyze Weather on This Route")
-                }
-                .font(.headline)
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.blue)
-                .cornerRadius(12)
-            }
-            .disabled(viewModel.isImporting)
-            
-            Text("This will import the GPS route and analyze weather conditions")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-        }
-        .padding()
-    }
-}
 
 // MARK: - Routes View Model
 
 @MainActor
 class StravaRoutesViewModel: ObservableObject {
     @Published var routes: [StravaRoute] = []
-//    @Published var selectedRoute: StravaRoute?
     @Published var isLoading = false
     @Published var isImporting = false
     @Published var errorMessage: String?
-//    @Published var showingRoutePreview = false
     
     func loadRoutes(service: StravaService) {
         isLoading = true
@@ -988,18 +468,14 @@ class StravaRoutesViewModel: ObservableObject {
         }
     }
     
-/*    func selectRoute(_ route: StravaRoute) {
-        selectedRoute = route
-        showingRoutePreview = true
-    }*/
-    
-    // ✅ SIMPLIFY importRoute - remove route parameter since it's passed directly
+    // ✅ UPDATED: Added onFailure callback
     func importRoute(
         routeId: Int,
         routeName: String,
         service: StravaService,
         weatherViewModel: WeatherViewModel,
-        onSuccess: @escaping () -> Void
+        onSuccess: @escaping () -> Void,
+        onFailure: @escaping () -> Void // ✅ ADDED
     ) {
         print("🔵 Starting import for route: \(routeName)")
         isImporting = true
@@ -1008,10 +484,7 @@ class StravaRoutesViewModel: ObservableObject {
         Task {
             do {
                 print("🔵 Step 1: Extracting route \(routeId)")
-                
-                // Extract GPS route
                 let coordinates = try await service.extractRouteFromStravaRoute(routeId: routeId)
-                
                 print("🔵 Step 2: Got \(coordinates.count) coordinates")
                 
                 guard !coordinates.isEmpty else {
@@ -1021,7 +494,6 @@ class StravaRoutesViewModel: ObservableObject {
                 
                 print("🔵 Step 3: Updating weather view model")
                 
-                // Import into weather view model
                 await MainActor.run {
                     print("🔵 Step 4: Setting route points (\(coordinates.count) points)")
                     weatherViewModel.routePoints = coordinates
@@ -1032,7 +504,6 @@ class StravaRoutesViewModel: ObservableObject {
                     print("🔵 Step 6: Import complete")
                     self.isImporting = false
                     
-                    // Show success feedback
                     let impact = UIImpactFeedbackGenerator(style: .medium)
                     impact.impactOccurred()
                     
@@ -1040,23 +511,12 @@ class StravaRoutesViewModel: ObservableObject {
                     onSuccess()
                 }
                 
-            } catch ImportError.noGPSData {
-                print("❌ Import failed: No GPS data")
-                await MainActor.run {
-                    self.errorMessage = "This route doesn't have GPS data"
-                    self.isImporting = false
-                }
-            } catch let error as StravaService.StravaError {
-                print("❌ Import failed: \(error.localizedDescription)")
-                await MainActor.run {
-                    self.errorMessage = error.localizedDescription
-                    self.isImporting = false
-                }
             } catch {
                 print("❌ Import failed: \(error.localizedDescription)")
                 await MainActor.run {
                     self.errorMessage = "Failed to import route: \(error.localizedDescription)"
                     self.isImporting = false
+                    onFailure() // ✅ ADDED: Call failure callback
                 }
             }
         }
@@ -1092,28 +552,23 @@ class StravaActivitiesImportViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         currentPage = 1
-        activities = []  // ✅ Clear existing activities
+        activities = []
         
         Task {
             do {
                 let allActivities = try await service.fetchRecentActivities(page: currentPage, perPage: perPage)
                 await MainActor.run {
-                    // Filter for rides with GPS data
                     let rides = allActivities.filter {
-                        ($0.type == "Ride" || $0.type == "VirtualRide") &&
+                        ($0.type == "Ride") &&
+                        ($0.trainer == nil || $0.trainer == false) &&
                         !$0.start_date_local.isEmpty
                     }
                     
                     self.activities = rides
-                    
-                    // ✅ Check if more pages based on total activities returned, not filtered count
                     self.hasMorePages = allActivities.count == perPage
                     self.isLoading = false
                     
-                    print("📱 Loaded page \(self.currentPage):")
-                    print("   - Total activities from Strava: \(allActivities.count)")
-                    print("   - Filtered rides: \(rides.count)")
-                    print("   - Has more pages: \(self.hasMorePages)")
+                    print("📱 Loaded page \(self.currentPage): \(allActivities.count) total, \(rides.count) rides")
                 }
             } catch {
                 await MainActor.run {
@@ -1123,7 +578,7 @@ class StravaActivitiesImportViewModel: ObservableObject {
             }
         }
     }
-
+    
     func loadMoreActivities(service: StravaService) {
         guard !isLoadingMore && hasMorePages else {
             print("📱 Skipping load more: isLoadingMore=\(isLoadingMore), hasMorePages=\(hasMorePages)")
@@ -1139,43 +594,37 @@ class StravaActivitiesImportViewModel: ObservableObject {
             do {
                 let allActivities = try await service.fetchRecentActivities(page: currentPage, perPage: perPage)
                 await MainActor.run {
-                    // Filter new activities for rides with GPS data
                     let newRides = allActivities.filter {
-                        ($0.type == "Ride" || $0.type == "VirtualRide") &&
-                        !$0.start_date_local.isEmpty
+                        ($0.type == "Ride") &&
+                        ($0.trainer == nil || $0.trainer == false) &&
+                       !$0.start_date_local.isEmpty
                     }
                     
-                    let oldCount = self.activities.count
                     self.activities.append(contentsOf: newRides)
-                    
-                    // ✅ Check based on total activities, not filtered
                     self.hasMorePages = allActivities.count == perPage
                     self.isLoadingMore = false
                     
-                    print("📱 Loaded page \(self.currentPage):")
-                    print("   - Total activities from Strava: \(allActivities.count)")
-                    print("   - Filtered rides added: \(newRides.count)")
-                    print("   - Total rides now: \(self.activities.count)")
-                    print("   - Has more pages: \(self.hasMorePages)")
+                    print("📱 Loaded page \(self.currentPage): Added \(newRides.count) rides (total: \(self.activities.count))")
                 }
             } catch {
                 await MainActor.run {
                     self.errorMessage = error.localizedDescription
                     self.isLoadingMore = false
-                    self.currentPage -= 1  // Revert page on error
-                    print("❌ Error loading more activities: \(error.localizedDescription)")
+                    self.currentPage -= 1
                 }
             }
         }
     }
 
+    // ✅ UPDATED: Added onFailure callback
     func importRoute(
         activityId: Int,
         activityName: String,
         activityDate: Date?,
         service: StravaService,
         weatherViewModel: WeatherViewModel,
-        onSuccess: @escaping () -> Void
+        onSuccess: @escaping () -> Void,
+        onFailure: @escaping () -> Void // ✅ ADDED
     ) {
         print("🔵 Starting import for activity: \(activityName)")
         isImporting = true
@@ -1184,10 +633,7 @@ class StravaActivitiesImportViewModel: ObservableObject {
         Task {
             do {
                 print("🔵 Step 1: Extracting route for activity \(activityId)")
-                
-                // Extract GPS route from activity
                 let coordinates = try await service.extractRouteFromActivity(activityId: activityId)
-                
                 print("🔵 Step 2: Got \(coordinates.count) coordinates")
                 
                 guard !coordinates.isEmpty else {
@@ -1197,7 +643,6 @@ class StravaActivitiesImportViewModel: ObservableObject {
                 
                 print("🔵 Step 3: Updating weather view model")
                 
-                // Import into weather view model
                 await MainActor.run {
                     print("🔵 Step 4: Setting route points (\(coordinates.count) points)")
                     weatherViewModel.routePoints = coordinates
@@ -1205,16 +650,9 @@ class StravaActivitiesImportViewModel: ObservableObject {
                     print("🔵 Step 5: Setting route name to '\(activityName)'")
                     weatherViewModel.routeDisplayName = activityName
                     
-/*                    // Set ride date to activity date---don't set the forecast date to date of strava activity
-                    if let activityDate = activityDate {
-                        print("🔵 Step 6: Setting ride date to \(activityDate)")
-                        weatherViewModel.rideDate = activityDate
-                    }*/
-                    
                     print("🔵 Step 7: Import complete")
                     self.isImporting = false
                     
-                    // Show success feedback
                     let impact = UIImpactFeedbackGenerator(style: .medium)
                     impact.impactOccurred()
                     
@@ -1222,23 +660,12 @@ class StravaActivitiesImportViewModel: ObservableObject {
                     onSuccess()
                 }
                 
-            } catch ImportError.noGPSData {
-                print("❌ Import failed: No GPS data")
-                await MainActor.run {
-                    self.errorMessage = "This activity doesn't have GPS data"
-                    self.isImporting = false
-                }
-            } catch let error as StravaService.StravaError {
-                print("❌ Import failed: \(error.localizedDescription)")
-                await MainActor.run {
-                    self.errorMessage = error.localizedDescription
-                    self.isImporting = false
-                }
             } catch {
                 print("❌ Import failed: \(error.localizedDescription)")
                 await MainActor.run {
                     self.errorMessage = "Failed to import route: \(error.localizedDescription)"
                     self.isImporting = false
+                    onFailure() // ✅ ADDED: Call failure callback
                 }
             }
         }
