@@ -1,12 +1,4 @@
 //
-//  StravaActivitySummary.swift
-//  RideWeather Pro
-//
-//  Created by Craig Faist on 11/1/25.
-//
-
-
-//
 //  StravaTrainingLoadSync.swift
 //  RideWeather Pro
 //
@@ -14,6 +6,7 @@
 //
 
 import Foundation
+import Combine
 
 // MARK: - Add to StravaService.swift
 
@@ -26,11 +19,11 @@ extension StravaService {
         endDate: Date = Date()
     ) async throws -> [StravaActivitySummary] {
         
-        await refreshTokenIfNeededAsync()
+//        await refreshTokenIfNeededAsync()
         
-        guard let accessToken = currentTokens?.accessToken else {
-            throw StravaError.notAuthenticated
-        }
+//        guard let accessToken = currentTokens?.accessToken else {
+  //          throw StravaError.notAuthenticated
+    //    }
         
         // Convert dates to Unix timestamps
         let startTimestamp = Int(startDate.timeIntervalSince1970)
@@ -55,7 +48,7 @@ extension StravaService {
             
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+//            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
             
             let (data, response) = try await URLSession.shared.data(for: request)
             

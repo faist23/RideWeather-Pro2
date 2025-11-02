@@ -273,7 +273,7 @@ class TrainingLoadManager {
     
     // MARK: - Private Methods
     
-    private func loadAllDailyLoads() -> [DailyTrainingLoad] {
+    func loadAllDailyLoads() -> [DailyTrainingLoad] {
         guard let data = userDefaults.data(forKey: storageKey),
               let loads = try? JSONDecoder().decode([DailyTrainingLoad].self, from: data) else {
             return []
@@ -281,7 +281,7 @@ class TrainingLoadManager {
         return loads
     }
     
-    private func saveDailyLoads(_ loads: [DailyTrainingLoad]) {
+    func saveDailyLoads(_ loads: [DailyTrainingLoad]) {
         if let encoded = try? JSONEncoder().encode(loads) {
             userDefaults.set(encoded, forKey: storageKey)
         }

@@ -1,12 +1,4 @@
 //
-//  DailyTrainingLoad.swift
-//  RideWeather Pro
-//
-//  Created by Craig Faist on 11/1/25.
-//
-
-
-//
 //  TrainingLoadModels.swift
 //  RideWeather Pro
 //
@@ -96,7 +88,7 @@ struct DailyTrainingLoad: Codable, Identifiable {
 
 // MARK: - Training Load Summary
 
-struct TrainingLoadSummary: Codable {
+struct TrainingLoadSummary {
     let currentATL: Double
     let currentCTL: Double
     let currentTSB: Double

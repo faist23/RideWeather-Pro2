@@ -5,16 +5,25 @@
 
 import SwiftUI
 import Combine
+import FitFileParser
 
 @MainActor
 class WahooActivitiesViewModel: ObservableObject {
     @Published var activities: [WahooWorkoutSummary] = []
-    @Published var selectedActivity: WahooWorkoutSummary?
+    @Published var selectedActivityDetail: WahooWorkoutSummary? // <-- This holds the detail
     @Published var isLoading = false
     @Published var isImporting = false
+    @Published var isFetchingDetail = false // <-- NEW: For the sheet's spinner
     @Published var errorMessage: String?
     @Published var showingAnalysisImport = false
-    
+    @Published var analysis: RideAnalysis?
+
+    private let settings: AppSettings  // 🔥 ADD THIS
+
+    init(settings: AppSettings = AppSettings()) {
+        self.settings = settings
+    }
+
     func loadActivities(service: WahooService) {
         isLoading = true
         errorMessage = nil
@@ -35,88 +44,113 @@ class WahooActivitiesViewModel: ObservableObject {
         }
     }
     
-    func selectActivity(_ activity: WahooWorkoutSummary) {
-        selectedActivity = activity
-        showingAnalysisImport = true
+    // --- FIX: This function now fetches the detail when a row is tapped ---
+    func selectActivity(_ activitySummary: WahooWorkoutSummary, service: WahooService) {
+        Task {
+            isFetchingDetail = true
+            showingAnalysisImport = true // Show the sheet immediately
+            errorMessage = nil
+            
+            do {
+                // Make the second API call for details
+                let detail = try await service.fetchWorkoutDetail(id: activitySummary.id)
+                self.selectedActivityDetail = detail
+                self.isFetchingDetail = false
+            } catch {
+                self.errorMessage = "Could not load ride details: \(error.localizedDescription)"
+                self.isFetchingDetail = false
+            }
+        }
     }
     
+    // --- NEW: Helper to clear state when sheet is dismissed ---
+    func clearSelection() {
+        selectedActivityDetail = nil
+        showingAnalysisImport = false
+        errorMessage = nil
+    }
+
     func importActivity(service: WahooService, weatherViewModel: WeatherViewModel) {
-        guard let activity = selectedActivity else { return }
-        
+        guard let activity = selectedActivityDetail else { return }
+
         isImporting = true
         errorMessage = nil
-        
+
+        if let fitFileUrlString = activity.workoutSummary?.file?.url {
+            print("Analyze ride URL:", fitFileUrlString)
+        } else {
+            print("No FIT file available for this ride")
+        }
+
         Task {
             do {
                 print("WahooImport: Starting import for activity \(activity.id)")
-                
-                // 1. Fetch detailed stream data
-                let streams = try await service.fetchWorkoutData(workoutId: activity.id)
-                print("WahooImport: Streams fetched successfully")
 
-                // 2. Convert Wahoo streams to app's standard FITDataPoint format
-                let dataPoints = service.convertWahooDataToFITDataPoints(workout: activity, streams: streams)
-                guard !dataPoints.isEmpty else {
-                    throw WahooService.WahooError.invalidResponse
-                }
-                print("WahooImport: Converted \(dataPoints.count) data points")
-
-                // 3. Analyze data points using the *existing* RideFileAnalyzer
-                let analyzer = RideFileAnalyzer(settings: weatherViewModel.settings)
-                
-                // Use metadata for moving/elapsed time
-                let elapsedTime = (activity.endDate ?? Date()).timeIntervalSince(activity.startDate ?? Date())
-                let movingTime = activity.time
-                
-                var analysis = analyzer.analyzeRide(
-                    dataPoints: dataPoints,
-                    ftp: Double(weatherViewModel.settings.functionalThresholdPower),
-                    weight: weatherViewModel.settings.bodyWeight,
-                    plannedRide: nil,
-                    isPreFiltered: true,
-                    elapsedTimeOverride: elapsedTime,
-                    movingTimeOverride: movingTime
-                )
-                
-                // 4. Update the ride name to match Wahoo
-                analysis = RideAnalysis(
-                    id: analysis.id, date: analysis.date, rideName: activity.name,
-                    duration: analysis.duration, distance: analysis.distance, metadata: analysis.metadata,
-                    averagePower: analysis.averagePower, normalizedPower: analysis.normalizedPower,
-                    intensityFactor: analysis.intensityFactor, trainingStressScore: analysis.trainingStressScore,
-                    variabilityIndex: analysis.variabilityIndex, peakPower5s: analysis.peakPower5s,
-                    peakPower1min: analysis.peakPower1min, peakPower5min: analysis.peakPower5min,
-                    peakPower20min: analysis.peakPower20min, terrainSegments: analysis.terrainSegments,
-                    powerAllocation: analysis.powerAllocation, consistencyScore: analysis.consistencyScore,
-                    pacingRating: analysis.pacingRating, powerVariability: analysis.powerVariability,
-                    fatigueDetected: analysis.fatigueDetected, fatigueOnsetTime: analysis.fatigueOnsetTime,
-                    powerDeclineRate: analysis.powerDeclineRate, plannedRideId: analysis.plannedRideId,
-                    segmentComparisons: analysis.segmentComparisons, overallDeviation: analysis.overallDeviation,
-                    surgeCount: analysis.surgeCount, pacingErrors: analysis.pacingErrors,
-                    performanceScore: analysis.performanceScore, insights: analysis.insights,
-                    powerZoneDistribution: analysis.powerZoneDistribution
-                )
-                
-                print("WahooImport: Analysis complete - Score: \(analysis.performanceScore)")
-                
-                // 5. Save analysis
-                let storage = AnalysisStorageManager()
-                storage.saveAnalysis(analysis)
-                print("WahooImport: Analysis saved")
-                
-                await MainActor.run {
-                    self.isImporting = false
-                    self.showingAnalysisImport = false
-                    
-                    // 6. Post notification to update RideAnalysisView and dismiss sheets
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        NotificationCenter.default.post(
-                            name: NSNotification.Name("NewAnalysisImported"),
-                            object: analysis
-                        )
-                        print("WahooImport: Notification posted")
+                guard let fitFileUrlString = activity.workoutSummary?.file?.url,
+                      let fitFileUrl = URL(string: fitFileUrlString) else {
+                    print("No FIT file available for this ride (\(activity.id))")
+                    await MainActor.run {
+                        self.errorMessage = "No downloadable ride file found for this activity."
+                        self.isImporting = false
                     }
+                    return
                 }
+
+                let (fileData, response) = try await URLSession.shared.data(from: fitFileUrl)
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                    print("Failed to download FIT file. HTTP \(httpResponse.statusCode)")
+                    await MainActor.run {
+                        self.errorMessage = "Failed to download ride file from Wahoo (\(httpResponse.statusCode))."
+                        self.isImporting = false
+                    }
+                    return
+                }
+
+                do {
+                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("tempImportedRide.fit")
+                    try fileData.write(to: tempURL)
+                    let parser = FITFileParser()
+                    let fitDataPoints = try await parser.parseFile(at: tempURL)
+                    print("WahooImport: Parsed \(fitDataPoints.count) FIT data points.")
+
+                    let analyzer = RideFileAnalyzer(settings: self.settings)
+                    let rideAnalysis = analyzer.analyzeRide(
+                        dataPoints: fitDataPoints,
+                        ftp: Double(settings.functionalThresholdPower),
+                        weight: settings.bodyWeight,
+                        plannedRide: nil
+                    )
+                    // Assign to published property for UI
+                    self.analysis = rideAnalysis
+                    print("WahooImport: Analysis complete - Score: \(rideAnalysis.performanceScore)")
+
+                    // Save analysis
+                    let storage = AnalysisStorageManager()
+                    storage.saveAnalysis(rideAnalysis)
+                    print("WahooImport: Analysis saved")
+
+                    await MainActor.run {
+                        self.isImporting = false
+                        self.showingAnalysisImport = false
+
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("NewAnalysisImported"),
+                                object: rideAnalysis
+                            )
+                            print("WahooImport: Notification posted")
+                        }
+                    }
+
+                } catch {
+                    print("FIT Parse/Analysis error:", error)
+                    await MainActor.run {
+                        self.errorMessage = "Failed to import or analyze FIT file: \(error.localizedDescription)"
+                        self.isImporting = false
+                    }
+                    return
+                }
+
             } catch {
                 print("WahooImport Error: \(error)")
                 await MainActor.run {

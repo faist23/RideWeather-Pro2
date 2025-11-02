@@ -40,7 +40,7 @@ struct WahooActivitiesView: View {
                             .foregroundColor(.secondary)
                         Text("No Activities Found")
                             .font(.headline)
-                        Text("Your recent Wahoo rides will appear here")
+                        Text("Your recent Wahoo biking rides will appear here")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
@@ -48,10 +48,9 @@ struct WahooActivitiesView: View {
                     List {
                         ForEach(viewModel.activities) { activity in
                             WahooActivityRow(activity: activity)
-                                .environmentObject(weatherViewModel)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
-                                    viewModel.selectActivity(activity)
+                                    viewModel.selectActivity(activity, service: wahooService)
                                 }
                         }
                     }
@@ -69,15 +68,14 @@ struct WahooActivitiesView: View {
                     }
                 }
             }
-            .sheet(isPresented: $viewModel.showingAnalysisImport) {
-                if let activity = viewModel.selectedActivity {
-                    WahooImportSheet(
-                        activity: activity,
-                        viewModel: viewModel,
-                        wahooService: wahooService,
-                        weatherViewModel: weatherViewModel
-                    )
-                }
+            .sheet(isPresented: $viewModel.showingAnalysisImport, onDismiss: {
+                viewModel.clearSelection() // Clear detail view when sheet closes
+            }) {
+                WahooImportSheet(
+                    viewModel: viewModel,
+                    wahooService: wahooService,
+                    weatherViewModel: weatherViewModel
+                )
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NewAnalysisImported"))) { _ in
                 dismiss()
@@ -93,46 +91,27 @@ struct WahooActivitiesView: View {
 
 struct WahooActivityRow: View {
     let activity: WahooWorkoutSummary
-    @EnvironmentObject var weatherViewModel: WeatherViewModel
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(activity.name)
+        VStack(alignment: .leading) {
+            Text(activity.displayName)
                 .font(.headline)
-            
-            HStack(spacing: 16) {
-                Label(activity.durationFormatted, systemImage: "clock")
-                    .font(.caption)
-                
-                Label(
-                    weatherViewModel.settings.units == .metric ?
-                        String(format: "%.1f km", activity.distanceKm) :
-                        String(format: "%.1f mi", activity.distanceMiles),
-                    systemImage: "figure.outdoor.cycle"
-                )
-                    .font(.caption)
-                
-                if activity.work > 0 {
-                    Label("\(Int(activity.work)) kJ", systemImage: "bolt")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                }
-            }
-            .foregroundColor(.secondary)
-            
-            if let date = activity.startDate {
+            if let date = activity.rideDate {
                 Text(date.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption2)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                Text("No Date")
+                    .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.vertical, 4)
     }
 }
 
+
+
 // MARK: - Import Sheet
 struct WahooImportSheet: View {
-    let activity: WahooWorkoutSummary
     @ObservedObject var viewModel: WahooActivitiesViewModel
     @ObservedObject var wahooService: WahooService
     @ObservedObject var weatherViewModel: WeatherViewModel
@@ -141,37 +120,39 @@ struct WahooImportSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 24) {
-                if viewModel.isImporting {
+                if viewModel.isFetchingDetail || viewModel.isImporting {
                     VStack(spacing: 16) {
                         ProgressView()
                             .scaleEffect(1.5)
-                        Text("Importing from Wahoo...")
+                        Text(viewModel.isImporting ? "Importing from Wahoo..." : "Fetching Ride Details...")
                             .font(.headline)
-                        Text("Fetching activity streams and analyzing performance")
+                        Text(viewModel.isImporting ? "Fetching activity streams and analyzing performance" : "Loading ride stats...")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                     }
                     .padding()
-                } else {
+                
+                } else if let activity = viewModel.selectedActivityDetail {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text(activity.name)
+                        Text(activity.name ?? "Wahoo Ride")
                             .font(.title2)
                             .fontWeight(.bold)
                         
                         VStack(alignment: .leading, spacing: 12) {
-                            InfoRow(
+                            WahooInfoRow(  // <-- RENAMED
                                 label: "Distance",
                                 value: weatherViewModel.settings.units == .metric ?
                                     String(format: "%.1f km", activity.distanceKm) :
                                     String(format: "%.1f mi", activity.distanceMiles)
                             )
-                            InfoRow(label: "Duration", value: activity.durationFormatted)
+                            WahooInfoRow(label: "Duration", value: activity.durationFormatted) // <-- RENAMED
                             
                             if activity.work > 0 {
-                                InfoRow(label: "Work", value: "\(Int(activity.work)) kJ")
+                                let work = activity.work
+                                WahooInfoRow(label: "Work", value: "\(Int(work)) kJ") // <-- RENAMED
                             } else {
-                                InfoRow(label: "Work", value: "N/A")
+                                WahooInfoRow(label: "Work", value: "N/A") // <-- RENAMED
                             }
                         }
                         
@@ -207,6 +188,19 @@ struct WahooImportSheet: View {
                         }
                     }
                     .padding()
+                } else if let error = viewModel.errorMessage {
+                    VStack(spacing: 16) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 40))
+                            .foregroundColor(.orange)
+                        Text("Error Loading Details")
+                            .font(.headline)
+                        Text(error)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding()
                 }
             }
             .navigationTitle("Import from Wahoo")
@@ -221,3 +215,22 @@ struct WahooImportSheet: View {
         }
     }
 }
+
+
+
+// Renamed struct `InfoRow` to `WahooInfoRow` as you requested.
+struct WahooInfoRow: View {
+    let label: String
+    let value: String
+    
+    var body: some View {
+        HStack {
+            Text(label)
+                .foregroundColor(.secondary)
+            Spacer()
+            Text(value)
+                .fontWeight(.semibold)
+        }
+    }
+}
+

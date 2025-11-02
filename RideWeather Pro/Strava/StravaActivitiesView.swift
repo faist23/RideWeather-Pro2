@@ -539,6 +539,8 @@ class StravaActivitiesViewModel: ObservableObject {
                         )
                         print("StravaImport: Notification posted")
                     }
+                    TrainingLoadManager.shared.addRide(analysis: analysis)
+                    
                 }
             } catch ImportError.noPowerData {
                 print("StravaImport Error: No power data")

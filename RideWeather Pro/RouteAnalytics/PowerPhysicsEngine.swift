@@ -4,6 +4,7 @@
 
 import Foundation
 import CoreLocation
+import Combine
 
 struct PowerPhysicsEngine {
     let settings: AppSettings

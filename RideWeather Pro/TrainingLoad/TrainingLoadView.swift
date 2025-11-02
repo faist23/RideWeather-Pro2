@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Charts
+import Combine
 
 struct TrainingLoadView: View {
     @StateObject private var viewModel = TrainingLoadViewModel()
@@ -34,7 +35,7 @@ struct TrainingLoadView: View {
                         MetricsGrid(summary: summary)
                         
                         // Insights
-                        InsightsSection(insights: viewModel.insights)
+                        TrainingInsightsSection(insights: viewModel.insights)
                         
                     } else {
                         emptyStateView
@@ -269,9 +270,9 @@ struct TrainingLoadChart: View {
                 
                 // Legend
                 HStack(spacing: 20) {
-                    LegendItem(color: .blue, label: "Fitness (CTL)")
-                    LegendItem(color: .orange, label: "Fatigue (ATL)")
-                    LegendItem(color: .green, label: "Form (TSB)")
+                    TrainingLegendItem(color: .blue, label: "Fitness (CTL)")
+                    TrainingLegendItem(color: .orange, label: "Fatigue (ATL)")
+                    TrainingLegendItem(color: .green, label: "Form (TSB)")
                 }
                 .font(.caption)
                 .padding(.top, 8)
@@ -284,7 +285,7 @@ struct TrainingLoadChart: View {
     }
 }
 
-struct LegendItem: View {
+struct TrainingLegendItem: View {
     let color: Color
     let label: String
     
@@ -375,7 +376,7 @@ struct MetricCard: View {
 
 // MARK: - Insights Section
 
-struct InsightsSection: View {
+struct TrainingInsightsSection: View {
     let insights: [TrainingLoadInsight]
     
     var body: some View {
@@ -393,14 +394,14 @@ struct InsightsSection: View {
                     .cornerRadius(12)
             } else {
                 ForEach(insights) { insight in
-                    InsightCard(insight: insight)
+                    TrainingInsightCard(insight: insight)
                 }
             }
         }
     }
 }
 
-struct InsightCard: View {
+struct TrainingInsightCard: View {
     let insight: TrainingLoadInsight
     @State private var isExpanded = false
     

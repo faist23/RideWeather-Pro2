@@ -11,6 +11,7 @@ struct MainView: View {
     @StateObject private var viewModel = WeatherViewModel()
     @State private var selectedTab = 0
     @State private var lastLiveWeatherTap = Date()
+    @EnvironmentObject var wahooService: WahooService // 1. Receive the service.....not convinced this is needed
     
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -38,7 +39,14 @@ struct MainView: View {
                     Label("Route Forecast", systemImage: "map.fill")
                 }
                 .tag(1)
+            TrainingLoadView()
+                .environmentObject(viewModel)  // Pass the WeatherViewModel
+                .tabItem {
+                    Label("Training", systemImage: "chart.line.uptrend.xyaxis")
+                }
+                .tag(2)
         }
+        .environmentObject(wahooService) //i'm not convinced this line is needed
         .onChange(of: selectedTab) { oldValue, newValue in
             // When user taps Live Weather tab, refresh the weather
             if newValue == 0 && oldValue != 0 {

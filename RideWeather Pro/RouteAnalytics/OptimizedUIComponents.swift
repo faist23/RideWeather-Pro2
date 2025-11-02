@@ -1048,9 +1048,12 @@ struct EmptyPacingPlanCard: View {
 
 struct UpdatedOptimizedExportTab: View {
     @ObservedObject var viewModel: WeatherViewModel
+    @EnvironmentObject var wahooService: WahooService // Add this
+
     @State private var exportingFIT = false
     @State private var exportingCSV = false
     @State private var exportingSummary = false
+    @State private var exportingToWahoo = false 
     @State private var exportError: String?
     @State private var currentShareItem: URL? = nil
 
@@ -1102,6 +1105,12 @@ struct UpdatedOptimizedExportTab: View {
                 )
                 
                 ExportStatusRow(
+                    title: "Wahoo Route Sync",
+                    status: wahooService.isAuthenticated ? .available : .unavailable,
+                    description: wahooService.isAuthenticated ? "Push route directly to your Wahoo account" : "Connect Wahoo in Settings to enable"
+                )
+                
+                ExportStatusRow(
                     title: "CSV Export",
                     status: .available,
                     description: "Spreadsheet format for analysis and custom integrations"
@@ -1125,6 +1134,17 @@ struct UpdatedOptimizedExportTab: View {
                 .fontWeight(.semibold)
             
             VStack(spacing: 12) {
+                ExportOptionButton(
+                    title: "Sync to Wahoo",
+                    subtitle: "Push route to your Wahoo ELEMNT",
+                    icon: "w.circle.fill", // Use a Wahoo-like icon
+                    isLoading: exportingToWahoo
+                ) {
+                    await exportToWahoo()
+                }
+                .tint(.blue) // Wahoo-ish color
+                .disabled(!wahooService.isAuthenticated)
+                
                 ExportOptionButton(
                     title: "Export Garmin Course FIT",
                     subtitle: "GPS route with power guidance for Garmin devices",
@@ -1229,6 +1249,59 @@ struct UpdatedOptimizedExportTab: View {
     }
     
     // MARK: - Export Methods
+    
+    private func exportToWahoo() async {
+        await MainActor.run {
+            exportingToWahoo = true
+            exportError = nil
+        }
+        
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        
+        guard let controller = viewModel.advancedController,
+              let pacingPlan = viewModel.finalPacingPlan, // Use the adjusted plan
+              !viewModel.enhancedRoutePoints.isEmpty else {
+            await MainActor.run {
+                exportError = "No workout data available to sync."
+                exportingToWahoo = false
+            }
+            return
+        }
+        
+        do {
+            // 1. Generate the FIT data
+            let courseName = viewModel.generateExportFilename(
+                baseName: viewModel.routeDisplayName,
+                suffix: "",
+                extension: ""
+            ).replacingOccurrences(of: "_", with: " ")
+            
+            let fitData = try controller.generateGarminCourseFIT(
+                pacingPlan: pacingPlan,
+                routePoints: viewModel.enhancedRoutePoints,
+                courseName: courseName
+            )
+            
+            guard let data = fitData else {
+                throw WahooService.WahooError.invalidResponse
+            }
+            
+            // 2. Call the WahooService to upload
+            try await wahooService.uploadRouteToWahoo(fitData: data, routeName: courseName)
+            
+            // 3. Show success
+            await MainActor.run {
+                exportingToWahoo = false
+                // You could add a temporary success message here
+            }
+            
+        } catch {
+            await MainActor.run {
+                exportError = "Wahoo Sync Failed: \(error.localizedDescription)"
+                exportingToWahoo = false
+            }
+        }
+    }
     
     private func exportFitFile() async {
         await MainActor.run {

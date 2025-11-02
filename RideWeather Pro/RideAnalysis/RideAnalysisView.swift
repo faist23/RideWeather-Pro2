@@ -12,6 +12,9 @@ struct RideAnalysisView: View {
     @StateObject private var viewModel: RideAnalysisViewModel  // Change this
     @ObservedObject var weatherViewModel: WeatherViewModel
     @EnvironmentObject var stravaService: StravaService
+    @EnvironmentObject var wahooService: WahooService // Add this
+    
+    private let trainingLoadManager = TrainingLoadManager.shared
 
     // 🔥 ADD CUSTOM INIT
     init(weatherViewModel: WeatherViewModel) {
@@ -44,6 +47,11 @@ struct RideAnalysisView: View {
                         if stravaService.isAuthenticated {
                             Button(action: { viewModel.showingStravaActivities = true }) {
                                 Label("Import from Strava", systemImage: "square.and.arrow.down.on.square")
+                            }
+                        }
+                        if wahooService.isAuthenticated {
+                            Button(action: { viewModel.showingWahooActivities = true }) {
+                                Label("Import from Wahoo", systemImage: "square.and.arrow.down.on.square")
                             }
                         }
                         // ✅ ADD THIS
@@ -91,13 +99,16 @@ struct RideAnalysisView: View {
             .sheet(item: $viewModel.shareItem) { item in
                 ShareSheet(activityItems: [item.url])
             }
-            // ✅ ADD THIS - Strava activities sheet
             .sheet(isPresented: $viewModel.showingStravaActivities) {
                 StravaActivitiesView()
                     .environmentObject(stravaService)
                     .environmentObject(weatherViewModel)
             }
-            // ADD THIS NEW SHEET:
+            .sheet(isPresented: $viewModel.showingWahooActivities) {
+                WahooActivitiesView()
+                    .environmentObject(wahooService)
+                    .environmentObject(weatherViewModel)
+            }
             .sheet(isPresented: $viewModel.showingPlanComparison) {
                 if let analysis = viewModel.currentAnalysis {
                     ComparisonSelectionView(analysis: analysis)
@@ -175,6 +186,23 @@ struct RideAnalysisView: View {
                 .padding(.horizontal, 40)
             }
             
+            if wahooService.isAuthenticated {
+                Button(action: { viewModel.showingWahooActivities = true }) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "w.circle.fill")
+                            .font(.title)
+                        Text("Import from Wahoo")
+                            .font(.headline)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue.opacity(0.8)) // Wahoo blue
+                    .cornerRadius(12)
+                }
+                .padding(.horizontal, 40)
+            }
+
             if !viewModel.analysisHistory.isEmpty {
                 Button(action: { viewModel.showingHistory = true }) {
                     Label("View Past Analyses", systemImage: "clock")
@@ -237,6 +265,9 @@ struct RideAnalysisView: View {
                         // Performance Score Card
                         PerformanceScoreCard(analysis: analysis)
                         
+                        // Training Load
+                        TrainingLoadContext(analysis: analysis)
+
                         // Comparison prompt (optional)
                         if let analysis = viewModel.currentAnalysis {
                             VStack(spacing: 12) {
@@ -577,6 +608,7 @@ struct CompactRideHeaderCard: View {
     
     enum RideSource {
         case strava
+        case wahoo
         case fitFile(fileName: String)
     }
     
@@ -632,6 +664,8 @@ struct CompactRideHeaderCard: View {
         switch source {
         case .strava:
             return "figure.outdoor.cycle"
+        case .wahoo:
+            return "figure.outdoor.cycle"
         case .fitFile:
             return "doc.fill"
         }
@@ -641,6 +675,8 @@ struct CompactRideHeaderCard: View {
         switch source {
         case .strava:
             return "Strava"  // ✅ Shows "Strava"
+        case .wahoo:
+            return "Wahoo"  // ✅ Shows "Wahoo"
         case .fitFile(let fileName):
             return fileName  // ✅ Shows full filename with .fit extension
         }
@@ -1973,6 +2009,65 @@ struct RideAnalysisExportView: View {
     }
 }
 
+// Create new view for RideAnalysisView.swift:
+
+struct TrainingLoadContext: View {
+    let analysis: RideAnalysis
+    @State private var summary: TrainingLoadSummary?
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Training Load Impact")
+                .font(.headline)
+            
+            if let summary = summary {
+                HStack(spacing: 16) {
+                    VStack(alignment: .leading) {
+                        Text("TSS")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(Int(analysis.trainingStressScore))")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                    }
+                    
+                    Divider()
+                    
+                    VStack(alignment: .leading) {
+                        Text("7-Day Total")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(Int(summary.weeklyTSS))")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                    }
+                    
+                    Divider()
+                    
+                    VStack(alignment: .leading) {
+                        Text("Form")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(summary.formStatus.emoji)
+                            .font(.title3)
+                    }
+                }
+                
+                Text(summary.formStatus.rawValue)
+                    .font(.caption)
+                    .foregroundColor(Color(summary.formStatus.color))
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .onAppear {
+            summary = TrainingLoadManager.shared.getCurrentSummary()
+        }
+    }
+}
+
 // MARK: - Ride Source Info
 
 struct RideSourceInfo: Codable {
@@ -1998,6 +2093,7 @@ class RideAnalysisViewModel: ObservableObject {
     @Published var showingExportOptions = false
     @Published var shareItem: ShareItem?
     @Published var showingStravaActivities = false
+    @Published var showingWahooActivities = false 
     @Published var showingSavedPlans = false
     
     @Published var showingPlanComparison = false
@@ -2109,6 +2205,8 @@ class RideAnalysisViewModel: ObservableObject {
                     )
                     self.storage.saveSource(analysisSources[analysis.id]!, for: analysis.id)
                     self.storage.saveAnalysis(analysis)
+                    TrainingLoadManager.shared.addRide(analysis: analysis)
+                    
                     self.loadHistory()
                     self.isAnalyzing = false
                 }

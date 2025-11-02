@@ -7,6 +7,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var viewModel: WeatherViewModel
     @EnvironmentObject var stravaService: StravaService // Get the service
+    @EnvironmentObject var wahooService: WahooService // Get the service
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
@@ -350,6 +351,57 @@ struct SettingsView: View {
                     }
                 }
                 
+                Section("Wahoo") {
+                    if wahooService.isAuthenticated {
+                        HStack(spacing: 12) {
+                            Image(systemName: "w.circle.fill")
+                                .font(.title).foregroundStyle(.blue).frame(width: 30, height: 30)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Connected to Wahoo")
+                                    .font(.headline)
+                                if let name = wahooService.athleteName {
+                                    Text(name).font(.subheadline).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            Button(role: .destructive) {
+                                wahooService.disconnect()
+                            } label: { Text("Disconnect") }
+                        }
+                    } else {
+                        Button {
+                            wahooService.authenticate()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "w.circle.fill")
+                                    .font(.title).foregroundStyle(.blue).frame(width: 30, height: 30)
+                                Text("Connect with Wahoo").fontWeight(.semibold)
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                    }
+                    
+                    if let error = wahooService.errorMessage {
+                        Text("Error: \(error)")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+                
+                Section("Training Load") {
+                    NavigationLink {
+                        TrainingLoadView()
+                    } label: {
+                        Label("View Training Load", systemImage: "chart.line.uptrend.xyaxis")
+                    }
+                    
+                    Button(role: .destructive) {
+                        TrainingLoadManager.shared.clearAll()
+                    } label: {
+                        Label("Reset Training Load Data", systemImage: "trash")
+                    }
+                }
+
                 Section("About") {
                     HStack {
                         Text("Version")

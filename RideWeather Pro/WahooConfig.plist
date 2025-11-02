@@ -1,12 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-   WahooConfig.plist
-   RideWeather Pro
-
-   Created by Craig Faist on 11/1/25.
-   Copyright (c) 2025 ___ORGANIZATIONNAME___. All rights reserved.
--->
 <plist version="1.0">
-<dict/>
+<dict>
+	<key>WahooClientID</key>
+	<string>3-6biRn8ZTsqmyWX_IG3e4xAFtLpHu-fzydWx9txJrY</string>
+	<key>WahooClientSecret</key>
+	<string>r2h_pxc9_bUIyRpkx8jHcdhSqQBbwzCXTS_YMuo5VXc</string>
+</dict>
 </plist>
