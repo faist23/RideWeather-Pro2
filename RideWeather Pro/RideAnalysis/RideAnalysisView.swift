@@ -2230,6 +2230,7 @@ class RideAnalysisViewModel: ObservableObject {
 
     func loadHistory() {
         analysisHistory = storage.loadAllAnalyses()
+        analysisSources = storage.loadAllSources()
     }
     
     func selectAnalysis(_ analysis: RideAnalysis) {

@@ -7,7 +7,9 @@ import Foundation
 import AuthenticationServices
 import Combine
 import UIKit
+import CoreLocation
 import CryptoKit
+import FitFileParser
 
 // MARK: - API Data Models
 
@@ -520,7 +522,8 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
          components.queryItems = [
              URLQueryItem(name: "page", value: "0"),
              URLQueryItem(name: "per_page", value: "50"),
-             URLQueryItem(name: "sort", value: "-starts")
+             URLQueryItem(name: "sort", value: "-starts"),
+             URLQueryItem(name: "workout_type_id", value: "0")
          ]
          guard let url = components.url else { throw WahooError.invalidURL }
          var request = URLRequest(url: url)
@@ -608,6 +611,45 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         return try decoder.decode(WahooWorkoutData.self, from: data)
     }
     
+    /// Extracts GPS route from a Wahoo Activity
+    func extractRouteFromActivity(activityId: Int) async throws -> [CLLocationCoordinate2D] {
+        try await refreshTokenIfNeededAsync()
+        
+        // 1. Fetch the workout summary which contains the .fit file URL
+        print("WahooService: Fetching workout detail for \(activityId)...")
+        let workoutDetail = try await fetchWorkoutDetail(id: activityId)
+        
+        // 2. Get the .fit file URL from the response
+        guard let fitFileUrlString = workoutDetail.workoutSummary?.file?.url,
+              let fitFileUrl = URL(string: fitFileUrlString) else {
+            print("WahooService: No .fit file URL found in workout summary.")
+            throw WahooError.noRouteData
+        }
+        
+        print("WahooService: Downloading .fit file from \(fitFileUrl)...")
+        
+        // 3. Download the .fit file data
+        let (fileData, response) = try await URLSession.shared.data(from: fitFileUrl)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            print("WahooService: Failed to download .fit file. Status: \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+            throw WahooError.apiError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 500)
+        }
+        
+        print("WahooService: Downloaded \(fileData.count) bytes. Parsing file...")
+        
+        // 4. Parse the .fit file data
+        let parser = RouteParser()
+        let parseResult = try parser.parseWithElevation(fitData: fileData)
+        
+        guard !parseResult.coordinates.isEmpty else {
+            print("WahooService: Parser found no coordinates in the .fit file.")
+            throw WahooError.noRouteData
+        }
+        
+        print("WahooService: Extracted \(parseResult.coordinates.count) GPS points from activity \(activityId)")
+        return parseResult.coordinates
+    }
+    
     // (uploadRouteToWahoo)
     func uploadRouteToWahoo(fitData: Data, routeName: String) async throws {
         try await refreshTokenIfNeededAsync()
@@ -653,6 +695,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         case invalidURL
         case invalidResponse
         case apiError(statusCode: Int)
+        case noRouteData
         
         var errorDescription: String? {
             switch self {
@@ -660,6 +703,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
             case .invalidURL: return "Invalid API URL."
             case .invalidResponse: return "Invalid response from Wahoo."
             case .apiError(let code): return "Wahoo API error: \(code)."
+            case .noRouteData: return "No GPS route data available for this activity." 
             }
         }
     }

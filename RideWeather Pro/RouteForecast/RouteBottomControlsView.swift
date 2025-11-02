@@ -7,8 +7,11 @@ import CoreLocation
 
 struct ModernRouteBottomControlsView: View {
     @State private var showingStravaImport = false
+    @State private var showingWahooImport = false
     @EnvironmentObject var viewModel: WeatherViewModel
-    @EnvironmentObject var stravaService: StravaService  // ✅ ADD THIS
+    @EnvironmentObject var stravaService: StravaService
+    @EnvironmentObject var wahooService: WahooService
+    
     @Binding var isImporting: Bool
     @Binding var showBottomControls: Bool
     @Binding var importedFileName: String
@@ -56,28 +59,51 @@ struct ModernRouteBottomControlsView: View {
                 .frame(width: 56, height: 56)
                 .disabled(viewModel.isLoading) // ✅ ADDED: Also disable settings while parsing
  
-                if stravaService.isAuthenticated {
-                    Button {
-                        showingStravaImport = true
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image("strava_logo")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 50, height: 16)
-                            Text("Import")
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
+                // This VStack will stack Strava and Wahoo buttons if both are connected
+                VStack(spacing: 8) {
+                    if stravaService.isAuthenticated {
+                        Button {
+                            showingStravaImport = true
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image("strava_logo")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 50, height: 16)
+                                Text("Strava") // Shorter text
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
+                            .font(.headline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
                         }
-                        .font(.headline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular) // Use regular size to fit both
+                        .tint(.orange)
+                        .disabled(viewModel.isLoading)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .tint(.orange)
-                    .disabled(viewModel.isLoading)
+                    
+                    if wahooService.isAuthenticated {
+                        Button {
+                            showingWahooImport = true // ✅ Point to new state var
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "w.circle.fill") // Wahoo icon
+                                    .font(.body.weight(.bold))
+                                    .imageScale(.large)
+                                Text("Wahoo")
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
+                            .font(.headline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular) // Use regular size
+                        .tint(.blue) // Wahoo color
+                        .disabled(viewModel.isLoading)
+                    }
                 }
-
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 12)
@@ -112,7 +138,13 @@ struct ModernRouteBottomControlsView: View {
                 .environmentObject(viewModel)
                 .environmentObject(stravaService)
         }
-
+        .sheet(isPresented: $showingWahooImport) {
+            WahooRouteImportView(onDismiss: {
+                showingWahooImport = false
+            })
+            .environmentObject(viewModel)
+            .environmentObject(wahooService)
+        }
     }
     
     // MARK: - Import Button Label
