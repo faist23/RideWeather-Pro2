@@ -287,7 +287,7 @@ class TrainingLoadManager {
         }
     }
     
-    private func recalculateMetrics(for loads: [DailyTrainingLoad]) -> [DailyTrainingLoad] {
+    func recalculateMetrics(for loads: [DailyTrainingLoad]) -> [DailyTrainingLoad] {
         var updatedLoads = loads.sorted { $0.date < $1.date }
         var previousATL: Double = 0
         var previousCTL: Double = 0
@@ -402,4 +402,52 @@ class TrainingLoadManager {
         
         print("✅ Training Load: Filled to \(recalculated.count) days (\(firstDate.formatted(date: .abbreviated, time: .omitted)) to today)")
     }
+    // Add this method to TrainingLoadManager class
+    func debugPrintLoadData() {
+        let loads = loadAllDailyLoads()
+        print("\n===== TRAINING LOAD DEBUG =====")
+        print("Total days with data: \(loads.count)")
+        
+        if loads.isEmpty {
+            print("No data found!")
+            return
+        }
+        
+        let sorted = loads.sorted { $0.date < $1.date }
+        print("Date range: \(sorted.first!.date.formatted(date: .abbreviated, time: .omitted)) to \(sorted.last!.date.formatted(date: .abbreviated, time: .omitted))")
+        
+        // Show first 10 days
+        print("\nFirst 10 days:")
+        for (index, load) in sorted.prefix(10).enumerated() {
+            print("\(index + 1). \(load.date.formatted(date: .abbreviated, time: .omitted)): TSS=\(String(format: "%.1f", load.tss)), CTL=\(load.ctl.map { String(format: "%.1f", $0) } ?? "nil"), ATL=\(load.atl.map { String(format: "%.1f", $0) } ?? "nil"), TSB=\(load.tsb.map { String(format: "%.1f", $0) } ?? "nil")")
+        }
+        
+        // Show last 10 days
+        print("\nLast 10 days:")
+        for (index, load) in sorted.suffix(10).enumerated() {
+            print("\(index + 1). \(load.date.formatted(date: .abbreviated, time: .omitted)): TSS=\(String(format: "%.1f", load.tss)), CTL=\(load.ctl.map { String(format: "%.1f", $0) } ?? "nil"), ATL=\(load.atl.map { String(format: "%.1f", $0) } ?? "nil"), TSB=\(load.tsb.map { String(format: "%.1f", $0) } ?? "nil")")
+        }
+        
+        // Check for gaps
+        var gapCount = 0
+        for i in 0..<(sorted.count - 1) {
+            let dayDiff = Calendar.current.dateComponents([.day], from: sorted[i].date, to: sorted[i + 1].date).day ?? 0
+            if dayDiff > 1 {
+                gapCount += 1
+                if gapCount <= 5 {
+                    print("⚠️ GAP: \(dayDiff - 1) days between \(sorted[i].date.formatted(date: .abbreviated, time: .omitted)) and \(sorted[i + 1].date.formatted(date: .abbreviated, time: .omitted))")
+                }
+            }
+        }
+        print("\nTotal gaps found: \(gapCount)")
+        
+        // Check for nil metrics
+        let nilCTL = sorted.filter { $0.ctl == nil }.count
+        let nilATL = sorted.filter { $0.atl == nil }.count
+        print("\nDays with nil CTL: \(nilCTL)")
+        print("Days with nil ATL: \(nilATL)")
+        
+        print("===============================\n")
+    }
+    
 }

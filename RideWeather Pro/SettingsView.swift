@@ -354,8 +354,10 @@ struct SettingsView: View {
                 Section("Wahoo") {
                     if wahooService.isAuthenticated {
                         HStack(spacing: 12) {
-                            Image(systemName: "w.circle.fill")
-                                .font(.title).foregroundStyle(.blue).frame(width: 30, height: 30)
+                            Image("wahoo_logo") // Wahoo icon
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 28, height: 28)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Connected to Wahoo")
                                     .font(.headline)
@@ -373,9 +375,11 @@ struct SettingsView: View {
                             wahooService.authenticate()
                         } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: "w.circle.fill")
-                                    .font(.title).foregroundStyle(.blue).frame(width: 30, height: 30)
-                                Text("Connect with Wahoo").fontWeight(.semibold)
+                                Image("wahoo_logo") // Wahoo icon
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 28, height: 28)
+                               Text("Connect with Wahoo").fontWeight(.semibold)
                             }
                             .foregroundStyle(.primary)
                         }
@@ -397,6 +401,12 @@ struct SettingsView: View {
                     
                     Button(role: .destructive) {
                         TrainingLoadManager.shared.clearAll()
+                        // Clear sync date from UserDefaults
+                        UserDefaults.standard.removeObject(forKey: "lastTrainingLoadSync")
+                        // Force reload sync date (should be nil now)
+                        // Note: We can't access syncManager here, but it will reload on next view
+                        
+                        print("🗑️ Cleared all training load data and sync date")
                     } label: {
                         Label("Reset Training Load Data", systemImage: "trash")
                     }

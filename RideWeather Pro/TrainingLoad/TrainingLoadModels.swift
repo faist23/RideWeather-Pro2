@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 // MARK: - Daily Training Load
 
@@ -62,14 +63,14 @@ struct DailyTrainingLoad: Codable, Identifiable {
         case veryFresh = "Very Fresh"
         case unknown = "Unknown"
         
-        var color: String {
+        var color: Color {
             switch self {
-            case .veryFatigued: return "red"
-            case .fatigued: return "orange"
-            case .neutral: return "blue"
-            case .fresh: return "green"
-            case .veryFresh: return "mint"
-            case .unknown: return "gray"
+            case .veryFatigued: return .red
+            case .fatigued: return .orange
+            case .neutral: return .blue
+            case .fresh: return .green
+            case .veryFresh: return .mint
+            case .unknown: return .gray
             }
         }
         
@@ -118,13 +119,13 @@ struct TrainingLoadSummary {
         case building = "Building Safely"
         case buildingTooFast = "Building Too Fast"
         
-        var color: String {
+        var color: Color {
             switch self {
-            case .decreasingTooFast: return "red"
-            case .tapering: return "blue"
-            case .maintaining: return "green"
-            case .building: return "green"
-            case .buildingTooFast: return "orange"
+            case .decreasingTooFast: return .red
+            case .tapering: return .blue
+            case .maintaining: return .green
+            case .building: return .green
+            case .buildingTooFast: return .orange
             }
         }
     }
@@ -161,12 +162,12 @@ struct TrainingLoadInsight: Identifiable {
     enum Priority {
         case critical, warning, info, success
         
-        var color: String {
+        var color: Color {
             switch self {
-            case .critical: return "red"
-            case .warning: return "orange"
-            case .info: return "blue"
-            case .success: return "green"
+            case .critical: return .red
+            case .warning: return .orange
+            case .info: return .blue
+            case .success: return .green
             }
         }
     }

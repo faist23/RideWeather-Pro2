@@ -88,9 +88,10 @@ struct ModernRouteBottomControlsView: View {
                             showingWahooImport = true // ✅ Point to new state var
                         } label: {
                             HStack(spacing: 8) {
-                                Image(systemName: "w.circle.fill") // Wahoo icon
-                                    .font(.body.weight(.bold))
-                                    .imageScale(.large)
+                                Image("wahoo_logo") // Wahoo icon
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 28, height: 28)
                                 Text("Wahoo")
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.8)

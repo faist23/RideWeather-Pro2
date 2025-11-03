@@ -28,10 +28,16 @@ struct TrainingLoadView: View {
                                 syncManager: syncManager,
                                 onSync: {
                                     Task {
+                                        // ADD THIS: Force full sync if no data exists
+                                        let startDate = viewModel.summary == nil
+                                            ? Calendar.current.date(byAdding: .day, value: -90, to: Date())
+                                            : nil
+                                        
                                         await syncManager.syncFromStrava(
                                             stravaService: stravaService,
                                             userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                                            userLTHR: nil
+                                            userLTHR: nil,
+                                            startDate: startDate  // ADD THIS PARAMETER
                                         )
                                         viewModel.refresh()
                                     }
@@ -70,10 +76,16 @@ struct TrainingLoadView: View {
                     if stravaService.isAuthenticated && !syncManager.isSyncing {
                         Button {
                             Task {
+                                // ADD THIS: Force full sync if no data exists
+                                let startDate = viewModel.summary == nil
+                                ? Calendar.current.date(byAdding: .day, value: -90, to: Date())
+                                : nil
+                                
                                 await syncManager.syncFromStrava(
                                     stravaService: stravaService,
                                     userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                                    userLTHR: nil
+                                    userLTHR: nil,
+                                    startDate: startDate  // ADD THIS PARAMETER
                                 )
                                 viewModel.refresh()
                             }
@@ -102,7 +114,16 @@ struct TrainingLoadView: View {
             }
             .onAppear {
                 syncManager.loadSyncDate()
+                TrainingLoadManager.shared.fillMissingDays()
                 viewModel.refresh()
+                viewModel.loadPeriod(selectedPeriod)  // ADD THIS - load initial period
+                
+                // Debug: Print what we're showing
+                if let summary = viewModel.summary {
+                    print("📊 Summary: CTL=\(summary.currentCTL), ATL=\(summary.currentATL), TSB=\(summary.currentTSB)")
+                } else {
+                    print("⚠️ No summary available")
+                }
             }
         }
     }
@@ -134,27 +155,44 @@ struct TrainingLoadView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
                 ForEach(TrainingLoadPeriod.allPeriods, id: \.days) { period in
-                    Button {
-                        selectedPeriod = period
-                        viewModel.loadPeriod(period)
-                    } label: {
-                        Text(period.name)
-                            .font(.subheadline)
-                            .fontWeight(selectedPeriod.days == period.days ? .semibold : .regular)
-                            .foregroundColor(selectedPeriod.days == period.days ? .white : .primary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(selectedPeriod.days == period.days ? Color.blue : Color(.systemGray6))
-                            )
-                    }
+                    PeriodButton(
+                        period: period,
+                        isSelected: selectedPeriod.days == period.days,
+                        action: {
+                            if selectedPeriod.days != period.days {
+                                selectedPeriod = period
+                                viewModel.loadPeriod(period)
+                            }
+                        }
+                    )
                 }
             }
             .padding(.horizontal)
         }
     }
-    
+
+    // Add this new view at the bottom of TrainingLoadView.swift, before the ViewModel
+    struct PeriodButton: View {
+        let period: TrainingLoadPeriod
+        let isSelected: Bool
+        let action: () -> Void
+        
+        var body: some View {
+            Button(action: action) {
+                Text(period.name)
+                    .font(.subheadline)
+                    .fontWeight(isSelected ? .semibold : .regular)
+                    .foregroundColor(isSelected ? .white : .primary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(isSelected ? Color.blue : Color(.systemGray6))
+                    )
+            }
+        }
+    }
+
     private var emptyStateView: some View {
         VStack(spacing: 20) {
             Spacer()
@@ -176,11 +214,16 @@ struct TrainingLoadView: View {
                 
                 Button {
                     Task {
+                        // ADD THIS: Force full 90-day sync
+                        let startDate = Calendar.current.date(byAdding: .day, value: -90, to: Date())
+                        
                         await syncManager.syncFromStrava(
                             stravaService: stravaService,
                             userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                            userLTHR: nil
+                            userLTHR: nil,
+                            startDate: startDate  // ADD THIS PARAMETER
                         )
+                        
                         viewModel.refresh()
                     }
                 } label: {
@@ -195,6 +238,7 @@ struct TrainingLoadView: View {
                     .background(Color.orange)
                     .cornerRadius(12)
                 }
+                
                 .padding(.horizontal, 40)
                 .disabled(syncManager.isSyncing)
                 
@@ -332,15 +376,33 @@ struct TrainingLoadChart: View {
                     .frame(maxWidth: .infinity)
             } else {
                 Chart {
+                    // TSB (Form) - Area
+                    ForEach(dailyLoads) { load in
+                        if let tsb = load.tsb {
+                            AreaMark(
+                                x: .value("Date", load.date),
+                                yStart: .value("Zero", 0),
+                                yEnd: .value("TSB", tsb)
+                            )
+                            .foregroundStyle(tsb > 0 ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
+                        }
+                    }
+                    
+                    // Zero reference line
+                    RuleMark(y: .value("Zero", 0))
+                        .foregroundStyle(Color.gray.opacity(0.3))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
+                    
                     // CTL (Fitness) - Blue line
                     ForEach(dailyLoads) { load in
                         if let ctl = load.ctl {
                             LineMark(
                                 x: .value("Date", load.date),
-                                y: .value("CTL", ctl)
+                                y: .value("Value", ctl),
+                                series: .value("Metric", "Fitness")
                             )
-                            .foregroundStyle(.blue)
-                            .lineStyle(StrokeStyle(lineWidth: 2))
+                            .interpolationMethod(.catmullRom)
+                            .lineStyle(StrokeStyle(lineWidth: 3))
                         }
                     }
                     
@@ -349,24 +411,18 @@ struct TrainingLoadChart: View {
                         if let atl = load.atl {
                             LineMark(
                                 x: .value("Date", load.date),
-                                y: .value("ATL", atl)
+                                y: .value("Value", atl),
+                                series: .value("Metric", "Fatigue")
                             )
-                            .foregroundStyle(.orange)
+                            .interpolationMethod(.catmullRom)
                             .lineStyle(StrokeStyle(lineWidth: 2))
                         }
                     }
-                    
-                    // TSB (Form) - Area
-                    ForEach(dailyLoads) { load in
-                        if let tsb = load.tsb {
-                            AreaMark(
-                                x: .value("Date", load.date),
-                                y: .value("TSB", tsb)
-                            )
-                            .foregroundStyle(.green.opacity(0.2))
-                        }
-                    }
                 }
+                .chartForegroundStyleScale([
+                    "Fitness": Color.blue,
+                    "Fatigue": Color.orange
+                ])
                 .frame(height: 250)
                 .chartYAxis {
                     AxisMarks(position: .leading)
@@ -604,7 +660,7 @@ struct SyncStatusBanner: View {
                 Spacer()
                 
                 if syncManager.needsSync {
-                    Button(action: onSync) {
+                    Button(action: onSync) {  // This already calls onSync which is passed in
                         Text("Sync Now")
                             .font(.caption)
                             .fontWeight(.semibold)
@@ -633,14 +689,30 @@ class TrainingLoadViewModel: ObservableObject {
     @Published var insights: [TrainingLoadInsight] = []
     
     private let manager = TrainingLoadManager.shared
+    private var currentPeriodDays: Int = 30  // ADD THIS LINE
     
     func refresh() {
         summary = manager.getCurrentSummary()
-        dailyLoads = manager.getDailyLoads(for: .month)
         insights = manager.getInsights()
     }
     
     func loadPeriod(_ period: TrainingLoadPeriod) {
-        dailyLoads = manager.getDailyLoads(for: period)
+        guard currentPeriodDays != period.days else {
+            print("📊 Chart: Period unchanged, skipping reload")
+            return
+        }
+        
+        currentPeriodDays = period.days
+        
+        let allLoads = manager.loadAllDailyLoads()
+        let today = Calendar.current.startOfDay(for: Date())
+        let cutoffDate = Calendar.current.date(byAdding: .day, value: -period.days, to: today)!
+        
+        // Filter to period AND exclude future dates
+        dailyLoads = allLoads.filter { $0.date >= cutoffDate && $0.date <= today }
+            .sorted { $0.date < $1.date }
+            .filter { $0.ctl != nil && $0.atl != nil } // Only include days with metrics
+        
+        print("📊 Chart: Showing \(dailyLoads.count) days from \(cutoffDate.formatted(date: .abbreviated, time: .omitted)) to today")
     }
 }

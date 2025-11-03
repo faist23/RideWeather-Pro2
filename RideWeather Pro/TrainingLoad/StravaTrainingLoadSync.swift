@@ -104,7 +104,22 @@ class TrainingLoadSyncManager: ObservableObject {
         syncStatus = "Connecting to Strava..."
         
         do {
-            let syncStart = startDate ?? lastSyncDate ?? Calendar.current.date(byAdding: .day, value: -90, to: Date())!
+            print("🔍 DEBUG: startDate parameter = \(startDate?.formatted(date: .abbreviated, time: .shortened) ?? "nil")")
+            print("🔍 DEBUG: lastSyncDate = \(lastSyncDate?.formatted(date: .abbreviated, time: .shortened) ?? "nil")")
+            
+            let syncStart: Date
+            if let explicitStart = startDate {
+                syncStart = explicitStart
+                print("🔍 DEBUG: Using explicit startDate")
+            } else if let lastSync = lastSyncDate {
+                syncStart = lastSync
+                print("🔍 DEBUG: Using lastSyncDate")
+            } else {
+                syncStart = Calendar.current.date(byAdding: .day, value: -90, to: Date())!
+                print("🔍 DEBUG: Using default 90 days ago")
+            }
+            
+            print("🔍 DEBUG: Final syncStart = \(syncStart.formatted(date: .abbreviated, time: .shortened))")
             
             syncStatus = "Fetching activities..."
             syncProgress = 0.2
@@ -159,7 +174,8 @@ class TrainingLoadSyncManager: ObservableObject {
             }
             
             trainingLoadManager.fillMissingDays()
-            
+            trainingLoadManager.debugPrintLoadData()
+
             lastSyncDate = Date()
             saveSyncDate()
             
@@ -231,7 +247,9 @@ extension TrainingLoadManager {
         }
         
         dailyLoads.sort { $0.date < $1.date }
-        saveDailyLoads(dailyLoads)
+        
+        // ADD THIS: Recalculate metrics after updating
+        let updatedLoads = recalculateMetrics(for: dailyLoads)
+        saveDailyLoads(updatedLoads)
     }
 }
-

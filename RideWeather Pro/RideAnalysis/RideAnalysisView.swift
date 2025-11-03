@@ -189,8 +189,10 @@ struct RideAnalysisView: View {
             if wahooService.isAuthenticated {
                 Button(action: { viewModel.showingWahooActivities = true }) {
                     HStack(spacing: 12) {
-                        Image(systemName: "w.circle.fill")
-                            .font(.title)
+                        Image("wahoo_logo") // Wahoo icon
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 28, height: 28)
                         Text("Import from Wahoo")
                             .font(.headline)
                     }
