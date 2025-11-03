@@ -47,7 +47,7 @@ struct TrainingLoadView: View {
                         
                         // Current Status Card
                         CurrentFormCard(summary: summary)
-                        
+
                         // Training Load Chart
                         TrainingLoadChart(
                             dailyLoads: viewModel.dailyLoads,
@@ -387,7 +387,7 @@ struct TrainingLoadChart: View {
                 Chart {
                     // Zero reference line
                     RuleMark(y: .value("Zero", 0))
-                        .foregroundStyle(Color.gray.opacity(0.3))
+                        .foregroundStyle(.gray.opacity(0.3))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                     
                     // Fitness (CTL) - Blue
@@ -395,9 +395,9 @@ struct TrainingLoadChart: View {
                         if let ctl = load.ctl {
                             LineMark(
                                 x: .value("Date", load.date),
-                                y: .value("Value", ctl),
-                                series: .value("Type", "CTL")
+                                y: .value("CTL", ctl)
                             )
+                            .foregroundStyle(by: .value("Type", "CTL"))
                             .interpolationMethod(.catmullRom)
                             .lineStyle(StrokeStyle(lineWidth: 3))
                         }
@@ -408,9 +408,9 @@ struct TrainingLoadChart: View {
                         if let atl = load.atl {
                             LineMark(
                                 x: .value("Date", load.date),
-                                y: .value("Value", atl),
-                                series: .value("Type", "ATL")
+                                y: .value("ATL", atl)
                             )
+                            .foregroundStyle(by: .value("Type", "ATL"))
                             .interpolationMethod(.catmullRom)
                             .lineStyle(StrokeStyle(lineWidth: 2))
                         }
@@ -421,20 +421,36 @@ struct TrainingLoadChart: View {
                         if let tsb = load.tsb {
                             LineMark(
                                 x: .value("Date", load.date),
-                                y: .value("Value", tsb),
-                                series: .value("Type", "TSB")
+                                y: .value("TSB", tsb)
                             )
+                            .foregroundStyle(by: .value("Type", "TSB"))
                             .interpolationMethod(.catmullRom)
                             .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 3]))
                         }
                     }
                 }
                 .chartForegroundStyleScale([
-                    "CTL": Color.blue,
-                    "ATL": Color.orange,
-                    "TSB": Color.green
+                    "CTL": .blue,
+                    "ATL": .orange,
+                    "TSB": .green
                 ])
-                .chartLegend(position: .bottom, spacing: 20)  // ADD THIS - use built-in legend
+                .chartSymbolScale([
+                    "CTL": Circle().strokeBorder(lineWidth: 1),
+                    "ATL": Circle().strokeBorder(lineWidth: 1),
+                    "TSB": Circle().strokeBorder(lineWidth: 1)
+                ])
+                .chartLegend(position: .bottom, alignment: .center)
+                .frame(height: 250)
+                .chartYAxis {
+                    AxisMarks(position: .leading)
+                }
+                .chartXAxis {
+                    AxisMarks(values: .stride(by: .day, count: period.days < 30 ? 7 : 30)) { value in
+                        AxisGridLine()
+                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                    }
+                }
+
                 .frame(height: 250)
                 .chartYAxis {
                     AxisMarks(position: .leading)
