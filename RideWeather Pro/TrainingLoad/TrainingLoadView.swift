@@ -116,14 +116,23 @@ struct TrainingLoadView: View {
                 syncManager.loadSyncDate()
                 TrainingLoadManager.shared.fillMissingDays()
                 viewModel.refresh()
-                viewModel.loadPeriod(selectedPeriod)  // ADD THIS - load initial period
+                viewModel.loadPeriod(selectedPeriod)
                 
+                // Force a small delay to ensure data is loaded
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    viewModel.loadPeriod(selectedPeriod)
+                }
+ 
                 // Debug: Print what we're showing
                 if let summary = viewModel.summary {
                     print("📊 Summary: CTL=\(summary.currentCTL), ATL=\(summary.currentATL), TSB=\(summary.currentTSB)")
                 } else {
                     print("⚠️ No summary available")
                 }
+            }
+            .onChange(of: selectedPeriod) { oldValue, newValue in
+                // ADD THIS - reload when period changes
+                viewModel.loadPeriod(newValue)
             }
         }
     }
@@ -376,53 +385,56 @@ struct TrainingLoadChart: View {
                     .frame(maxWidth: .infinity)
             } else {
                 Chart {
-                    // TSB (Form) - Area
-                    ForEach(dailyLoads) { load in
-                        if let tsb = load.tsb {
-                            AreaMark(
-                                x: .value("Date", load.date),
-                                yStart: .value("Zero", 0),
-                                yEnd: .value("TSB", tsb)
-                            )
-                            .foregroundStyle(tsb > 0 ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
-                        }
-                    }
-                    
                     // Zero reference line
                     RuleMark(y: .value("Zero", 0))
                         .foregroundStyle(Color.gray.opacity(0.3))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                     
-                    // CTL (Fitness) - Blue line
+                    // Fitness (CTL) - Blue
                     ForEach(dailyLoads) { load in
                         if let ctl = load.ctl {
                             LineMark(
                                 x: .value("Date", load.date),
                                 y: .value("Value", ctl),
-                                series: .value("Metric", "Fitness")
+                                series: .value("Type", "CTL")
                             )
                             .interpolationMethod(.catmullRom)
                             .lineStyle(StrokeStyle(lineWidth: 3))
                         }
                     }
                     
-                    // ATL (Fatigue) - Orange line
+                    // Fatigue (ATL) - Orange
                     ForEach(dailyLoads) { load in
                         if let atl = load.atl {
                             LineMark(
                                 x: .value("Date", load.date),
                                 y: .value("Value", atl),
-                                series: .value("Metric", "Fatigue")
+                                series: .value("Type", "ATL")
                             )
                             .interpolationMethod(.catmullRom)
                             .lineStyle(StrokeStyle(lineWidth: 2))
                         }
                     }
+                    
+                    // Form (TSB) - Green dashed
+                    ForEach(dailyLoads) { load in
+                        if let tsb = load.tsb {
+                            LineMark(
+                                x: .value("Date", load.date),
+                                y: .value("Value", tsb),
+                                series: .value("Type", "TSB")
+                            )
+                            .interpolationMethod(.catmullRom)
+                            .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 3]))
+                        }
+                    }
                 }
                 .chartForegroundStyleScale([
-                    "Fitness": Color.blue,
-                    "Fatigue": Color.orange
+                    "CTL": Color.blue,
+                    "ATL": Color.orange,
+                    "TSB": Color.green
                 ])
+                .chartLegend(position: .bottom, spacing: 20)  // ADD THIS - use built-in legend
                 .frame(height: 250)
                 .chartYAxis {
                     AxisMarks(position: .leading)
@@ -434,13 +446,21 @@ struct TrainingLoadChart: View {
                     }
                 }
                 
-                // Legend
+                // Keep your custom legend too for redundancy
                 HStack(spacing: 20) {
-                    TrainingLoadLegendItem(color: .blue, label: "Fitness (CTL)")
-                    TrainingLoadLegendItem(color: .orange, label: "Fatigue (ATL)")
-                    TrainingLoadLegendItem(color: .green, label: "Form (TSB)")
+                    HStack(spacing: 4) {
+                        Circle().fill(Color.blue).frame(width: 8, height: 8)
+                        Text("Fitness (CTL)").font(.caption)
+                    }
+                    HStack(spacing: 4) {
+                        Circle().fill(Color.orange).frame(width: 8, height: 8)
+                        Text("Fatigue (ATL)").font(.caption)
+                    }
+                    HStack(spacing: 4) {
+                        Circle().fill(Color.green).frame(width: 8, height: 8)
+                        Text("Form (TSB)").font(.caption)
+                    }
                 }
-                .font(.caption)
                 .padding(.top, 8)
             }
         }

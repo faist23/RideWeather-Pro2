@@ -133,7 +133,7 @@ struct TrainingLoadSummary {
 
 // MARK: - Training Load Period
 
-struct TrainingLoadPeriod {
+struct TrainingLoadPeriod: Equatable {
     let days: Int
     let name: String
     
