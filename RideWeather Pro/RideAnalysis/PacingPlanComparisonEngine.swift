@@ -16,7 +16,8 @@ class PacingPlanComparisonEngine {
         // Match planned segments to actual terrain segments
         let opportunities = identifyTimeOpportunities(
             plannedSegments: pacingPlan.segments,
-            actualSegments: actualRide.terrainSegments ?? [],
+//            actualSegments: actualRide.terrainSegments ?? [],
+            actualRide: actualRide,
             ftp: ftp
         )
         
@@ -111,8 +112,14 @@ class PacingPlanComparisonEngine {
     private func gradeSegmentExecution(
         deviation: Double,
         terrainType: TerrainSegment.TerrainType,
-        timeLost: TimeInterval
+        timeLost: TimeInterval,
+        context: SegmentContext
     ) -> PacingPlanComparison.SegmentGrade {
+        
+        // If there was an external issue, don't grade poorly
+        if context.hasIssues {
+            return .acceptable
+        }
         
         // On climbs, under-powering is worse
         if terrainType == .climb {
@@ -167,11 +174,12 @@ class PacingPlanComparisonEngine {
     
     private func identifyTimeOpportunities(
         plannedSegments: [PacedSegment],
-        actualSegments: [TerrainSegment],
+        actualRide: RideAnalysis,
         ftp: Double
     ) -> [PacingPlanComparison.SegmentResult] {
         
         var opportunities: [PacingPlanComparison.SegmentResult] = []
+        let actualSegments = actualRide.terrainSegments ?? [] // <-- Get segments from ride
         
         // Track cumulative distance for location context
         var cumulativeDistanceMeters: Double = 0
@@ -213,6 +221,7 @@ class PacingPlanComparisonEngine {
                 actualSegment: actualSegment,
                 plannedPower: plannedPower,
                 actualPower: actualPower,
+                actualRide: actualRide,
                 ftp: ftp
             )
             
@@ -221,8 +230,8 @@ class PacingPlanComparisonEngine {
                 let grade = gradeSegmentExecution(
                     deviation: deviation,
                     terrainType: actualSegment.type,
-                    timeLost: timeLost/*,
-                    context: context*/
+                    timeLost: timeLost,
+                    context: context
                 )
                 
                 let segmentName = formatSegmentName(
@@ -244,9 +253,9 @@ class PacingPlanComparisonEngine {
                     deviation: deviation,
                     timeLost: timeLost,
                     grade: grade,
-                    locationMiles: locationMiles,  // 🔥 ADD THIS
-                    locationKm: locationKm,        // 🔥 ADD THIS
-                    context: context               // 🔥 ADD THIS
+                    locationMiles: locationMiles,
+                    locationKm: locationKm,
+                    context: context
                 ))
             }
             
@@ -263,11 +272,27 @@ class PacingPlanComparisonEngine {
         actualSegment: TerrainSegment,
         plannedPower: Double,
         actualPower: Double,
+        actualRide: RideAnalysis,
         ftp: Double
     ) -> SegmentContext {
         
         var issues: [String] = []
         var likelyReason: String?
+        
+        // Get the time range for this segment
+        let segmentStartTime = actualRide.date.addingTimeInterval(TimeInterval(actualSegment.startIndex))
+        let segmentEndTime = actualRide.date.addingTimeInterval(TimeInterval(actualSegment.endIndex))
+        
+        // Check for pacing errors from the ride analysis within this time range
+        let errorsInSegment = actualRide.pacingErrors.filter { error in
+            let errorTime = actualRide.date.addingTimeInterval(error.timestamp)
+            return errorTime >= segmentStartTime && errorTime <= segmentEndTime
+        }
+        
+        if let firstError = errorsInSegment.first {
+            issues.append(firstError.type.rawValue)
+            likelyReason = firstError.description
+        }
         
         // Detect very low power (possible stop/slow down)
         if actualPower < plannedPower * 0.5 && actualSegment.duration > 20 {

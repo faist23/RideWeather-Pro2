@@ -183,13 +183,13 @@ class WahooActivitiesImportViewModel: ObservableObject {
     @Published var isLoadingMore = false
     @Published var hasMorePages = true
      
-     private var currentPage = 0
+     private var currentPage = 1
      private let perPage = 50
      
     func loadActivities(service: WahooService) {
         isLoading = true
         errorMessage = nil
-        currentPage = 0
+        currentPage = 1
         activities = []
         
         Task {
@@ -213,7 +213,7 @@ class WahooActivitiesImportViewModel: ObservableObject {
                         self.hasMorePages = allActivities.count == self.perPage
                     }
                     self.isLoading = false
-                    self.currentPage = 1
+                    self.currentPage = 2
                 }
             } catch {
                 await MainActor.run {

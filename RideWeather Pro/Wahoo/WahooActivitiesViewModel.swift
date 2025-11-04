@@ -21,7 +21,7 @@ class WahooActivitiesViewModel: ObservableObject {
     
     @Published var isLoadingMore = false
     @Published var hasMorePages = true
-    private var currentPage = 0
+    private var currentPage = 1
     private let perPage = 50
 
     private let settings: AppSettings  
@@ -34,7 +34,7 @@ class WahooActivitiesViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         
-        currentPage = 0
+        currentPage = 1
         activities = []
 
         Task {
@@ -58,7 +58,7 @@ class WahooActivitiesViewModel: ObservableObject {
                         // Fallback if pagination data is missing
                         self.hasMorePages = workouts.count == self.perPage
                     }
-                    self.currentPage = 1 // <-- Next page is 1
+                    self.currentPage = 2 // <-- Next page is 1
                     // --- END REVISED LOGIC ---
                 }
             } catch {
