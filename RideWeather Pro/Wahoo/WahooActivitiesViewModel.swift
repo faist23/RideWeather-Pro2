@@ -18,8 +18,13 @@ class WahooActivitiesViewModel: ObservableObject {
     @Published var showingAnalysisImport = false
     @Published var analysis: RideAnalysis?
     @Published var analysisSources: [UUID: RideSourceInfo] = [:]
+    
+    @Published var isLoadingMore = false
+    @Published var hasMorePages = true
+    private var currentPage = 0
+    private let perPage = 50
 
-    private let settings: AppSettings  // 🔥 ADD THIS
+    private let settings: AppSettings  
 
     init(settings: AppSettings = AppSettings()) {
         self.settings = settings
@@ -29,17 +34,77 @@ class WahooActivitiesViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         
+        currentPage = 0
+        activities = []
+
         Task {
             do {
-                let workouts = try await service.fetchRecentWorkouts()
+                let response = try await service.fetchRecentWorkouts(page: self.currentPage, perPage: perPage) // <-- Fetch page 0
+                let workouts = response.workouts
+                
+                let filteredWorkouts = workouts.filter {
+                    let distance = Double($0.workoutSummary?.distanceAccum ?? "0") ?? 0
+                    let power = Double($0.workoutSummary?.powerAvg ?? "0") ?? 0 // Get average power
+                    return distance > 0 && power > 0 // Must have distance AND power
+                }
+
                 await MainActor.run {
-                    self.activities = workouts
+                    self.activities = filteredWorkouts
                     self.isLoading = false
+                    // --- REVISED PAGINATION LOGIC ---
+                    if let total = response.total, let p = response.page, let pp = response.perPage, total > 0, pp > 0 {
+                        self.hasMorePages = (p + 1) * pp < total
+                    } else {
+                        // Fallback if pagination data is missing
+                        self.hasMorePages = workouts.count == self.perPage
+                    }
+                    self.currentPage = 1 // <-- Next page is 1
+                    // --- END REVISED LOGIC ---
                 }
             } catch {
                 await MainActor.run {
                     self.errorMessage = error.localizedDescription
                     self.isLoading = false
+                }
+            }
+        }
+    }
+    
+    func loadMoreActivities(service: WahooService) {
+        guard !isLoadingMore && hasMorePages else { return }
+        
+        isLoadingMore = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                let response = try await service.fetchRecentWorkouts(page: self.currentPage, perPage: self.perPage)
+                let newWorkouts = response.workouts
+                
+                // --- MODIFIED FILTER ---
+                let filteredWorkouts = newWorkouts.filter {
+                    let distance = Double($0.workoutSummary?.distanceAccum ?? "0") ?? 0
+                    let power = Double($0.workoutSummary?.powerAvg ?? "0") ?? 0 // Get average power
+                    return distance > 0 && power > 0 // Must have distance AND power
+                }
+                
+                await MainActor.run {
+                    self.activities.append(contentsOf: filteredWorkouts) // <-- Use filtered list
+                    // --- REVISED PAGINATION LOGIC ---
+                    if let total = response.total, let p = response.page, let pp = response.perPage, total > 0, pp > 0 {
+                        self.hasMorePages = (p + 1) * pp < total
+                    } else {
+                        // Fallback if pagination data is missing
+                        self.hasMorePages = newWorkouts.count == self.perPage
+                    }
+                    self.isLoadingMore = false
+                    self.currentPage += 1
+                    // --- END REVISED LOGIC ---
+                }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = error.localizedDescription
+                    self.isLoadingMore = false
                 }
             }
         }

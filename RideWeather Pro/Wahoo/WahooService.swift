@@ -509,7 +509,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
     }
 
     // Fetch workouts list
-    func fetchRecentWorkouts() async throws -> [WahooWorkoutSummary] {
+    func fetchRecentWorkouts(page: Int, perPage: Int = 50) async throws -> WahooWorkoutsResponse {
 /*        let url = URL(string: "https://api.wahooligan.com/v1/workouts?page=1&per_page=50")!
         var request = URLRequest(url: url)
         // Add your authentication headers here...
@@ -519,14 +519,14 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         try await refreshTokenIfNeededAsync()
          guard let token = currentTokens?.accessToken else { throw WahooError.notAuthenticated }
          var components = URLComponents(string: "\(apiBaseUrl)/v1/workouts")!
-         components.queryItems = [
-             URLQueryItem(name: "page", value: "0"),
-             URLQueryItem(name: "per_page", value: "50"),
-             URLQueryItem(name: "sort", value: "-starts"),
-             URLQueryItem(name: "workout_type_id", value: "0")
-         ]
-         guard let url = components.url else { throw WahooError.invalidURL }
-         var request = URLRequest(url: url)
+        components.queryItems = [
+            URLQueryItem(name: "page", value: String(page)), // <-- USE PARAMETER
+            URLQueryItem(name: "per_page", value: String(perPage)), // <-- USE PARAMETER
+            URLQueryItem(name: "sort", value: "-starts"),
+            URLQueryItem(name: "workout_type_id", value: "0")
+        ]
+        guard let url = components.url else { throw WahooError.invalidURL }
+        var request = URLRequest(url: url)
          request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
         
@@ -556,7 +556,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let response = try decoder.decode(WahooWorkoutsResponse.self, from: data)
-            return response.workouts
+            return response
         } catch {
             print("🚨 WahooService: Decoding error:", error)
             print("WahooService: Raw data as string:", String(data: data, encoding: .utf8) ?? "nil")

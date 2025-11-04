@@ -50,11 +50,36 @@ struct WahooActivitiesView: View {
                             WahooActivityRow(activity: activity)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
- //                                   viewModel.selectActivity(activity, service: wahooService)
+                                    // viewModel.selectActivity(activity, service: wahooService)
                                     viewModel.selectedActivityDetail = activity
                                     viewModel.importActivity(service: wahooService, weatherViewModel: weatherViewModel)
                                     // Optionally show analysis results UI or update a @Published property to display results
-                               }
+                                }
+                        }
+                        
+                        if viewModel.hasMorePages {
+                            Section {
+                                Button(action: {
+                                    viewModel.loadMoreActivities(service: wahooService)
+                                }) {
+                                    HStack {
+                                        Spacer()
+                                        if viewModel.isLoadingMore {
+                                            ProgressView()
+                                                .padding(.trailing, 8)
+                                            Text("Loading...")
+                                                .foregroundColor(.secondary)
+                                        } else {
+                                            Image(systemName: "arrow.down.circle")
+                                                .font(.title3)
+                                            Text("Load More Activities")
+                                        }
+                                        Spacer()
+                                    }
+                                    .padding(.vertical, 8)
+                                }
+                                .disabled(viewModel.isLoadingMore)
+                            }
                         }
                     }
                     .refreshable {

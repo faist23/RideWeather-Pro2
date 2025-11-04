@@ -183,23 +183,37 @@ class WahooActivitiesImportViewModel: ObservableObject {
     @Published var isLoadingMore = false
     @Published var hasMorePages = true
      
-     private var currentPage = 1
+     private var currentPage = 0
      private let perPage = 50
      
     func loadActivities(service: WahooService) {
         isLoading = true
         errorMessage = nil
-        currentPage = 1
+        currentPage = 0
         activities = []
         
         Task {
             do {
                 // This already filters for workout_type_id=0 (Cycling)
-                let allActivities = try await service.fetchRecentWorkouts()
+                let response = try await service.fetchRecentWorkouts(page: self.currentPage, perPage: perPage) // <-- Fetch page 0
+                let allActivities = response.workouts
+                
+                // --- ADD THIS FILTER ---
+                let filteredActivities = allActivities.filter {
+                    let distance = Double($0.workoutSummary?.distanceAccum ?? "0") ?? 0
+                    return distance > 0
+                }
+                // --- END ADD ---
                 await MainActor.run {
-                    self.activities = allActivities
-                    self.hasMorePages = allActivities.count == perPage
+                    self.activities = filteredActivities // <-- Use filtered list
+                    if let total = response.total, let p = response.page, let pp = response.perPage, total > 0, pp > 0 {
+                        self.hasMorePages = (p + 1) * pp < total
+                    } else {
+                        // Fallback if pagination data is missing
+                        self.hasMorePages = allActivities.count == self.perPage
+                    }
                     self.isLoading = false
+                    self.currentPage = 1
                 }
             } catch {
                 await MainActor.run {
@@ -213,8 +227,42 @@ class WahooActivitiesImportViewModel: ObservableObject {
     func loadMoreActivities(service: WahooService) {
         // This logic would need to be built into your WahooService
         // For now, we just load the first page
-        print("Load more Wahoo activities logic needed in WahooService")
-        self.hasMorePages = false // Assume no more pages for now
+        //        print("Load more Wahoo activities logic needed in WahooService")
+        //        self.hasMorePages = false // Assume no more pages for now
+        guard !isLoadingMore && hasMorePages else { return }
+        
+        isLoadingMore = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                let response = try await service.fetchRecentWorkouts(page: self.currentPage, perPage: self.perPage)
+                let newActivities = response.workouts
+                
+                // --- ADD THIS FILTER ---
+                let filteredActivities = newActivities.filter {
+                    let distance = Double($0.workoutSummary?.distanceAccum ?? "0") ?? 0
+                    return distance > 0
+                }
+                // --- END ADD ---
+                await MainActor.run {
+                    self.activities.append(contentsOf: filteredActivities) // <-- Use filtered list
+                    if let total = response.total, let p = response.page, let pp = response.perPage, total > 0, pp > 0 {
+                        self.hasMorePages = (p + 1) * pp < total
+                    } else {
+                        // Fallback if pagination data is missing
+                        self.hasMorePages = newActivities.count == self.perPage
+                    }
+                    self.isLoadingMore = false
+                    self.currentPage += 1
+                }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = error.localizedDescription
+                    self.isLoadingMore = false
+                }
+            }
+        }
     }
 
     // ✅ UPDATED: Added onFailure callback
