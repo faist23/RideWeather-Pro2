@@ -30,7 +30,7 @@ struct TrainingLoadView: View {
                                     Task {
                                         // ADD THIS: Force full sync if no data exists
                                         let startDate = viewModel.summary == nil
-                                            ? Calendar.current.date(byAdding: .day, value: -90, to: Date())
+                                            ? Calendar.current.date(byAdding: .day, value: -365, to: Date())
                                             : nil
                                         
                                         await syncManager.syncFromStrava(
@@ -118,11 +118,6 @@ struct TrainingLoadView: View {
                 viewModel.refresh()
                 viewModel.loadPeriod(selectedPeriod)
                 
-                // Force a small delay to ensure data is loaded
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    viewModel.loadPeriod(selectedPeriod)
-                }
- 
                 // Debug: Print what we're showing
                 if let summary = viewModel.summary {
                     print("📊 Summary: CTL=\(summary.currentCTL), ATL=\(summary.currentATL), TSB=\(summary.currentTSB)")
@@ -224,7 +219,7 @@ struct TrainingLoadView: View {
                 Button {
                     Task {
                         // ADD THIS: Force full 90-day sync
-                        let startDate = Calendar.current.date(byAdding: .day, value: -90, to: Date())
+                        let startDate = Calendar.current.date(byAdding: .day, value: -365, to: Date())
                         
                         await syncManager.syncFromStrava(
                             stravaService: stravaService,
@@ -439,7 +434,7 @@ struct TrainingLoadChart: View {
                     "ATL": Circle().strokeBorder(lineWidth: 1),
                     "TSB": Circle().strokeBorder(lineWidth: 1)
                 ])
-                .chartLegend(position: .bottom, alignment: .center)
+                .chartLegend(.hidden)
                 .frame(height: 250)
                 .chartYAxis {
                     AxisMarks(position: .leading)
@@ -478,6 +473,7 @@ struct TrainingLoadChart: View {
                     }
                 }
                 .padding(.top, 8)
+                .frame(maxWidth: .infinity, alignment: .center) // <-- ADD THIS LINE
             }
         }
         .padding()
@@ -725,7 +721,7 @@ class TrainingLoadViewModel: ObservableObject {
     @Published var insights: [TrainingLoadInsight] = []
     
     private let manager = TrainingLoadManager.shared
-    private var currentPeriodDays: Int = 30  // ADD THIS LINE
+    private var currentPeriodDays: Int = 0
     
     func refresh() {
         summary = manager.getCurrentSummary()

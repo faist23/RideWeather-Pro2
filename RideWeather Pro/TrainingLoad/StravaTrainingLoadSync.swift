@@ -115,7 +115,7 @@ class TrainingLoadSyncManager: ObservableObject {
                 syncStart = lastSync
                 print("🔍 DEBUG: Using lastSyncDate")
             } else {
-                syncStart = Calendar.current.date(byAdding: .day, value: -90, to: Date())!
+                syncStart = Calendar.current.date(byAdding: .day, value: -365, to: Date())!
                 print("🔍 DEBUG: Using default 90 days ago")
             }
             

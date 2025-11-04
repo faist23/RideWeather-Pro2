@@ -1793,11 +1793,11 @@ struct RideHistoryView: View {
                     }
                 } else {
                     List {
-                        Section {
+/*                        Section {
                             TrendChartView(trendData: viewModel.getTrendData())
                                 .frame(height: 200)
                                 .listRowInsets(EdgeInsets())
-                        }
+                        }*/
                         
                         Section(header: Text("Past Analyses")) {
                             ForEach(viewModel.analysisHistory) { analysis in
