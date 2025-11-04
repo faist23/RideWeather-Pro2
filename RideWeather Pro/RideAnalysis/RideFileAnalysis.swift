@@ -1943,7 +1943,7 @@ class RideFileAnalyzer {
     
     // MARK: - Segment Comparison
     
-    private func compareSegments(dataPoints: [FITDataPoint], plan: PacingPlan, ftp: Double) -> [SegmentComparison] {
+/*    private func compareSegments(dataPoints: [FITDataPoint], plan: PacingPlan, ftp: Double) -> [SegmentComparison] {
         var comparisons: [SegmentComparison] = []
         var currentIndex = 0
         
@@ -1976,7 +1976,61 @@ class RideFileAnalyzer {
         }
         
         return comparisons
-    }
+    }*/
+
+        private func compareSegments(dataPoints: [FITDataPoint], plan: PacingPlan, ftp: Double) -> [SegmentComparison] {
+            var comparisons: [SegmentComparison] = []
+
+            // Get all data points that have a distance value
+            let validDataPoints = dataPoints.filter { $0.distance != nil }
+            guard !validDataPoints.isEmpty else { return [] }
+
+            for (segmentIndex, segment) in plan.segments.enumerated() {
+                // Get the immutable distance boundaries from the *plan*
+                let startDistance = segment.originalSegment.startPoint.distance
+                let endDistance = segment.originalSegment.endPoint.distance
+
+                // Find all *actual ride* data points that fall within this exact distance range
+                let segmentPoints = validDataPoints.filter {
+                    let dist = $0.distance! // We know this is non-nil from the filter above
+                    return dist >= startDistance && dist <= endDistance
+                }
+
+                guard !segmentPoints.isEmpty, let firstPoint = segmentPoints.first, let lastPoint = segmentPoints.last else {
+                    continue
+                }
+
+                // Now, analyze the *actual* performance for this *exact* segment of road
+                let actualPowers = segmentPoints.compactMap { $0.power }
+                let actualAvgPower = actualPowers.isEmpty ? 0 : actualPowers.reduce(0, +) / Double(actualPowers.count)
+                
+                // Calculate actual time spent in this distance segment
+                let actualTime = lastPoint.timestamp.timeIntervalSince(firstPoint.timestamp)
+
+                let plannedPower = segment.targetPower
+                let plannedTime = segment.estimatedTime // This is in seconds
+                
+                let deviation = ((actualAvgPower - plannedPower) / plannedPower) * 100
+                let timeDiff = actualTime - plannedTime // Negative = faster than plan
+                
+                // Use the segment name from the plan for a clear title
+                let segmentName = "Segment \(segmentIndex + 1): \(segment.strategy)"
+
+                comparisons.append(SegmentComparison(
+                    id: UUID(),
+                    segmentName: segmentName,
+                    plannedPower: plannedPower,
+                    actualPower: actualAvgPower,
+                    deviation: deviation,
+                    plannedTime: plannedTime,
+                    actualTime: actualTime,
+                    timeDifference: timeDiff
+                ))
+            }
+            
+            return comparisons
+        }
+
     
     private func calculateOverallDeviation(comparisons: [SegmentComparison]) -> Double {
         guard !comparisons.isEmpty else { return 0 }
