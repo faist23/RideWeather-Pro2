@@ -137,8 +137,8 @@ struct TrainingLoadPeriod: Equatable {
     let days: Int
     let name: String
     
-//    static let week = TrainingLoadPeriod(days: 7, name: "Week")
-//    static let twoWeeks = TrainingLoadPeriod(days: 14, name: "2 Weeks")
+    static let week = TrainingLoadPeriod(days: 7, name: "Week")
+    static let twoWeeks = TrainingLoadPeriod(days: 14, name: "2 Weeks")
     static let month = TrainingLoadPeriod(days: 30, name: "Month")
     static let sixWeeks = TrainingLoadPeriod(days: 42, name: "6 Weeks")
     static let threeMonths = TrainingLoadPeriod(days: 90, name: "3 Months")
@@ -146,7 +146,7 @@ struct TrainingLoadPeriod: Equatable {
     static let year = TrainingLoadPeriod(days: 365, name: "Year")
     
     static let allPeriods: [TrainingLoadPeriod] = [
-       /* .week, .twoWeeks,*/ .month, .sixWeeks, .threeMonths, .sixMonths, .year
+       .week, .twoWeeks, .month, .sixWeeks, .threeMonths, .sixMonths, .year
     ]
 }
 

@@ -70,7 +70,7 @@ struct TrainingLoadView: View {
                 .padding()
             }
             .navigationTitle("Training Load")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if stravaService.isAuthenticated && !syncManager.isSyncing {
