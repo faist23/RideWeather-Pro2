@@ -118,6 +118,19 @@ struct TrainingLoadView: View {
                 viewModel.refresh()
                 viewModel.loadPeriod(selectedPeriod)
                 
+                if syncManager.needsSync {
+                    Task {
+                        await syncManager.syncFromStrava(
+                            stravaService: stravaService,
+                            userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                            userLTHR: nil,
+                            startDate: nil // Lets the sync manager use the last sync date
+                        )
+                        viewModel.refresh()
+                        viewModel.loadPeriod(selectedPeriod)
+                    }
+                }
+                
                 // Debug: Print what we're showing
                 if let summary = viewModel.summary {
                     print("📊 Summary: CTL=\(summary.currentCTL), ATL=\(summary.currentATL), TSB=\(summary.currentTSB)")

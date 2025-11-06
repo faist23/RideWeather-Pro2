@@ -128,8 +128,23 @@ class TrainingLoadSyncManager: ObservableObject {
             
             guard !activities.isEmpty else {
                 syncStatus = "No new activities found"
-                isSyncing = false
-                return
+                syncProgress = 1.0
+                
+                // --- THIS IS THE FIX ---
+                // Update the sync date *before* returning
+                lastSyncDate = Date()
+                saveSyncDate()
+                print("✅ Training Load Sync Complete: 0 new activities found.")
+                
+                // Delay to show the "No new activities" message
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if syncStatus == "No new activities found" {
+                    syncStatus = ""
+                }
+                
+                isSyncing = false // Make sure to set this
+                return              // Restore the required return
+                // --- END FIX ---
             }
             
             syncStatus = "Processing \(activities.count) activities..."
@@ -175,7 +190,7 @@ class TrainingLoadSyncManager: ObservableObject {
             
             trainingLoadManager.fillMissingDays()
             trainingLoadManager.debugPrintLoadData()
-
+            
             lastSyncDate = Date()
             saveSyncDate()
             
@@ -210,7 +225,7 @@ class TrainingLoadSyncManager: ObservableObject {
     
     var needsSync: Bool {
         guard let lastSync = lastSyncDate else { return true }
-        return Date().timeIntervalSince(lastSync) > 86400
+        return Date().timeIntervalSince(lastSync) > 3600
     }
 }
 
