@@ -5,15 +5,18 @@
 
 import SwiftUI
 import CoreLocation
+import MapKit
 
 // MARK: - Optimized UnifiedRouteAnalyticsDashboard
 
 struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     @EnvironmentObject var viewModel: WeatherViewModel
-    @Environment(\.dismiss) private var dismiss
+//    @Environment(\.dismiss) private var dismiss
     @State private var selectedDistance: Double? = nil
     @State private var analysisResult: ComprehensiveRouteAnalysis? = nil
     @State private var isAnalyzing = true
+
+    @State private var mapCameraPosition = MapCameraPosition.automatic
     
     private var analytics: UnifiedRouteAnalyticsEngine {
         UnifiedRouteAnalyticsEngine(
@@ -28,29 +31,28 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     }
     
     var body: some View {
-        NavigationStack {
-            Group {
-                if isAnalyzing {
-                    analysisLoadingView
-                } else if let analysis = analysisResult {
-                    analysisContentView(analysis)
-                } else {
-                    analysisErrorView
-                }
+        //        NavigationStack {
+        Group {
+            if isAnalyzing {
+                analysisLoadingView
+            } else if let analysis = analysisResult {
+                analysisContentView(analysis)
+            } else {
+                analysisErrorView
             }
-            .navigationTitle("Route Analysis")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                    .fontWeight(.medium)
-                }
-            }
-            .task {
-                await performAnalysis()
-            }
+        }
+        /*            .navigationTitle("Route Analysis")
+         .navigationBarTitleDisplayMode(.inline)
+         .toolbar {
+         ToolbarItem(placement: .topBarTrailing) {
+         Button("Done") {
+         dismiss()
+         }
+         .fontWeight(.medium)
+         }
+         }*/
+        .task {
+            await performAnalysis()
         }
     }
     
@@ -84,50 +86,125 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     
     // MARK: - Content View
     private func analysisContentView(_ analysis: ComprehensiveRouteAnalysis) -> some View {
-        ScrollView {
-            LazyVStack(spacing: 20) { 
-                RouteInfoCardView(viewModel: viewModel)
-                // Hero Section - Overall Score
-                OptimizedOverallScoreCard(analysis: analysis, settings: viewModel.settings)
+        VStack(spacing: 0) {
+            // --- 1. THE MAP (NOW IN A ZSTACK) ---
+            ZStack(alignment: .bottomTrailing) {
+                RouteMapView(cameraPosition: $mapCameraPosition)
+                    .environmentObject(viewModel)
+                    .frame(height: 280)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 
-                // Power Metrics (if available)
-                if let powerResult = analysis.powerAnalysis {
-                    OptimizedPowerMetricsCard(
-                        normalizedPower: powerResult.powerDistribution.normalizedPower,
-                        intensityFactor: powerResult.powerDistribution.intensityFactor,
-                        totalTimeSeconds: powerResult.totalTimeSeconds
-                    )
+                // --- 2. YOUR RE-CENTER BUTTON ---
+                Button(action: {
+                    withAnimation(.smooth) {
+                        viewModel.centerMapOnRoute(&mapCameraPosition)
+                    }
+                }) {
+                    Image(systemName: "scope")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .padding(10)
+                        .background(.regularMaterial, in: Circle())
                 }
-                
-                // Interactive Weather Chart
-                InteractiveWeatherChart(
-                    weatherPoints: analysis.weatherPoints,
-                    units: analysis.settings.units,
-                    elevationAnalysis: viewModel.elevationAnalysis,
-                    selectedDistance: $selectedDistance
-                )
-                
-                // Critical Recommendations
-                if !analysis.unifiedRecommendations.isEmpty {
-                    OptimizedRecommendationsSection(recommendations: analysis.unifiedRecommendations)
-                }
-                
-                // Better Start Times
-                if !analysis.betterStartTimes.isEmpty {
-                    OptimizedStartTimesSection(times: analysis.betterStartTimes)
-                }
-                
-                // Advanced Features Integration
-                if !viewModel.routePoints.isEmpty || !viewModel.isPowerBasedAnalysisEnabled {
-                    OptimizedAdvancedFeaturesCard(viewModel: viewModel)
-                }
+                .padding(10) // Padding to lift it from the corner
             }
             .padding(.horizontal)
-            .padding(.bottom)
+            .padding(.top)
+            
+            // 3. THE SCROLLVIEW WITH CARDS
+            ScrollView {
+                LazyVStack(spacing: 20) {
+                    RouteInfoCardView(viewModel: viewModel)
+                    // Hero Section - Overall Score
+                    OptimizedOverallScoreCard(analysis: analysis, settings: viewModel.settings)
+                    
+                    // Power Metrics (if available)
+                    if let powerResult = analysis.powerAnalysis {
+                        OptimizedPowerMetricsCard(
+                            normalizedPower: powerResult.powerDistribution.normalizedPower,
+                            intensityFactor: powerResult.powerDistribution.intensityFactor,
+                            totalTimeSeconds: powerResult.totalTimeSeconds
+                        )
+                    }
+                    
+                    // Interactive Weather Chart
+                    InteractiveWeatherChart(
+                        weatherPoints: analysis.weatherPoints,
+                        units: analysis.settings.units,
+                        elevationAnalysis: viewModel.elevationAnalysis,
+                        selectedDistance: $selectedDistance
+                    )
+                    
+                    // Critical Recommendations
+                    if !analysis.unifiedRecommendations.isEmpty {
+                        OptimizedRecommendationsSection(recommendations: analysis.unifiedRecommendations)
+                    }
+                    
+                    // Better Start Times
+                    if !analysis.betterStartTimes.isEmpty {
+                        OptimizedStartTimesSection(times: analysis.betterStartTimes)
+                    }
+                    
+                    // Advanced Features Integration
+                    if !viewModel.routePoints.isEmpty || !viewModel.isPowerBasedAnalysisEnabled {
+                        OptimizedAdvancedFeaturesCard(viewModel: viewModel)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom)
+                .padding(.top, 20)
+            }
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        //        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .refreshable {
             await performAnalysis()
+        }
+        .task {
+            // Auto-center the map on the route when view appears
+            viewModel.centerMapOnRoute(&mapCameraPosition)
+        }
+        
+        .onChange(of: selectedDistance) { _, newDistance in
+            // Use the 'analysis' object captured by analysisContentView
+            guard let analysis = analysisResult else { return }
+            
+            if let newDistance = newDistance {
+                // --- USER IS SCRUBBING ---
+                
+                // 1. Get the conversion factor from the analysis settings
+                let units = analysis.settings.units
+                let conversionFactor = (units == .metric ? 1000.0 : 1609.34)
+                
+                // 2. Convert the chart's distance (km/mi) back to METERS
+                let distanceInMeters = newDistance * conversionFactor
+                
+                // 3. Find the closest point in analysis.weatherPoints (which uses meters)
+                let closestPoint = analysis.weatherPoints.min(by: {
+                    abs($0.distance - distanceInMeters) < abs($1.distance - distanceInMeters)
+                })
+                
+                if let coordinate = closestPoint?.coordinate {
+                    // 4. Animate the map camera to the new position
+                    withAnimation(.smooth) {
+                        mapCameraPosition = .camera(
+                            MapCamera(
+                                centerCoordinate: coordinate,
+                                // 5. Set a fixed zoom level (e.g., 2000 meters) to zoom in
+                                distance: 2000,
+                                heading: mapCameraPosition.camera?.heading ?? 0,
+                                // Add a slight pitch for a 3D effect
+                                pitch: mapCameraPosition.camera?.pitch ?? 45
+                            )
+                        )
+                    }
+                }
+            } else {
+                // --- USER STOPPED SCRUBBING (newDistance is nil) ---
+                // Auto-reset the map to the full route view
+                withAnimation(.smooth) {
+                    viewModel.centerMapOnRoute(&mapCameraPosition)
+                }
+            }
         }
     }
     
