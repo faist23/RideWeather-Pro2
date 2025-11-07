@@ -632,6 +632,14 @@ extension WeatherViewModel {
             }
         }
     }
+    
+    func clearRoute() {
+        routePoints.removeAll()
+        weatherDataForRoute.removeAll()
+        enhancedRoutePoints.removeAll()
+        lastImportedFileName = ""
+        // Reset any other route-related state
+    }
 }
 // MARK: - WeatherViewModel Route Import Update
 
