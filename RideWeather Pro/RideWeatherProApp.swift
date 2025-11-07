@@ -12,6 +12,8 @@ struct RideWeatherProApp: App {
     @StateObject private var wahooService = WahooService() // Add this
     @State private var showLaunchView = true
     
+    @Environment(\.scenePhase) private var scenePhase // <-- ADD THIS
+
     var body: some Scene {
         WindowGroup {
             ZStack {
@@ -31,6 +33,10 @@ struct RideWeatherProApp: App {
                     withAnimation {
                         showLaunchView = false
                     }
+                }
+                // Perform initial weight sync on first load
+                Task {
+                    await syncWeight()
                 }
             }
             .task {
@@ -65,6 +71,18 @@ struct RideWeatherProApp: App {
                     print("URL is not a file or a known auth callback.")
                 }
             }
+            .onChange(of: scenePhase) { oldPhase, newPhase in
+                // When app becomes active (e.g., user returns to it)
+                if newPhase == .active && (oldPhase == .inactive || oldPhase == .background) {
+                    // Run the daily sync logic
+                    Task {
+                        await syncWeight()
+                    }
+                    
+                    // Also run the training load fill logic
+                    TrainingLoadManager.shared.fillMissingDays()
+                }
+            }
         }
     }
     
@@ -88,8 +106,22 @@ struct RideWeatherProApp: App {
         }
     }
 
-    func applicationDidBecomeActive() {
+/*    func applicationDidBecomeActive() {
         // Fill any missing days with zero TSS
         TrainingLoadManager.shared.fillMissingDays()
+    }*/
+
+    private func syncWeight() async {
+        if let newWeightKg = await stravaService.autoSyncWeightIfNeeded(settings: weatherViewModel.settings) {
+            // Update the view model's settings, which will trigger UI updates and save to UserDefaults
+            await MainActor.run {
+                // Set the raw KG value
+                weatherViewModel.settings.bodyWeight = newWeightKg
+                
+                // This will trigger the UI to update correctly in lbs or kg
+                // by re-calculating from the new source KG value.
+                let _ = weatherViewModel.settings.bodyWeightInUserUnits
+            }
+        }
     }
 }

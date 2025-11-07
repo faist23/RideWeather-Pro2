@@ -10,6 +10,9 @@ struct SettingsView: View {
     @EnvironmentObject var wahooService: WahooService // Get the service
     @Environment(\.dismiss) private var dismiss
     
+    // This state is no longer needed as the manual button is gone
+    // @State private var isSyncingWeight = false
+    
     var body: some View {
         NavigationStack {
             Form {
@@ -95,20 +98,23 @@ struct SettingsView: View {
                         Text("Power Settings")
                     }
                     
+                    // --- THIS IS THE RESTORED/FIXED SECTION ---
                     Section {
                         // Body Weight
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Text("Body Weight")
                                 Spacer()
-                                Text("\(Int(viewModel.settings.bodyWeightInUserUnits)) \(viewModel.settings.units.weightSymbol)")
+                                // MODIFIED: Format to one decimal place
+                                Text("\(viewModel.settings.bodyWeightInUserUnits, specifier: "%.1f") \(viewModel.settings.units.weightSymbol)")
                                     .foregroundStyle(.secondary)
                             }
                             
                             Slider(
                                 value: $viewModel.settings.bodyWeightInUserUnits,
                                 in: viewModel.settings.units == .metric ? 40...150 : 90...330,
-                                step: viewModel.settings.units == .metric ? 1 : 2
+                                // MODIFIED: Step by 0.1
+                                step: 0.1
                             )
                         }
                         
@@ -117,17 +123,20 @@ struct SettingsView: View {
                             HStack {
                                 Text("Bike + Equipment Weight")
                                 Spacer()
-                                Text("\(Int(viewModel.settings.bikeWeightInUserUnits)) \(viewModel.settings.units.weightSymbol)")
+                                // MODIFIED: Format to one decimal place
+                                Text("\(viewModel.settings.bikeWeightInUserUnits, specifier: "%.1f") \(viewModel.settings.units.weightSymbol)")
                                     .foregroundStyle(.secondary)
                             }
                             
                             Slider(
                                 value: $viewModel.settings.bikeWeightInUserUnits,
                                 in: viewModel.settings.units == .metric ? 5...25 : 10...55,
-                                step: viewModel.settings.units == .metric ? 0.5 : 1
+                                // MODIFIED: Step by 0.1
+                                step: 0.1
                             )
                             
-                            Text("Total weight: \(Int(viewModel.settings.totalWeightKg * (viewModel.settings.units == .metric ? 1 : 2.20462))) \(viewModel.settings.units.weightSymbol)")
+                            // MODIFIED: Format total to one decimal place
+                            Text("Total weight: \(String(format: "%.1f", viewModel.settings.totalWeightKg * (viewModel.settings.units == .metric ? 1 : 2.20462))) \(viewModel.settings.units.weightSymbol)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -137,6 +146,7 @@ struct SettingsView: View {
                     } footer: {
                         Text("Weight affects climbing speed and rolling resistance calculations.")
                     }
+                    // --- END OF RESTORED/FIXED SECTION ---
                 }
                 
                 // MARK: - Temperature Preferences
@@ -311,7 +321,6 @@ struct SettingsView: View {
                     Toggle("Avoid Gluten", isOn: $viewModel.settings.avoidGluten)
                     Toggle("Avoid Caffeine", isOn: $viewModel.settings.avoidCaffeine)
                 }
- 
                 Section("Strava") {
                     if stravaService.isAuthenticated {
                         HStack(spacing: 12) {
@@ -336,6 +345,19 @@ struct SettingsView: View {
                                 Text("Disconnect")
                             }
                         }
+                        
+                        // --- THIS IS THE AUTO-SYNC TOGGLE ---
+                        Toggle(isOn: $viewModel.settings.autoSyncWeightFromStrava) {
+                            Text("Auto-Sync Weight from Strava")
+                        }
+                        .tint(.orange)
+                        
+                        if viewModel.settings.autoSyncWeightFromStrava {
+                            Text("Weight will be updated automatically once per day when the app is opened.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        // --- END TOGGLE ---
 
                     } else {
                         Button {

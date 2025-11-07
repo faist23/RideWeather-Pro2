@@ -26,7 +26,7 @@ class WahooActivitiesViewModel: ObservableObject {
 
     private let settings: AppSettings  
 
-    init(settings: AppSettings = AppSettings()) {
+    nonisolated init(settings: AppSettings = AppSettings()) {
         self.settings = settings
     }
 
@@ -178,15 +178,31 @@ class WahooActivitiesViewModel: ObservableObject {
                     let parser = FITFileParser()
                     let fitDataPoints = try await parser.parseFile(at: tempURL)
                     print("WahooImport: Parsed \(fitDataPoints.count) FIT data points.")
-
+                    
                     let analyzer = RideFileAnalyzer(settings: self.settings)
                     let rideName = activity.workoutSummary?.name ?? activity.name ?? "Wahoo Ride"
+                    
+                    // --- START FIX ---
+                    
+                    // 1. Get all THREE return values from the function
+                    let (powerGraphData, hrGraphData, elevationGraphData) = analyzer.generateGraphData(dataPoints: fitDataPoints)
+                    
+                    let heartRates = fitDataPoints.compactMap { $0.heartRate }
+                    let averageHeartRate = heartRates.isEmpty ? nil : (Double(heartRates.reduce(0, +)) / Double(heartRates.count))
+                    
+                    // 2. Pass ALL graph data into the analyzeRide function
                     var rideAnalysis = analyzer.analyzeRide(
                         dataPoints: fitDataPoints,
                         ftp: Double(settings.functionalThresholdPower),
                         weight: settings.bodyWeight,
-                        plannedRide: nil
+                        plannedRide: nil,
+                        averageHeartRate: averageHeartRate,
+                        powerGraphData: powerGraphData,
+                        heartRateGraphData: hrGraphData,
+                        elevationGraphData: elevationGraphData // <-- Pass it here
                     )
+                    // --- END FIX ---
+                    
                     rideAnalysis.rideName = rideName // <-- Set correct name on the mutable copy
                     self.analysis = rideAnalysis
                     print("WahooImport: Analysis complete - Score: \(rideAnalysis.performanceScore)")

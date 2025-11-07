@@ -33,6 +33,13 @@ struct StravaAthlete: Codable {
     let lastname: String?
 }
 
+struct StravaDetailedAthlete: Codable {
+    let id: Int
+    let firstname: String?
+    let lastname: String?
+    let weight: Double? // Weight is in kilograms
+}
+
 // MARK: - Strava Activity Models
 struct StravaActivity: Codable, Identifiable {
     let id: Int
@@ -151,6 +158,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     
     // Separate Keychain slot for athlete name (so we persist connection state even if tokens expire)
     private let athleteNameKey = "strava_athlete_name"
+    private let lastWeightSyncKey = "strava_last_weight_sync"
     
     override init() {
         super.init()
@@ -159,6 +167,41 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         loadAthleteNameFromKeychain() // ✅ restore athlete name
     }
     
+    /// Automatically syncs athlete weight from Strava if the setting is enabled and it hasn't been synced today.
+    /// - Parameter settings: The app's current settings.
+    /// - Returns: The new weight in Kilograms if sync was successful, otherwise nil.
+    func autoSyncWeightIfNeeded(settings: AppSettings) async -> Double? {
+        // 1. Check if user wants auto-sync and is authenticated
+        guard settings.autoSyncWeightFromStrava, isAuthenticated else {
+            return nil
+        }
+        
+        // 2. Check if we've already synced today
+        if let lastSync = UserDefaults.standard.object(forKey: lastWeightSyncKey) as? Date {
+            if Calendar.current.isDateInToday(lastSync) {
+                print("StravaService: Weight sync already performed today.")
+                return nil
+            }
+        }
+        
+        // 3. Perform the sync
+        print("StravaService: Performing daily auto-sync for weight...")
+        do {
+            if let weightInKg = try await fetchAthleteWeight(), weightInKg > 0 {
+                // 4. Update UserDefaults with the sync time
+                UserDefaults.standard.set(Date(), forKey: lastWeightSyncKey)
+                print("StravaService: Auto-sync successful. New weight: \(weightInKg) kg")
+                return weightInKg
+            } else {
+                print("StravaService: Auto-sync: No weight found on Strava profile.")
+                return nil
+            }
+        } catch {
+            print("StravaService: Auto-sync for weight failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     // MARK: - Config Loading
     private func loadConfig() {
         guard let path = Bundle.main.path(forResource: "StravaConfig", ofType: "plist"),
@@ -510,6 +553,40 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             kSecAttrAccount as String: athleteNameKey
         ]
         SecItemDelete(query as CFDictionary)
+    }
+    
+    /// Fetches the authenticated athlete's weight from Strava.
+    /// - Returns: Weight in kilograms, or nil if not set.
+    func fetchAthleteWeight() async throws -> Double? {
+        let athlete = try await fetchDetailedAthlete()
+        return athlete.weight
+    }
+    
+    /// ADD THIS HELPER FUNCTION (or make fetchAthleteWeight do all this)
+    /// Fetches the authenticated athlete's detailed profile
+    private func fetchDetailedAthlete() async throws -> StravaDetailedAthlete {
+        await refreshTokenIfNeededAsync()
+        
+        guard let accessToken = currentTokens?.accessToken else {
+            throw StravaError.notAuthenticated
+        }
+        
+        guard let url = URL(string: "https://www.strava.com/api/v3/athlete") else {
+            throw StravaError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw StravaError.apiError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 500)
+        }
+        
+        // Strava returns weight in kilograms
+        return try JSONDecoder().decode(StravaDetailedAthlete.self, from: data)
     }
     
     // MARK: - Token Persistence (Using Keychain)

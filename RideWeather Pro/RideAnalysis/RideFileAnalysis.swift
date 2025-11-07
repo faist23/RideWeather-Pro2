@@ -9,6 +9,19 @@ import FitFileParser
 
 // MARK: - Ride Analysis Models
 
+// MARK: - Graphable Data
+struct GraphableDataPoint: Codable, Identifiable {
+    let id: UUID
+    let time: TimeInterval
+    let value: Double
+    
+    init(time: TimeInterval, value: Double) {
+        self.id = UUID()
+        self.time = time
+        self.value = value
+    }
+}
+
 struct RideAnalysis: Codable, Identifiable {
     let id: UUID
     let date: Date
@@ -64,6 +77,12 @@ struct RideAnalysis: Codable, Identifiable {
     // Power Zone Distribution
     let powerZoneDistribution: PowerZoneDistribution
     
+    let averageHeartRate: Double?
+    let powerGraphData: [GraphableDataPoint]?
+    let heartRateGraphData: [GraphableDataPoint]?
+
+    let elevationGraphData: [GraphableDataPoint]? // <-- ADD THIS
+    
     init(id: UUID = UUID(), date: Date, rideName: String, duration: TimeInterval,
          distance: Double, metadata: RideMetadata?, averagePower: Double, normalizedPower: Double,
          intensityFactor: Double, trainingStressScore: Double, variabilityIndex: Double,
@@ -73,7 +92,11 @@ struct RideAnalysis: Codable, Identifiable {
          powerVariability: Double, fatigueDetected: Bool, fatigueOnsetTime: TimeInterval?,
          powerDeclineRate: Double?, plannedRideId: UUID?, segmentComparisons: [SegmentComparison],
          overallDeviation: Double, surgeCount: Int, pacingErrors: [PacingError],
-         performanceScore: Double, insights: [RideInsight], powerZoneDistribution: PowerZoneDistribution) {
+         performanceScore: Double, insights: [RideInsight], powerZoneDistribution: PowerZoneDistribution, averageHeartRate: Double?,
+         powerGraphData: [GraphableDataPoint]?,
+         heartRateGraphData: [GraphableDataPoint]?,
+         elevationGraphData: [GraphableDataPoint]?
+    ) {
         self.id = id
         self.date = date
         self.rideName = rideName
@@ -105,6 +128,10 @@ struct RideAnalysis: Codable, Identifiable {
         self.performanceScore = performanceScore
         self.insights = insights
         self.powerZoneDistribution = powerZoneDistribution
+        self.averageHeartRate = averageHeartRate
+        self.powerGraphData = powerGraphData
+        self.heartRateGraphData = heartRateGraphData
+        self.elevationGraphData = elevationGraphData // <-- ADD THIS
     }
 }
 
@@ -231,17 +258,17 @@ struct FITDataPoint {
 // MARK: - Ride File Analyzer
 
 class RideFileAnalyzer {
-       
+    
     // Add a settings property
-     private let settings: AppSettings
-     
-     // Add initializer
-     init(settings: AppSettings = AppSettings()) {
-         self.settings = settings
-     }
-
+    private let settings: AppSettings
+    
+    // Add initializer
+    init(settings: AppSettings = AppSettings()) {
+        self.settings = settings
+    }
+    
     // MARK: - Main Analysis Function
-
+    
     func analyzeRide(
         dataPoints: [FITDataPoint],
         ftp: Double,
@@ -249,7 +276,11 @@ class RideFileAnalyzer {
         plannedRide: PacingPlan? = nil,
         isPreFiltered: Bool = false,
         elapsedTimeOverride: TimeInterval? = nil,
-        movingTimeOverride: TimeInterval? = nil
+        movingTimeOverride: TimeInterval? = nil,
+        averageHeartRate: Double?,
+        powerGraphData: [GraphableDataPoint]?,
+        heartRateGraphData: [GraphableDataPoint]?,
+        elevationGraphData: [GraphableDataPoint]?
     ) -> RideAnalysis {
         
         // Filter valid power data
@@ -301,16 +332,16 @@ class RideFileAnalyzer {
         
         // 🔥 NOW calculate display values using metadata
         let totalDistance = settings.units == .metric ?
-            totalDistanceMeters / 1000 : // km
-            totalDistanceMeters / 1609.34 // miles
+        totalDistanceMeters / 1000 : // km
+        totalDistanceMeters / 1609.34 // miles
         let distanceUnit = settings.units == .metric ? "km" : "mi"
         
         let avgSpeed = (totalDistance / (movingTime / 3600.0))
         let speedUnit = settings.units == .metric ? "km/h" : "mph"
         
         let elevation = settings.units == .metric ?
-            metadataRaw.elevationGain : // meters
-            metadataRaw.elevationGain * 3.28084 // feet
+        metadataRaw.elevationGain : // meters
+        metadataRaw.elevationGain * 3.28084 // feet
         let elevationUnit = settings.units == .metric ? "m" : "ft"
         
         // Create final metadata with display values
@@ -386,6 +417,11 @@ class RideFileAnalyzer {
         
         let powerZones = calculatePowerZoneDistribution(dataPoints: movingPoints, ftp: ftp)
         
+        let (powerGraphData, hrGraphData, elevationGraphData) = generateGraphData(dataPoints: movingPoints)
+        
+        let heartRates = movingPoints.compactMap { $0.heartRate }
+        let averageHeartRate = heartRates.isEmpty ? nil : (Double(heartRates.reduce(0, +)) / Double(heartRates.count))
+        
         let perfScore = calculateTerrainAwarePerformanceScore(
             powerAllocation: powerAllocation,
             consistency: consistency,
@@ -438,10 +474,14 @@ class RideFileAnalyzer {
             pacingErrors: pacingErrors,
             performanceScore: perfScore,
             insights: insights,
-            powerZoneDistribution: powerZones
+            powerZoneDistribution: powerZones,
+            averageHeartRate: averageHeartRate,
+            powerGraphData: powerGraphData,
+            heartRateGraphData: hrGraphData,
+            elevationGraphData: elevationGraphData
         )
     }
-
+    
     // 🔥 NEW: Extract GPS points at regular intervals for route fingerprinting
     private func extractRouteBreadcrumbs(
         from dataPoints: [FITDataPoint],
@@ -489,7 +529,7 @@ class RideFileAnalyzer {
         
         return breadcrumbs
     }
-
+    
     // 🔥 FIX: Simplified buildRideMetadata - just calculates, doesn't format
     private func buildRideMetadata(
         dataPoints: [FITDataPoint],
@@ -559,7 +599,7 @@ class RideFileAnalyzer {
         
         // 🔥 NEW: Extract route breadcrumbs
         let breadcrumbs = extractRouteBreadcrumbs(from: dataPoints, intervalMeters: 500)
-
+        
         // Return metadata with only calculated values, no display formatting yet
         return RideMetadata(
             routeName: "Ride",
@@ -582,7 +622,7 @@ class RideFileAnalyzer {
             routeBreadcrumbs: breadcrumbs
         )
     }
-
+    
     // 🔥 NEW: Find first valid GPS coordinate (skip initial zeros)
     private func findFirstValidCoordinate(in dataPoints: [FITDataPoint]) -> CLLocationCoordinate2D? {
         for point in dataPoints.prefix(100) { // Check first 100 points
@@ -596,7 +636,7 @@ class RideFileAnalyzer {
         }
         return nil
     }
-
+    
     // 🔥 NEW: Find last valid GPS coordinate (skip trailing zeros)
     private func findLastValidCoordinate(in dataPoints: [FITDataPoint]) -> CLLocationCoordinate2D? {
         for point in dataPoints.suffix(100).reversed() { // Check last 100 points
@@ -612,7 +652,7 @@ class RideFileAnalyzer {
     }
     
     // MARK: - 🔥 IMPROVED TERRAIN SEGMENTATION
-
+    
     private func segmentByTerrainImproved(
         dataPoints: [FITDataPoint],
         ftp: Double,
@@ -647,8 +687,8 @@ class RideFileAnalyzer {
             
             // Decide if we should close the current segment
             let shouldClose =
-                (newTerrainType != currentTerrainType && pointsInCurrentSegment > minSegmentPoints) ||
-                (pointsInCurrentSegment >= maxSegmentPoints)
+            (newTerrainType != currentTerrainType && pointsInCurrentSegment > minSegmentPoints) ||
+            (pointsInCurrentSegment >= maxSegmentPoints)
             
             if shouldClose {
                 if let segment = createTerrainSegment(
@@ -687,9 +727,9 @@ class RideFileAnalyzer {
         
         return mergedSegments
     }
-
+    
     // MARK: - 🔥 SMARTER SEGMENT MERGING
-
+    
     private func mergeAdjacentSimilarSegments(segments: [TerrainSegment]) -> [TerrainSegment] {
         guard segments.count > 1 else { return segments }
         
@@ -707,9 +747,9 @@ class RideFileAnalyzer {
                 
                 // Merge if: same type, similar grade, and combined not too long
                 let shouldMerge =
-                    current.type == next.type &&
-                    abs(current.gradient - next.gradient) < 0.02 &&  // Within 2%
-                    (currentGroup.reduce(0.0) { $0 + $1.duration } + next.duration) < 600  // Max 10min
+                current.type == next.type &&
+                abs(current.gradient - next.gradient) < 0.02 &&  // Within 2%
+                (currentGroup.reduce(0.0) { $0 + $1.duration } + next.duration) < 600  // Max 10min
                 
                 if shouldMerge {
                     currentGroup.append(next)
@@ -754,11 +794,11 @@ class RideFileAnalyzer {
         
         return merged
     }
-
+    
     // MARK: - 🔥 ENHANCED INSIGHTS GENERATION
-
+    
     // MARK: - 🔥 ENHANCED INSIGHTS GENERATION with Location Context
-
+    
     private func generateEnhancedInsights(
         metadata: RideMetadata,
         terrainSegments: [TerrainSegment],
@@ -801,7 +841,7 @@ class RideFileAnalyzer {
             Elevation: +\(Int(metadata.elevation))\(metadata.elevationUnit)
             """,
             recommendation: stoppedMinutes > 10 ?
-                "Consider routes with fewer stops for better training continuity." :
+            "Consider routes with fewer stops for better training continuity." :
                 "Good route flow with minimal stops."
         ))
         
@@ -888,7 +928,7 @@ class RideFileAnalyzer {
                 This occurred \(Int(onsetPct))% through your ride
                 """,
                 recommendation: onsetPct < 50 ?
-                    "Start 10-15% easier. The first 20% should feel uncomfortably easy." :
+                "Start 10-15% easier. The first 20% should feel uncomfortably easy." :
                     "Consider nutrition strategy - aim for 60-90g carbs/hour."
             ))
         }
@@ -922,16 +962,16 @@ class RideFileAnalyzer {
                 Power efficiency: \(Int(segment.powerEfficiency))%
                 """,
                 recommendation: segment.type == .climb ?
-                    "Don't leave watts in the tank on climbs - you can't make up time elsewhere. Push \(Int(segment.optimalPowerForTime - segment.averagePower))W harder." :
+                "Don't leave watts in the tank on climbs - you can't make up time elsewhere. Push \(Int(segment.optimalPowerForTime - segment.averagePower))W harder." :
                     "On flats, focus on aero position and steady power rather than surges."
             ))
         }
         
         return insights.sorted { $0.priority.rawValue < $1.priority.rawValue }
     }
-
+    
     // MARK: - Helper Functions
-
+    
     private func formatSegmentDistance(_ meters: Double, unit: String) -> String {
         if unit == "mi" {
             let feet = meters * 3.28084
@@ -947,7 +987,7 @@ class RideFileAnalyzer {
             return String(format: "%.1f km", meters / 1000)
         }
     }
-
+    
     private func interpretIntensityFactor(_ if: Double, duration: TimeInterval) -> String {
         let hours = duration / 3600.0
         
@@ -964,7 +1004,7 @@ class RideFileAnalyzer {
             return "Easy recovery pace. Important for long-term development."
         }
     }
-
+    
     private func interpretClimbPower(_ pct: Double, distance: Double) -> String {
         let km = distance / 1000.0
         
@@ -976,13 +1016,13 @@ class RideFileAnalyzer {
             return "Excellent climb pacing. This is where you maximize time savings."
         }
     }
-
+    
     private func formatDuration(_ seconds: TimeInterval) -> String {
         let hours = Int(seconds) / 3600
         let minutes = (Int(seconds) % 3600) / 60
         return hours > 0 ? "\(hours)h \(minutes)min" : "\(minutes)min"
     }
- 
+    
     private func smoothAltitudeData(_ altitudes: [Double], windowSize: Int) -> [Double] {
         guard altitudes.count > windowSize else { return altitudes }
         
@@ -998,10 +1038,10 @@ class RideFileAnalyzer {
         
         return smoothed
     }
-
+    
     // 🔥 DEBUG: Compare your calculation with Strava's
     // Add this to help diagnose the difference:
-
+    
     private func debugElevationCalculation(
         rawAltitudes: [Double],
         smoothedAltitudes: [Double],
@@ -1030,7 +1070,7 @@ class RideFileAnalyzer {
         
         print()
     }
-
+    
     private func calculateRawElevationGain(_ altitudes: [Double]) -> Double {
         var gain: Double = 0
         for i in 1..<altitudes.count {
@@ -1041,7 +1081,7 @@ class RideFileAnalyzer {
         }
         return gain
     }
-
+    
     
     
     private func segmentByTerrain(dataPoints: [FITDataPoint], ftp: Double, weight: Double) -> [TerrainSegment] {
@@ -1092,7 +1132,7 @@ class RideFileAnalyzer {
         
         return segments
     }
-
+    
     private func calculateGradient(dataPoints: [FITDataPoint], endIndex: Int, windowSize: Int) -> Double {
         let startIndex = max(0, endIndex - windowSize)
         
@@ -1108,7 +1148,7 @@ class RideFileAnalyzer {
         
         return horizontalDistance > 0 ? (elevationChange / horizontalDistance) * 100 : 0
     }
-
+    
     private func classifyTerrain(gradient: Double) -> TerrainSegment.TerrainType {
         switch abs(gradient) {
         case 0..<1.5:
@@ -1121,7 +1161,7 @@ class RideFileAnalyzer {
             return .flat
         }
     }
-
+    
     private func createTerrainSegment(
         dataPoints: [FITDataPoint],
         startIndex: Int,
@@ -1176,7 +1216,7 @@ class RideFileAnalyzer {
             powerEfficiency: powerEfficiency
         )
     }
-
+    
     private func calculateOptimalPower(
         terrain: TerrainSegment.TerrainType,
         gradient: Double,
@@ -1220,7 +1260,7 @@ class RideFileAnalyzer {
             return ftp * 0.50
         }
     }
-
+    
     private func analyzePowerAllocation(
         terrainSegments: [TerrainSegment],
         ftp: Double,
@@ -1278,7 +1318,7 @@ class RideFileAnalyzer {
         let optimalClimbPercentage = totalWatts > 0 ? (optimalClimbWatts / totalWatts) * 100 : 0
         
         let allocationEfficiency = optimalClimbPercentage > 0 ?
-            (climbPercentage / optimalClimbPercentage) * 100 : 100
+        (climbPercentage / optimalClimbPercentage) * 100 : 100
         
         let totalTimeSaved = recommendations.reduce(0) { $0 + $1.timeLost }
         
@@ -1293,7 +1333,7 @@ class RideFileAnalyzer {
             recommendations: recommendations
         )
     }
-
+    
     private func estimateTimeLost(
         actualPower: Double,
         optimalPower: Double,
@@ -1316,7 +1356,7 @@ class RideFileAnalyzer {
         
         return max(0, actualTime - optimalTime)
     }
-
+    
     private func calculateTerrainAwarePacingScore(terrainSegments: [TerrainSegment]) -> Double {
         // Score based on whether power was appropriate for terrain
         var totalScore: Double = 0
@@ -1330,7 +1370,7 @@ class RideFileAnalyzer {
         
         return totalWeight > 0 ? totalScore / totalWeight : 0
     }
-
+    
     private func detectTerrainAwarePacingErrors(
         terrainSegments: [TerrainSegment],
         targetPower: Double
@@ -1391,7 +1431,7 @@ class RideFileAnalyzer {
         
         return (surgeCount, errors)
     }
-
+    
     private func calculateTerrainAwarePerformanceScore(
         powerAllocation: PowerAllocationAnalysis,
         consistency: Double,
@@ -1415,7 +1455,7 @@ class RideFileAnalyzer {
         
         return max(0, min(100, score))
     }
-
+    
     private func generateTerrainAwareInsights(
         metadata: RideMetadata,
         terrainSegments: [TerrainSegment],
@@ -1439,9 +1479,9 @@ class RideFileAnalyzer {
             category: .performance,
             title: "Ride Profile",
             description: String(format: "%.0fm of climbing over %.1fkm. %.0f%% of ride time was climbing.",
-                              metadata.elevationGain,
-                              metadata.movingTime / 1000,
-                              (climbTime / metadata.movingTime) * 100),
+                                metadata.elevationGain,
+                                metadata.movingTime / 1000,
+                                (climbTime / metadata.movingTime) * 100),
             recommendation: "This route's terrain heavily influences optimal pacing strategy."
         ))
         
@@ -1456,10 +1496,10 @@ class RideFileAnalyzer {
                 category: .pacing,
                 title: "⚠️ Suboptimal Power Distribution",
                 description: String(format: "You could have finished ~%d:%02d faster with better power allocation. You put %.0f%% of energy into climbs when %.0f%% would be optimal.",
-                                  timeSavedMinutes,
-                                  timeSavedSeconds,
-                                  (powerAllocation.wattsUsedOnClimbs / powerAllocation.totalWatts) * 100,
-                                  (powerAllocation.optimalClimbAllocation / powerAllocation.totalWatts) * 100),
+                                    timeSavedMinutes,
+                                    timeSavedSeconds,
+                                    (powerAllocation.wattsUsedOnClimbs / powerAllocation.totalWatts) * 100,
+                                    (powerAllocation.optimalClimbAllocation / powerAllocation.totalWatts) * 100),
                 recommendation: "On climbs, watts translate almost linearly to speed. Push harder uphill, recover on flats/descents."
             ))
         } else {
@@ -1468,225 +1508,225 @@ class RideFileAnalyzer {
                 priority: .low,
                 category: .pacing,
                 title: "✅ Excellent Power Distribution",
-                            description: String(format: "Your power allocation was %.0f%% optimal. You understood where watts matter most.",
-                                              powerAllocation.allocationEfficiency),
-                            recommendation: "You're putting power where it counts - on the climbs. This is racing smart."
-                        ))
-                    }
-                    
-                    // ✅ Specific Segment Recommendations
-                    for (index, recommendation) in powerAllocation.recommendations.prefix(3).enumerated() {
-                        let segment = recommendation.segment
-                        let timeLostSeconds = Int(recommendation.timeLost)
-                        
-                        insights.append(RideInsight(
-                            id: UUID(),
-                            priority: index == 0 ? .high : .medium,
-                            category: .pacing,
-                            title: "\(segment.type.emoji) \(segment.type.rawValue) Power Error",
-                            description: String(format: "%.0fm segment at %.1f%% grade: You averaged %dW, but %dW would have saved ~%d seconds.",
-                                              segment.distance,
-                                              segment.gradient,
-                                              Int(segment.averagePower),
-                                              Int(recommendation.optimalPower),
-                                              timeLostSeconds),
-                            recommendation: segment.type == .climb ?
-                                "Climbs are where you buy time. Don't leave watts in the tank going uphill - you can recover on the descent." :
-                                "On flats, aerodynamics dominate. Focus on position and steady power rather than surges."
-                        ))
-                    }
-                    
-                    // ✅ Climb-Specific Analysis
-                    let climbs = terrainSegments.filter { $0.type == .climb }
-                    if !climbs.isEmpty {
-                        let avgClimbPower = climbs.reduce(0) { $0 + $1.averagePower * $1.duration } / climbs.reduce(0) { $0 + $1.duration }
-                        let ftpPercentage = (avgClimbPower / ftp) * 100
-                        
-                        let climbInsight: RideInsight
-                        if ftpPercentage < 85 {
-                            climbInsight = RideInsight(
-                                id: UUID(),
-                                priority: .high,
-                                category: .pacing,
-                                title: "⛰️ Climbed Too Conservatively",
-                                description: String(format: "Average climbing power was only %.0f%% of FTP (%dW). For fastest time, you should be closer to 95-105%% FTP on climbs.",
-                                                  ftpPercentage,
-                                                  Int(avgClimbPower)),
-                                recommendation: "Climbing is where races are won. Unless it's a 2+ hour climb, you should be near or above threshold. The physics strongly favor more power uphill."
-                            )
-                        } else if ftpPercentage > 110 {
-                            climbInsight = RideInsight(
-                                id: UUID(),
-                                priority: .medium,
-                                category: .pacing,
-                                title: "⛰️ Very Aggressive Climbing",
-                                description: String(format: "Average climbing power was %.0f%% of FTP (%dW). This is race-winning intensity but may have caused fatigue.",
-                                                  ftpPercentage,
-                                                  Int(avgClimbPower)),
-                                recommendation: fatigueDetected ?
-                                    "Your aggressive climbing led to fatigue later. For longer rides, dial back to 95-105% FTP on climbs." :
-                                    "Excellent climbing intensity. This is how you get faster on climbs - sustaining these efforts builds power at threshold."
-                            )
-                        } else {
-                            climbInsight = RideInsight(
-                                id: UUID(),
-                                priority: .low,
-                                category: .pacing,
-                                title: "⛰️ Strong Climbing Execution",
-                                description: String(format: "Climbed at %.0f%% of FTP (%dW) - right in the optimal zone for time trialing climbs.",
-                                                  ftpPercentage,
-                                                  Int(avgClimbPower)),
-                                recommendation: "This is textbook climb pacing. You're maximizing speed without going anaerobic."
-                            )
-                        }
-                        insights.append(climbInsight)
-                    }
-                    
-                    // ✅ Descent Analysis
-                    let descents = terrainSegments.filter { $0.type == .descent }
-                    if !descents.isEmpty {
-                        let avgDescentPower = descents.reduce(0) { $0 + $1.averagePower * $1.duration } / descents.reduce(0) { $0 + $1.duration }
-                        
-                        if avgDescentPower > ftp * 0.7 {
-                            insights.append(RideInsight(
-                                id: UUID(),
-                                priority: .medium,
-                                category: .efficiency,
-                                title: "⬇️ Wasted Energy on Descents",
-                                description: String(format: "You averaged %dW on descents when minimal power is needed. This energy would be better saved for climbs.",
-                                                  Int(avgDescentPower)),
-                                recommendation: "On descents, focus on aerodynamics and bike handling. Soft pedal or coast - save those matches for the next climb."
-                            ))
-                        }
-                    }
-                    
-                    // ✅ Flat/Rolling Terrain Analysis
-                    let flats = terrainSegments.filter { $0.type == .flat || $0.type == .rolling }
-                    if !flats.isEmpty {
-                        let avgFlatPower = flats.reduce(0) { $0 + $1.averagePower * $1.duration } / flats.reduce(0) { $0 + $1.duration }
-                        let ftpPercentage = (avgFlatPower / ftp) * 100
-                        
-                        if ftpPercentage > 85 {
-                            insights.append(RideInsight(
-                                id: UUID(),
-                                priority: .medium,
-                                category: .efficiency,
-                                title: "➡️ Pushing Too Hard on Flats",
-                                description: String(format: "You averaged %.0f%% FTP (%dW) on flat terrain. On flats, aero drag increases with the cube of speed - diminishing returns kick in fast.",
-                                                  ftpPercentage,
-                                                  Int(avgFlatPower)),
-                                recommendation: "80-85% FTP is the sweet spot for flats in most conditions. Save bigger watts for where they have linear returns: climbs."
-                            ))
-                        }
-                    }
-                    
-                    // ✅ Moving Time vs Stopped Time
-                    if metadata.stoppedTime > 120 { // More than 2 minutes
-                        let stoppedMinutes = Int(metadata.stoppedTime / 60)
-                        let stoppedPercentage = (metadata.stoppedTime / metadata.totalTime) * 100
-                        
-                        insights.append(RideInsight(
-                            id: UUID(),
-                            priority: stoppedPercentage > 15 ? .medium : .low,
-                            category: .efficiency,
-                            title: "⏱️ Stop Time Analysis",
-                            description: String(format: "Stopped for %d minutes (%.0f%% of total time). %@",
-                                              stoppedMinutes,
-                                              stoppedPercentage,
-                                              stoppedPercentage > 15 ? "Significant stops affected ride flow." : "Minimal stops - good route choice."),
-                            recommendation: stoppedPercentage > 15 ?
-                                "For training rides, consider routes with fewer traffic interruptions. For faster times, route selection matters as much as fitness." :
-                                "Your route minimized stops. This helps maintain rhythm and training quality."
-                        ))
-                    }
-                    
-                    // ✅ Fatigue Analysis (Context-Aware)
-                    if fatigueDetected, let onset = fatigueOnset {
-                        let onsetMinutes = Int(onset / 60)
-                        let totalMinutes = Int(metadata.movingTime / 60)
-                        let onsetPercentage = (onset / metadata.movingTime) * 100
-                        
-                        let fatigueInsight: RideInsight
-                        if onsetPercentage < 50 {
-                            fatigueInsight = RideInsight(
-                                id: UUID(),
-                                priority: .high,
-                                category: .fatigue,
-                                title: "🔋 Early Fatigue - Pacing Error",
-                                description: "Power dropped after \(onsetMinutes) minutes (\(Int(onsetPercentage))% into ride). Starting too hard is the most common pacing mistake.",
-                                recommendation: "The first 20-25% of any ride should feel 'too easy'. Build into your power targets gradually. Early restraint = faster overall times."
-                            )
-                        } else {
-                            fatigueInsight = RideInsight(
-                                id: UUID(),
-                                priority: .medium,
-                                category: .fatigue,
-                                title: "🔋 Fatigue in Later Miles",
-                                description: "Power declined after \(onsetMinutes) minutes. This is normal for hard efforts lasting \(totalMinutes)+ minutes.",
-                                recommendation: "Consider fueling strategy (60-90g carbs/hour) and pacing. Even small power drops late in rides indicate pacing or nutrition issues."
-                            )
-                        }
-                        insights.append(fatigueInsight)
-                    }
-                    
-                    // ✅ Intensity Factor Context
-                    if intensityFactor > 1.05 {
-                        insights.append(RideInsight(
-                            id: UUID(),
-                            priority: .medium,
-                            category: .performance,
-                            title: "💪 Race-Intensity Effort",
-                            description: String(format: "Intensity Factor of %.2f means you sustained %.0f%% of threshold power. This is race-level output.",
-                                                  intensityFactor,
-                                                  intensityFactor * 100),
-                            recommendation: metadata.movingTime > 7200 ?
-                                "Sustaining this for \(Int(metadata.movingTime/3600))+ hours is exceptional. Allow 48-72 hours recovery." :
-                                "This intensity builds race fitness but requires recovery. Plan 1-2 easy days."
-                        ))
-                    } else if intensityFactor < 0.70 {
-                        insights.append(RideInsight(
-                            id: UUID(),
-                            priority: .low,
-                            category: .performance,
-                            title: "🚴 Easy Aerobic Ride",
-                            description: String(format: "IF of %.2f indicates easy endurance pace. These rides build aerobic foundation.",
-                                                  intensityFactor),
-                            recommendation: "Don't undervalue easy rides. 70-80% of training should be at this intensity to support hard efforts."
-                        ))
-                    }
-                    
-                    // ✅ Overall Performance Summary
-                    if performanceScore >= 85 {
-                        insights.append(RideInsight(
-                            id: UUID(),
-                            priority: .low,
-                            category: .performance,
-                            title: "🏆 Excellent Ride Execution",
-                            description: String(format: "Performance score: %.0f/100. You understand how to distribute power for speed on this terrain.",
-                                              performanceScore),
-                            recommendation: "This is the execution pattern to replicate in events. You're racing smart, not just hard."
-                        ))
-                    } else if performanceScore < 60 {
-                        insights.append(RideInsight(
-                            id: UUID(),
-                            priority: .high,
-                            category: .performance,
-                            title: "📊 Significant Time Left on the Table",
-                            description: String(format: "Performance score: %.0f/100. Power distribution didn't match terrain demands.",
-                                              performanceScore),
-                            recommendation: "Review the specific segment recommendations above. The gains are real - you could be significantly faster with the same fitness."
-                        ))
-                    }
-                    
-                    return insights.sorted { insight1, insight2 in
-                        if insight1.priority != insight2.priority {
-                            return insight1.priority.rawValue < insight2.priority.rawValue
-                        }
-                        return false
-                    }
-                }
+                description: String(format: "Your power allocation was %.0f%% optimal. You understood where watts matter most.",
+                                    powerAllocation.allocationEfficiency),
+                recommendation: "You're putting power where it counts - on the climbs. This is racing smart."
+            ))
+        }
+        
+        // ✅ Specific Segment Recommendations
+        for (index, recommendation) in powerAllocation.recommendations.prefix(3).enumerated() {
+            let segment = recommendation.segment
+            let timeLostSeconds = Int(recommendation.timeLost)
+            
+            insights.append(RideInsight(
+                id: UUID(),
+                priority: index == 0 ? .high : .medium,
+                category: .pacing,
+                title: "\(segment.type.emoji) \(segment.type.rawValue) Power Error",
+                description: String(format: "%.0fm segment at %.1f%% grade: You averaged %dW, but %dW would have saved ~%d seconds.",
+                                    segment.distance,
+                                    segment.gradient,
+                                    Int(segment.averagePower),
+                                    Int(recommendation.optimalPower),
+                                    timeLostSeconds),
+                recommendation: segment.type == .climb ?
+                "Climbs are where you buy time. Don't leave watts in the tank going uphill - you can recover on the descent." :
+                    "On flats, aerodynamics dominate. Focus on position and steady power rather than surges."
+            ))
+        }
+        
+        // ✅ Climb-Specific Analysis
+        let climbs = terrainSegments.filter { $0.type == .climb }
+        if !climbs.isEmpty {
+            let avgClimbPower = climbs.reduce(0) { $0 + $1.averagePower * $1.duration } / climbs.reduce(0) { $0 + $1.duration }
+            let ftpPercentage = (avgClimbPower / ftp) * 100
+            
+            let climbInsight: RideInsight
+            if ftpPercentage < 85 {
+                climbInsight = RideInsight(
+                    id: UUID(),
+                    priority: .high,
+                    category: .pacing,
+                    title: "⛰️ Climbed Too Conservatively",
+                    description: String(format: "Average climbing power was only %.0f%% of FTP (%dW). For fastest time, you should be closer to 95-105%% FTP on climbs.",
+                                        ftpPercentage,
+                                        Int(avgClimbPower)),
+                    recommendation: "Climbing is where races are won. Unless it's a 2+ hour climb, you should be near or above threshold. The physics strongly favor more power uphill."
+                )
+            } else if ftpPercentage > 110 {
+                climbInsight = RideInsight(
+                    id: UUID(),
+                    priority: .medium,
+                    category: .pacing,
+                    title: "⛰️ Very Aggressive Climbing",
+                    description: String(format: "Average climbing power was %.0f%% of FTP (%dW). This is race-winning intensity but may have caused fatigue.",
+                                        ftpPercentage,
+                                        Int(avgClimbPower)),
+                    recommendation: fatigueDetected ?
+                    "Your aggressive climbing led to fatigue later. For longer rides, dial back to 95-105% FTP on climbs." :
+                        "Excellent climbing intensity. This is how you get faster on climbs - sustaining these efforts builds power at threshold."
+                )
+            } else {
+                climbInsight = RideInsight(
+                    id: UUID(),
+                    priority: .low,
+                    category: .pacing,
+                    title: "⛰️ Strong Climbing Execution",
+                    description: String(format: "Climbed at %.0f%% of FTP (%dW) - right in the optimal zone for time trialing climbs.",
+                                        ftpPercentage,
+                                        Int(avgClimbPower)),
+                    recommendation: "This is textbook climb pacing. You're maximizing speed without going anaerobic."
+                )
+            }
+            insights.append(climbInsight)
+        }
+        
+        // ✅ Descent Analysis
+        let descents = terrainSegments.filter { $0.type == .descent }
+        if !descents.isEmpty {
+            let avgDescentPower = descents.reduce(0) { $0 + $1.averagePower * $1.duration } / descents.reduce(0) { $0 + $1.duration }
+            
+            if avgDescentPower > ftp * 0.7 {
+                insights.append(RideInsight(
+                    id: UUID(),
+                    priority: .medium,
+                    category: .efficiency,
+                    title: "⬇️ Wasted Energy on Descents",
+                    description: String(format: "You averaged %dW on descents when minimal power is needed. This energy would be better saved for climbs.",
+                                        Int(avgDescentPower)),
+                    recommendation: "On descents, focus on aerodynamics and bike handling. Soft pedal or coast - save those matches for the next climb."
+                ))
+            }
+        }
+        
+        // ✅ Flat/Rolling Terrain Analysis
+        let flats = terrainSegments.filter { $0.type == .flat || $0.type == .rolling }
+        if !flats.isEmpty {
+            let avgFlatPower = flats.reduce(0) { $0 + $1.averagePower * $1.duration } / flats.reduce(0) { $0 + $1.duration }
+            let ftpPercentage = (avgFlatPower / ftp) * 100
+            
+            if ftpPercentage > 85 {
+                insights.append(RideInsight(
+                    id: UUID(),
+                    priority: .medium,
+                    category: .efficiency,
+                    title: "➡️ Pushing Too Hard on Flats",
+                    description: String(format: "You averaged %.0f%% FTP (%dW) on flat terrain. On flats, aero drag increases with the cube of speed - diminishing returns kick in fast.",
+                                        ftpPercentage,
+                                        Int(avgFlatPower)),
+                    recommendation: "80-85% FTP is the sweet spot for flats in most conditions. Save bigger watts for where they have linear returns: climbs."
+                ))
+            }
+        }
+        
+        // ✅ Moving Time vs Stopped Time
+        if metadata.stoppedTime > 120 { // More than 2 minutes
+            let stoppedMinutes = Int(metadata.stoppedTime / 60)
+            let stoppedPercentage = (metadata.stoppedTime / metadata.totalTime) * 100
+            
+            insights.append(RideInsight(
+                id: UUID(),
+                priority: stoppedPercentage > 15 ? .medium : .low,
+                category: .efficiency,
+                title: "⏱️ Stop Time Analysis",
+                description: String(format: "Stopped for %d minutes (%.0f%% of total time). %@",
+                                    stoppedMinutes,
+                                    stoppedPercentage,
+                                    stoppedPercentage > 15 ? "Significant stops affected ride flow." : "Minimal stops - good route choice."),
+                recommendation: stoppedPercentage > 15 ?
+                "For training rides, consider routes with fewer traffic interruptions. For faster times, route selection matters as much as fitness." :
+                    "Your route minimized stops. This helps maintain rhythm and training quality."
+            ))
+        }
+        
+        // ✅ Fatigue Analysis (Context-Aware)
+        if fatigueDetected, let onset = fatigueOnset {
+            let onsetMinutes = Int(onset / 60)
+            let totalMinutes = Int(metadata.movingTime / 60)
+            let onsetPercentage = (onset / metadata.movingTime) * 100
+            
+            let fatigueInsight: RideInsight
+            if onsetPercentage < 50 {
+                fatigueInsight = RideInsight(
+                    id: UUID(),
+                    priority: .high,
+                    category: .fatigue,
+                    title: "🔋 Early Fatigue - Pacing Error",
+                    description: "Power dropped after \(onsetMinutes) minutes (\(Int(onsetPercentage))% into ride). Starting too hard is the most common pacing mistake.",
+                    recommendation: "The first 20-25% of any ride should feel 'too easy'. Build into your power targets gradually. Early restraint = faster overall times."
+                )
+            } else {
+                fatigueInsight = RideInsight(
+                    id: UUID(),
+                    priority: .medium,
+                    category: .fatigue,
+                    title: "🔋 Fatigue in Later Miles",
+                    description: "Power declined after \(onsetMinutes) minutes. This is normal for hard efforts lasting \(totalMinutes)+ minutes.",
+                    recommendation: "Consider fueling strategy (60-90g carbs/hour) and pacing. Even small power drops late in rides indicate pacing or nutrition issues."
+                )
+            }
+            insights.append(fatigueInsight)
+        }
+        
+        // ✅ Intensity Factor Context
+        if intensityFactor > 1.05 {
+            insights.append(RideInsight(
+                id: UUID(),
+                priority: .medium,
+                category: .performance,
+                title: "💪 Race-Intensity Effort",
+                description: String(format: "Intensity Factor of %.2f means you sustained %.0f%% of threshold power. This is race-level output.",
+                                    intensityFactor,
+                                    intensityFactor * 100),
+                recommendation: metadata.movingTime > 7200 ?
+                "Sustaining this for \(Int(metadata.movingTime/3600))+ hours is exceptional. Allow 48-72 hours recovery." :
+                    "This intensity builds race fitness but requires recovery. Plan 1-2 easy days."
+            ))
+        } else if intensityFactor < 0.70 {
+            insights.append(RideInsight(
+                id: UUID(),
+                priority: .low,
+                category: .performance,
+                title: "🚴 Easy Aerobic Ride",
+                description: String(format: "IF of %.2f indicates easy endurance pace. These rides build aerobic foundation.",
+                                    intensityFactor),
+                recommendation: "Don't undervalue easy rides. 70-80% of training should be at this intensity to support hard efforts."
+            ))
+        }
+        
+        // ✅ Overall Performance Summary
+        if performanceScore >= 85 {
+            insights.append(RideInsight(
+                id: UUID(),
+                priority: .low,
+                category: .performance,
+                title: "🏆 Excellent Ride Execution",
+                description: String(format: "Performance score: %.0f/100. You understand how to distribute power for speed on this terrain.",
+                                    performanceScore),
+                recommendation: "This is the execution pattern to replicate in events. You're racing smart, not just hard."
+            ))
+        } else if performanceScore < 60 {
+            insights.append(RideInsight(
+                id: UUID(),
+                priority: .high,
+                category: .performance,
+                title: "📊 Significant Time Left on the Table",
+                description: String(format: "Performance score: %.0f/100. Power distribution didn't match terrain demands.",
+                                    performanceScore),
+                recommendation: "Review the specific segment recommendations above. The gains are real - you could be significantly faster with the same fitness."
+            ))
+        }
+        
+        return insights.sorted { insight1, insight2 in
+            if insight1.priority != insight2.priority {
+                return insight1.priority.rawValue < insight2.priority.rawValue
+            }
+            return false
+        }
+    }
     //______________________________________________
-
+    
     // ✅ UPDATED: Better moving time detection
     // ✅ COMPLETELY REWRITTEN: Smarter moving detection
     private func identifyMovingSegments(dataPoints: [FITDataPoint]) -> [FITDataPoint] {
@@ -1717,7 +1757,7 @@ class RideFileAnalyzer {
         
         return movingPoints
     }
-
+    
     // Helper: Determine if a point is part of a stopped segment
     private func isPointInStoppedSegment(
         dataPoints: [FITDataPoint],
@@ -1763,7 +1803,7 @@ class RideFileAnalyzer {
         
         return mostlyZeroPower && mostlyNotMoving && littleDistance
     }
-
+    
     // ✅ NEW: Analyze ride characteristics
     private func analyzeRideCharacteristics(
         dataPoints: [FITDataPoint],
@@ -1808,14 +1848,14 @@ class RideFileAnalyzer {
             stoppedTime: stoppedTime
         )
     }
-
+    
     enum RideType: String {
         case steady = "Steady Endurance"
         case intervals = "High-Intensity/Intervals"
         case urban = "Urban/Stop-and-Go"
         case mixed = "Mixed Terrain"
     }
-
+    
     struct RideCharacteristics {
         let rideType: RideType
         let highPowerPercentage: Double
@@ -1823,7 +1863,7 @@ class RideFileAnalyzer {
         let averageToNormalizedRatio: Double
         let stoppedTime: TimeInterval
     }
-
+    
     // MARK: - Power Calculations
     
     private func calculateAveragePower(powers: [Double]) -> Double {
@@ -1943,94 +1983,94 @@ class RideFileAnalyzer {
     
     // MARK: - Segment Comparison
     
-/*    private func compareSegments(dataPoints: [FITDataPoint], plan: PacingPlan, ftp: Double) -> [SegmentComparison] {
+    /*    private func compareSegments(dataPoints: [FITDataPoint], plan: PacingPlan, ftp: Double) -> [SegmentComparison] {
+     var comparisons: [SegmentComparison] = []
+     var currentIndex = 0
+     
+     for (segmentIndex, segment) in plan.segments.enumerated() {
+     let segmentDuration = segment.estimatedTime
+     let segmentPoints = dataPoints[currentIndex..<min(currentIndex + Int(segmentDuration), dataPoints.count)]
+     
+     guard !segmentPoints.isEmpty else { continue }
+     
+     let actualPowers = segmentPoints.compactMap { $0.power }
+     let actualAvgPower = actualPowers.isEmpty ? 0 : actualPowers.reduce(0, +) / Double(actualPowers.count)
+     let plannedPower = segment.targetPower
+     let deviation = ((actualAvgPower - plannedPower) / plannedPower) * 100
+     let actualTime = Double(segmentPoints.count)
+     let timeDiff = actualTime - segmentDuration
+     let segmentName = "Segment \(segmentIndex + 1)"
+     
+     comparisons.append(SegmentComparison(
+     id: UUID(),
+     segmentName: segmentName,
+     plannedPower: plannedPower,
+     actualPower: actualAvgPower,
+     deviation: deviation,
+     plannedTime: segmentDuration,
+     actualTime: actualTime,
+     timeDifference: timeDiff
+     ))
+     
+     currentIndex += Int(segmentDuration)
+     }
+     
+     return comparisons
+     }*/
+    
+    private func compareSegments(dataPoints: [FITDataPoint], plan: PacingPlan, ftp: Double) -> [SegmentComparison] {
         var comparisons: [SegmentComparison] = []
-        var currentIndex = 0
+        
+        // Get all data points that have a distance value
+        let validDataPoints = dataPoints.filter { $0.distance != nil }
+        guard !validDataPoints.isEmpty else { return [] }
         
         for (segmentIndex, segment) in plan.segments.enumerated() {
-            let segmentDuration = segment.estimatedTime
-            let segmentPoints = dataPoints[currentIndex..<min(currentIndex + Int(segmentDuration), dataPoints.count)]
+            // Get the immutable distance boundaries from the *plan*
+            let startDistance = segment.originalSegment.startPoint.distance
+            let endDistance = segment.originalSegment.endPoint.distance
             
-            guard !segmentPoints.isEmpty else { continue }
+            // Find all *actual ride* data points that fall within this exact distance range
+            let segmentPoints = validDataPoints.filter {
+                let dist = $0.distance! // We know this is non-nil from the filter above
+                return dist >= startDistance && dist <= endDistance
+            }
             
+            guard !segmentPoints.isEmpty, let firstPoint = segmentPoints.first, let lastPoint = segmentPoints.last else {
+                continue
+            }
+            
+            // Now, analyze the *actual* performance for this *exact* segment of road
             let actualPowers = segmentPoints.compactMap { $0.power }
             let actualAvgPower = actualPowers.isEmpty ? 0 : actualPowers.reduce(0, +) / Double(actualPowers.count)
+            
+            // Calculate actual time spent in this distance segment
+            let actualTime = lastPoint.timestamp.timeIntervalSince(firstPoint.timestamp)
+            
             let plannedPower = segment.targetPower
+            let plannedTime = segment.estimatedTime // This is in seconds
+            
             let deviation = ((actualAvgPower - plannedPower) / plannedPower) * 100
-            let actualTime = Double(segmentPoints.count)
-            let timeDiff = actualTime - segmentDuration
-            let segmentName = "Segment \(segmentIndex + 1)"
-
+            let timeDiff = actualTime - plannedTime // Negative = faster than plan
+            
+            // Use the segment name from the plan for a clear title
+            let segmentName = "Segment \(segmentIndex + 1): \(segment.strategy)"
+            
             comparisons.append(SegmentComparison(
                 id: UUID(),
                 segmentName: segmentName,
                 plannedPower: plannedPower,
                 actualPower: actualAvgPower,
                 deviation: deviation,
-                plannedTime: segmentDuration,
+                plannedTime: plannedTime,
                 actualTime: actualTime,
                 timeDifference: timeDiff
             ))
-            
-            currentIndex += Int(segmentDuration)
         }
         
         return comparisons
-    }*/
-
-        private func compareSegments(dataPoints: [FITDataPoint], plan: PacingPlan, ftp: Double) -> [SegmentComparison] {
-            var comparisons: [SegmentComparison] = []
-
-            // Get all data points that have a distance value
-            let validDataPoints = dataPoints.filter { $0.distance != nil }
-            guard !validDataPoints.isEmpty else { return [] }
-
-            for (segmentIndex, segment) in plan.segments.enumerated() {
-                // Get the immutable distance boundaries from the *plan*
-                let startDistance = segment.originalSegment.startPoint.distance
-                let endDistance = segment.originalSegment.endPoint.distance
-
-                // Find all *actual ride* data points that fall within this exact distance range
-                let segmentPoints = validDataPoints.filter {
-                    let dist = $0.distance! // We know this is non-nil from the filter above
-                    return dist >= startDistance && dist <= endDistance
-                }
-
-                guard !segmentPoints.isEmpty, let firstPoint = segmentPoints.first, let lastPoint = segmentPoints.last else {
-                    continue
-                }
-
-                // Now, analyze the *actual* performance for this *exact* segment of road
-                let actualPowers = segmentPoints.compactMap { $0.power }
-                let actualAvgPower = actualPowers.isEmpty ? 0 : actualPowers.reduce(0, +) / Double(actualPowers.count)
-                
-                // Calculate actual time spent in this distance segment
-                let actualTime = lastPoint.timestamp.timeIntervalSince(firstPoint.timestamp)
-
-                let plannedPower = segment.targetPower
-                let plannedTime = segment.estimatedTime // This is in seconds
-                
-                let deviation = ((actualAvgPower - plannedPower) / plannedPower) * 100
-                let timeDiff = actualTime - plannedTime // Negative = faster than plan
-                
-                // Use the segment name from the plan for a clear title
-                let segmentName = "Segment \(segmentIndex + 1): \(segment.strategy)"
-
-                comparisons.append(SegmentComparison(
-                    id: UUID(),
-                    segmentName: segmentName,
-                    plannedPower: plannedPower,
-                    actualPower: actualAvgPower,
-                    deviation: deviation,
-                    plannedTime: plannedTime,
-                    actualTime: actualTime,
-                    timeDifference: timeDiff
-                ))
-            }
-            
-            return comparisons
-        }
-
+    }
+    
     
     private func calculateOverallDeviation(comparisons: [SegmentComparison]) -> Double {
         guard !comparisons.isEmpty else { return 0 }
@@ -2109,7 +2149,7 @@ class RideFileAnalyzer {
         }
         
         return PowerZoneDistribution(zone1Time: z1, zone2Time: z2, zone3Time: z3, zone4Time: z4,
-                                    zone5Time: z5, zone6Time: z6, zone7Time: z7)
+                                     zone5Time: z5, zone6Time: z6, zone7Time: z7)
     }
     
     // MARK: - Performance Score
@@ -2185,7 +2225,7 @@ class RideFileAnalyzer {
                 title: "Stopped Time: \(stoppedMinutes) minutes",
                 description: "You were stopped for \(String(format: "%.0f%%", stoppedPercentage)) of your ride. This is typical for \(stoppedPercentage > 20 ? "urban riding with traffic" : "occasional stops").",
                 recommendation: stoppedPercentage > 20 ?
-                    "Consider route alternatives with fewer stops to improve training efficiency, or embrace this as urban riding reality." :
+                "Consider route alternatives with fewer stops to improve training efficiency, or embrace this as urban riding reality." :
                     "Your stop time is minimal - good route planning!"
             ))
         }
@@ -2199,13 +2239,13 @@ class RideFileAnalyzer {
                 title: "Excellent Pacing Discipline",
                 description: "You maintained \(Int(consistency))% pacing consistency. This shows great discipline and energy management.",
                 recommendation: rideCharacteristics.rideType == .steady ?
-                    "This steady approach is perfect for building aerobic endurance. Continue this for base training." :
+                "This steady approach is perfect for building aerobic endurance. Continue this for base training." :
                     "Impressive consistency given the variable nature of your ride!"
             ))
         } else if consistency < 60 {
             let reason = rideCharacteristics.rideType == .urban ?
-                "This is partly due to the stop-and-go nature of your route" :
-                "indicating frequent power fluctuations"
+            "This is partly due to the stop-and-go nature of your route" :
+            "indicating frequent power fluctuations"
             
             insights.append(RideInsight(
                 id: UUID(),
@@ -2214,7 +2254,7 @@ class RideFileAnalyzer {
                 title: "Inconsistent Pacing Detected",
                 description: "Pacing consistency was only \(Int(consistency))%, \(reason).",
                 recommendation: rideCharacteristics.rideType == .urban ?
-                    "For urban rides, focus on smooth restarts and steady effort between stops rather than aggressive accelerations." :
+                "For urban rides, focus on smooth restarts and steady effort between stops rather than aggressive accelerations." :
                     "Focus on maintaining steady power output. Use a power target and avoid responding to every terrain change."
             ))
         }
@@ -2228,7 +2268,7 @@ class RideFileAnalyzer {
                 title: "High Power Variability",
                 description: "Power variability of \(Int(variability))% suggests frequent surges and drops. VI of \(String(format: "%.2f", rideCharacteristics.averageToNormalizedRatio)) indicates an unsteady effort.",
                 recommendation: rideCharacteristics.rideType == .intervals ?
-                    "This is expected for interval training, but ensure recovery between efforts is truly easy." :
+                "This is expected for interval training, but ensure recovery between efforts is truly easy." :
                     "Smooth out your power - each surge has a metabolic cost. Aim for VI < 1.05 for steady rides."
             ))
         }
@@ -2242,7 +2282,7 @@ class RideFileAnalyzer {
                 title: "Frequent Hard Accelerations",
                 description: "Detected \(rideCharacteristics.accelerationCount) significant accelerations. Each costs energy without proportional speed gains.",
                 recommendation: rideCharacteristics.rideType == .urban ?
-                    "In urban riding, minimize your acceleration effort - start smoothly in easier gears and build speed gradually." :
+                "In urban riding, minimize your acceleration effort - start smoothly in easier gears and build speed gradually." :
                     "Anticipate terrain changes and maintain momentum rather than repeatedly accelerating from low speeds."
             ))
         }
@@ -2272,7 +2312,7 @@ class RideFileAnalyzer {
                 title: earlyFatigue ? "Early Fatigue Detected" : "Fatigue in Late Ride",
                 description: "Power output declined significantly after \(minutes) minutes of moving time.",
                 recommendation: earlyFatigue ?
-                    "Starting too hard leads to premature fatigue. The first 20% of your ride should feel too easy - this conservative start pays huge dividends." :
+                "Starting too hard leads to premature fatigue. The first 20% of your ride should feel too easy - this conservative start pays huge dividends." :
                     "Fatigue in the latter portion is normal for long rides. Consider fueling strategy and maintaining consistent hydration."
             ))
         }
@@ -2286,7 +2326,7 @@ class RideFileAnalyzer {
                 title: "Very High Intensity Effort",
                 description: "Intensity Factor of \(String(format: "%.2f", intensityFactor)) indicates race-level intensity. TSS per hour: \(Int((intensityFactor * intensityFactor) * 100)).",
                 recommendation: movingTime > 7200 ?
-                    "This intensity sustained for \(Int(movingTime/3600))+ hours is exceptional. Plan 2-3 days recovery." :
+                "This intensity sustained for \(Int(movingTime/3600))+ hours is exceptional. Plan 2-3 days recovery." :
                     "This effort level is sustainable for races but requires extended recovery. Plan easy rides for the next 48 hours."
             ))
         } else if intensityFactor > 0.95 {
@@ -2321,7 +2361,7 @@ class RideFileAnalyzer {
                 title: "Segment Execution Error",
                 description: "\(worstSegment.segmentName) was \(Int(abs(worstSegment.deviation)))% \(direction) relative to your plan.",
                 recommendation: worstSegment.deviation > 0 ?
-                    "Going too hard early compromises later performance. Practice starting conservatively and building into efforts." :
+                "Going too hard early compromises later performance. Practice starting conservatively and building into efforts." :
                     "Going easier than planned? Check if FTP is set correctly or if you're adequately recovered."
             ))
         }
@@ -2361,7 +2401,7 @@ class RideFileAnalyzer {
             return (categoryOrder[insight1.category] ?? 5) < (categoryOrder[insight2.category] ?? 5)
         }
     }
-
+    
     private func rideTypeDescription(for type: RideType, characteristics: RideCharacteristics) -> String {
         switch type {
         case .steady:
@@ -2374,7 +2414,7 @@ class RideFileAnalyzer {
             return "Mixed terrain ride with varied efforts. This develops all-around cycling fitness."
         }
     }
-
+    
     private func rideTypeRecommendation(for type: RideType) -> String {
         switch type {
         case .steady:
@@ -2395,7 +2435,7 @@ class RideFileAnalyzer {
         let minutes = Int(seconds / 60)
         return "\(minutes)min"
     }
-
+    
     private func formatDurationDetailed(_ seconds: TimeInterval) -> String {
         let minutes = Int(seconds / 60)
         let secs = Int(seconds.truncatingRemainder(dividingBy: 60))
@@ -2404,7 +2444,7 @@ class RideFileAnalyzer {
         }
         return "\(secs)s"
     }
-
+    
     private func calculateDuration(dataPoints: [FITDataPoint]) -> TimeInterval {
         guard let first = dataPoints.first, let last = dataPoints.last else { return 0 }
         return last.timestamp.timeIntervalSince(first.timestamp)
@@ -2436,7 +2476,7 @@ class RideFileAnalyzer {
                 speedUnit: "mph",
                 elevation: 0,
                 elevationUnit: "ft",
-                startCoordinate: nil, 
+                startCoordinate: nil,
                 endCoordinate: nil,
                 routeBreadcrumbs: nil
             ),
@@ -2467,10 +2507,78 @@ class RideFileAnalyzer {
             powerZoneDistribution: PowerZoneDistribution(
                 zone1Time: 0, zone2Time: 0, zone3Time: 0, zone4Time: 0,
                 zone5Time: 0, zone6Time: 0, zone7Time: 0
-            )
+            ),
+            averageHeartRate: nil,
+            powerGraphData: nil,
+            heartRateGraphData: nil,
+            elevationGraphData: nil // <-- FIX: Add the missing property
         )
     }
+    
+    // MARK: - Graphing Data
+    
+    // MARK: - Graphing Data
+        
+    func generateGraphData(dataPoints: [FITDataPoint], targetPoints: Int = 200) -> (power: [GraphableDataPoint]?, hr: [GraphableDataPoint]?, elevation: [GraphableDataPoint]?) {
+        
+        guard !dataPoints.isEmpty else {
+            return (nil, nil, nil) // <-- FIX: Return 3 nils
+        }
+        
+        let firstTimestamp = dataPoints.first!.timestamp
+        var powerGraphData: [GraphableDataPoint] = []
+        var hrGraphData: [GraphableDataPoint] = []
+        var elevationGraphData: [GraphableDataPoint] = [] // <-- ADD THIS
+        
+        // If data is already small, just convert it
+        guard dataPoints.count > targetPoints else {
+            let powerData = dataPoints.compactMap { $0.power != nil ? GraphableDataPoint(time: $0.timestamp.timeIntervalSince(firstTimestamp), value: $0.power!) : nil }
+            let hrData = dataPoints.compactMap { $0.heartRate != nil ? GraphableDataPoint(time: $0.timestamp.timeIntervalSince(firstTimestamp), value: Double($0.heartRate!)) : nil }
+            let elevationData = dataPoints.compactMap { $0.altitude != nil ? GraphableDataPoint(time: $0.timestamp.timeIntervalSince(firstTimestamp), value: $0.altitude!) : nil } // <-- ADD
+            return (powerData.isEmpty ? nil : powerData, hrData.isEmpty ? nil : hrData, elevationData.isEmpty ? nil : elevationData) // <-- FIX: Return 3 values
+        }
+        
+        // Downsample by averaging into buckets
+        let bucketSize = dataPoints.count / targetPoints
+        
+        for i in 0..<targetPoints {
+            let startIndex = i * bucketSize
+            let endIndex = min((i + 1) * bucketSize, dataPoints.count)
+            let bucket = dataPoints[startIndex..<endIndex]
+            
+            guard !bucket.isEmpty else { continue }
+            
+            // Calculate average time for this bucket
+            let avgTime = bucket.map { $0.timestamp.timeIntervalSince(firstTimestamp) }.reduce(0, +) / Double(bucket.count)
+            
+            // Calculate average power
+            let bucketPowers = bucket.compactMap { $0.power }
+            if !bucketPowers.isEmpty {
+                let avgPower = bucketPowers.reduce(0, +) / Double(bucketPowers.count)
+                powerGraphData.append(GraphableDataPoint(time: avgTime, value: avgPower))
+            }
+            
+            // Calculate average HR
+            let bucketHRs = bucket.compactMap { $0.heartRate }
+            if !bucketHRs.isEmpty {
+                let avgHR = bucketHRs.map { Double($0) }.reduce(0, +) / Double(bucketHRs.count)
+                hrGraphData.append(GraphableDataPoint(time: avgTime, value: avgHR))
+            }
+            
+            // --- ADDED THIS BLOCK ---
+            // Calculate average elevation
+            let bucketElevations = bucket.compactMap { $0.altitude }
+            if !bucketElevations.isEmpty {
+                let avgElevation = bucketElevations.reduce(0, +) / Double(bucketElevations.count)
+                elevationGraphData.append(GraphableDataPoint(time: avgTime, value: avgElevation))
+            }
+            // --- END ADD ---
+        }
+        
+        return (powerGraphData.isEmpty ? nil : powerGraphData, hrGraphData.isEmpty ? nil : hrGraphData, elevationGraphData.isEmpty ? nil : elevationGraphData) // <-- FIX: Return 3 values
+    }
 }
+
 
 // MARK: - Extensions for Display
 
@@ -2906,7 +3014,7 @@ struct RideMetadata: Codable {
 
 // MARK: - CLLocationCoordinate2D Codable Extension
 
-extension CLLocationCoordinate2D: Codable {
+extension CLLocationCoordinate2D: @retroactive Codable {
     enum CodingKeys: String, CodingKey {
         case latitude
         case longitude

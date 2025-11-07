@@ -30,6 +30,8 @@ struct AppSettings: Codable, Equatable {
     // Traditional speed setting (only used when speedCalculationMethod == .averageSpeed)
     var averageSpeed: Double = 16.5 // stored in user's preferred units
     
+    var autoSyncWeightFromStrava: Bool = false 
+
     // Enhanced recommendation preferences
     var primaryRidingGoal: RidingGoal = .performance
     var temperatureTolerance: TemperatureTolerance = .neutral

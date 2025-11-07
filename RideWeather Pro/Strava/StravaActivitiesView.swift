@@ -379,7 +379,12 @@ class StravaActivitiesViewModel: ObservableObject {
                 
                 // Analyze using existing analyzer
                 let analyzer = RideFileAnalyzer(settings: weatherViewModel.settings) // ✅ PASS SETTINGS
- 
+                
+                // 1. Generate graph data and avg HR from the parsed FIT points
+                let (powerGraphData, hrGraphData, elevationGraphData) = analyzer.generateGraphData(dataPoints: dataPoints)
+                let heartRates = dataPoints.compactMap { $0.heartRate }
+                let averageHeartRate = heartRates.isEmpty ? nil : (Double(heartRates.reduce(0, +)) / Double(heartRates.count))
+                
                 var analysis = analyzer.analyzeRide(
                     dataPoints: dataPoints,
                     ftp: Double(weatherViewModel.settings.functionalThresholdPower),
@@ -387,7 +392,11 @@ class StravaActivitiesViewModel: ObservableObject {
                     plannedRide: nil,
                     isPreFiltered: true,
                     elapsedTimeOverride: elapsedTime,
-                    movingTimeOverride: movingTime
+                    movingTimeOverride: movingTime,
+                    averageHeartRate: averageHeartRate,     // <-- ADDED
+                    powerGraphData: powerGraphData,      // <-- ADDED
+                    heartRateGraphData: hrGraphData,
+                    elevationGraphData: elevationGraphData
                 )
                 
                 // Update the ride name to match Strava activity name
@@ -422,7 +431,11 @@ class StravaActivitiesViewModel: ObservableObject {
                     pacingErrors: analysis.pacingErrors,
                     performanceScore: analysis.performanceScore,
                     insights: analysis.insights,
-                    powerZoneDistribution: analysis.powerZoneDistribution
+                    powerZoneDistribution: analysis.powerZoneDistribution,
+                    averageHeartRate: averageHeartRate,     // <-- ADDED
+                    powerGraphData: powerGraphData,      // <-- ADDED
+                    heartRateGraphData: hrGraphData,
+                    elevationGraphData: elevationGraphData
                 )
                 
                 print("StravaImport: Analysis complete - Performance Score: \(analysis.performanceScore)")

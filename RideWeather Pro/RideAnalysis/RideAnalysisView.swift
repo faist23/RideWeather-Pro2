@@ -262,7 +262,32 @@ struct RideAnalysisView: View {
                             analysis: analysis,
                             source: viewModel.getRideSource(for: analysis)
                         )
-                             .id("top")  // ✅ ADD THIS
+                             .id("top")
+
+                        // Add the map card right here
+                        if let breadcrumbs = analysis.metadata?.routeBreadcrumbs, !breadcrumbs.isEmpty {
+                            RideRouteMapCard(
+                                routeBreadcrumbs: breadcrumbs,
+                                analysisID: analysis.id // <-- PASS THE ID HERE
+                            )
+                            .aspectRatio(1.6, contentMode: .fit) // Give it a nice landscape ratio
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+                        }
+                        
+                        // Add Heart Rate Graph
+                        if let hrData = analysis.heartRateGraphData, let avgHR = analysis.averageHeartRate, !hrData.isEmpty {
+                            HeartRateGraphCard(hrData: hrData,
+                                               avgHR: avgHR,
+                                               elevationData: analysis.elevationGraphData)
+                        }
+                        
+                        // Add Power Graph
+                        if let powerData = analysis.powerGraphData, !powerData.isEmpty {
+                            PowerGraphCard(powerData: powerData,
+                                           avgPower: analysis.averagePower,
+                                           elevationData: analysis.elevationGraphData)
+                        }
                         
                         // Performance Score Card
                         PerformanceScoreCard(analysis: analysis)
@@ -2108,10 +2133,18 @@ class RideAnalysisViewModel: ObservableObject {
     let storage = AnalysisStorageManager()
     private let settings: AppSettings  // 🔥 ADD THIS
 
-    init(settings: AppSettings = AppSettings()) {  // 🔥 UPDATE INIT
+    @MainActor  // Add this
+    init(settings: AppSettings = AppSettings()) {
         self.settings = settings
-        loadHistory()
-        self.analysisSources = AnalysisStorageManager().loadAllSources()
+    }
+
+    @MainActor
+    func loadInitialData() {
+        // This is safe to call from onAppear
+        if analysisHistory.isEmpty { // Only load if we haven't
+            loadHistory()
+            self.analysisSources = storage.loadAllSources()
+        }
     }
     
     // ✅ NEW: Get ride source for display
@@ -2160,13 +2193,28 @@ class RideAnalysisViewModel: ObservableObject {
                 
                 analysisStatus = "Analyzing performance..."
                 let analyzer = RideFileAnalyzer(settings: self.settings)
+
+                // 1. Generate graph data and avg HR *first*
+                let (powerGraphData, hrGraphData, elevationGraphData) = analyzer.generateGraphData(dataPoints: dataPoints)
+                let heartRates = dataPoints.compactMap { $0.heartRate }
+                let averageHeartRate = heartRates.isEmpty ? nil : (Double(heartRates.reduce(0, +)) / Double(heartRates.count))
+                
+                // 2. Call the original analyzeRide function
                 var analysis = analyzer.analyzeRide(
                     dataPoints: dataPoints,
                     ftp: ftp,
                     weight: weight,
-                    plannedRide: nil
+                    plannedRide: nil,
+                    // Pass the newly generated data to the analyzer
+                    averageHeartRate: averageHeartRate,
+                    powerGraphData: powerGraphData,
+                    heartRateGraphData: hrGraphData,
+                    elevationGraphData: elevationGraphData
                 )
-
+                
+                // 3. Update the ride name
+                analysis.rideName = fileNameWithoutExtension
+                
                 // ✅ NEW: Update the ride name to use the filename
                 analysis = RideAnalysis(
                     id: analysis.id,
@@ -2199,7 +2247,11 @@ class RideAnalysisViewModel: ObservableObject {
                     pacingErrors: analysis.pacingErrors,
                     performanceScore: analysis.performanceScore,
                     insights: analysis.insights,
-                    powerZoneDistribution: analysis.powerZoneDistribution
+                    powerZoneDistribution: analysis.powerZoneDistribution,
+                    averageHeartRate: analysis.averageHeartRate,
+                    powerGraphData: analysis.powerGraphData,
+                    heartRateGraphData: analysis.heartRateGraphData,
+                    elevationGraphData: analysis.elevationGraphData
                 )
                 
                 await MainActor.run {
