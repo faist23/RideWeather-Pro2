@@ -59,6 +59,12 @@ struct FuelingPlanTab: View {
             }
             .padding()
         }
+        .animatedBackground(
+            gradient: .fuelingPlanBackground,
+            showDecoration: true,
+            decorationColor: .white,
+            decorationIntensity: 0.06
+        )
         .sheet(isPresented: $showingExport) {
             ShareSheet(activityItems: [exportText])
         }
@@ -130,6 +136,12 @@ struct DetailedPacingPlanView: View {
                     }
                 }
             }
+            .animatedBackground(
+                gradient: .pacingPlanBackground,
+                showDecoration: true,
+                decorationColor: .white,
+                decorationIntensity: 0.06
+            )
             .sheet(isPresented: $showingExportOptions) {
                 ExportOptionsView(controller: controller, pacingPlan: pacing)
             }

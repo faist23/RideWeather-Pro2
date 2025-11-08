@@ -48,6 +48,12 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
                 analysisErrorView
             }
         }
+        .animatedBackground(
+             gradient: .analysisDashboardBackground,
+             showDecoration: true,
+             decorationColor: .white,
+             decorationIntensity: 0.06
+         )
         .task {
             // This task ONLY performs analysis now
             await performAnalysis()
@@ -55,29 +61,6 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
         .onChange(of: selectedDistance) { _, newDistance in
             guard let analysis = analysisResult else { return }
 
-/*            if let newDistance = newDistance {
-                // Hide weather cards
-                displayedAnnotations = []
-
-                // Compute red dot position only
-                let distanceInMeters = newDistance * (analysis.settings.units == .metric ? 1000 : 1609.34)
-                let newScrubCoord = coordinate(at: distanceInMeters, on: viewModel.routePoints)
-
-                withAnimation(.linear(duration: 0.1)) { // If the map still “twitches,” increase that duration slightly to 0.08 or 0.1
-                    scrubbingMarkerCoordinate = newScrubCoord
-                }
-
-                // Do NOT keep resetting mapCameraPosition
-            } else {
-                // Stop scrubbing
-                withAnimation {
-                    scrubbingMarkerCoordinate = nil
-                }
-                updateInitialAnnotations(for: analysis)
-                withAnimation(.smooth) {
-                    mapCameraPosition = fullRouteCameraPosition ?? mapCameraPosition
-                }
-            }*/
             if let newDistance = newDistance {
                 // hide cards
                 // (they’ll hide automatically now because scrubbingMarkerCoordinate != nil)
@@ -110,20 +93,20 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
             VStack(spacing: 16) {
                 ProgressView()
                     .scaleEffect(1.2)
-                    .tint(.blue)
+                    .tint(.white)
                 
                 Text("Analyzing Route")
                     .font(.headline)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.white) // instead of primary
                 
                 Text("Processing weather, terrain, and timing data")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.8)) // Changed for visibility
                     .multilineTextAlignment(.center)
             }
             .padding(32)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-            
+            .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 16)) // Made darker
+
             Spacer()
         }
         .padding()
@@ -946,6 +929,12 @@ struct OptimizedPacingPlanTab: View {
             }
             .padding()
         }
+        .animatedBackground(
+            gradient: .pacingPlanBackground,
+            showDecoration: true,
+            decorationColor: .white,
+            decorationIntensity: 0.06
+        )
         .onChange(of: viewModel.selectedPacingStrategy) { oldValue, newValue in
             // Reset intensity adjustment when strategy changes
             viewModel.intensityAdjustment = 0
@@ -979,11 +968,12 @@ struct OptimizedPacingPlanTab: View {
                 Label("Pacing Strategy", systemImage: "target")
                     .font(.headline)
                     .fontWeight(.semibold)
+                    .foregroundStyle(.white) // Better visibility
                 
                 Spacer()
             }
             
-            // Strategy Picker (iOS native)
+            // Strategy Picker
             Picker("Strategy", selection: $viewModel.selectedPacingStrategy) {
                 ForEach(PacingStrategy.allCases, id: \.self) { strategy in
                     Text(strategy.description)
@@ -996,7 +986,7 @@ struct OptimizedPacingPlanTab: View {
             // Strategy Description
             Text(strategyDescription(for: viewModel.selectedPacingStrategy))
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.9)) // Better visibility
                 .fixedSize(horizontal: false, vertical: true)
             
             // Status Message
@@ -1009,7 +999,7 @@ struct OptimizedPacingPlanTab: View {
                         .foregroundStyle(.blue)
                 }
                 .padding(12)
-                .background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                .background(.blue.opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
             }
             
             // Generate Button
@@ -1030,18 +1020,33 @@ struct OptimizedPacingPlanTab: View {
             .disabled(isGenerating || viewModel.isGeneratingAdvancedPlan)
             
             Divider()
+                .background(.white.opacity(0.3)) // Better visibility
             
             Stepper(
                 "Intensity Adjustment: \(viewModel.intensityAdjustment, specifier: "%.0f")%",
                 value: $viewModel.intensityAdjustment,
-                in: -20...20, // Allow adjusting +/- 20%
+                in: -20...20,
                 step: 1
             )
-            .disabled(viewModel.advancedController?.pacingPlan == nil) // Disable if no plan exists
-            
+            .foregroundStyle(.white) // Better visibility
+            .disabled(viewModel.advancedController?.pacingPlan == nil)
         }
         .padding(20)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.4),
+                    Color.black.opacity(0.3)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            ),
+            in: RoundedRectangle(cornerRadius: 16)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(.white.opacity(0.2), lineWidth: 1)
+        )
     }
     
     // MARK: - Helper Methods
@@ -1239,18 +1244,34 @@ struct PacingPlanLoadingCard: View {
             HStack {
                 ProgressView()
                     .controlSize(.regular)
+                    .tint(.white) // Changed for dark background
                 Text("Generating pacing plan...")
                     .font(.headline)
+                    .foregroundStyle(.white) // Changed for dark background
                 Spacer()
             }
             
             Text("Analyzing route segments and optimizing power distribution")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.8)) // Changed for dark background
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(20)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.4),
+                    Color.black.opacity(0.3)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            ),
+            in: RoundedRectangle(cornerRadius: 16)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(.white.opacity(0.2), lineWidth: 1)
+        )
     }
 }
 
@@ -1259,19 +1280,33 @@ struct EmptyPacingPlanCard: View {
         VStack(spacing: 16) {
             Image(systemName: "speedometer")
                 .font(.system(size: 48))
-                .foregroundStyle(.gray)
+                .foregroundStyle(.white.opacity(0.6)) // Changed for dark background
             
             Text("No Pacing Plan")
                 .font(.headline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white) // Changed for dark background
             
             Text("Generate a power-based pacing plan to optimize your ride performance")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.8)) // Changed for dark background
                 .multilineTextAlignment(.center)
         }
         .padding(32)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.4),
+                    Color.black.opacity(0.3)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            ),
+            in: RoundedRectangle(cornerRadius: 16)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(.white.opacity(0.2), lineWidth: 1)
+        )
     }
 }
 
@@ -1311,7 +1346,13 @@ struct UpdatedOptimizedExportTab: View {
             }
             .padding()
         }
-        .sheet(item: Binding<ShareableItem?>(
+        .animatedBackground(
+            gradient: .exportBackground,
+            showDecoration: true,
+            decorationColor: .white,
+            decorationIntensity: 0.06
+        )
+       .sheet(item: Binding<ShareableItem?>(
             get: { currentShareItem.map { ShareableItem(url: $0) } },
             set: { _ in currentShareItem = nil }
         )) { item in
@@ -1424,19 +1465,33 @@ struct UpdatedOptimizedExportTab: View {
         VStack(spacing: 16) {
             Image(systemName: "square.and.arrow.up.trianglebadge.exclamationmark")
                 .font(.system(size: 48))
-                .foregroundStyle(.gray)
+                .foregroundStyle(.white.opacity(0.6)) // Changed for dark background
             
             Text("No Workout to Export")
                 .font(.headline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white) // Changed for dark background
             
             Text("Generate a pacing plan first to create exportable workout files")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.8)) // Changed for dark background
                 .multilineTextAlignment(.center)
         }
         .padding(32)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.4),
+                    Color.black.opacity(0.3)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            ),
+            in: RoundedRectangle(cornerRadius: 16)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(.white.opacity(0.2), lineWidth: 1)
+        )
     }
     
     private var exportTipsCard: some View {
@@ -1692,16 +1747,16 @@ struct ErrorStateCard: View {
         VStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(.red)
+                .foregroundStyle(.red.opacity(0.9))
             
             VStack(spacing: 8) {
                 Text(title)
                     .font(.headline)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(.white) // Changed for dark background
                 
                 Text(message)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.8)) // Changed for dark background
                     .multilineTextAlignment(.center)
             }
             
@@ -1727,7 +1782,21 @@ struct ErrorStateCard: View {
             .disabled(isRetrying)
         }
         .padding(32)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.4),
+                    Color.black.opacity(0.3)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            ),
+            in: RoundedRectangle(cornerRadius: 16)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(.white.opacity(0.2), lineWidth: 1)
+        )
     }
 }
 

@@ -36,73 +36,71 @@ struct LiveWeatherView: View {
     
     var body: some View {
         NavigationStack {
-            ZStack {
-                backgroundGradient
-                    .ignoresSafeArea()
-                    .animation(.smooth(duration: 1.0), value: viewModel.displayWeather?.temp)
-                
-                BackgroundDecorationView()
-                
-                GeometryReader { geometry in
-                    ScrollView(.vertical, showsIndicators: false) {
-                        LazyVStack(spacing: 12) {
-                            headerView
-                                .offset(y: scrollOffset > 0 ? -scrollOffset * 0.7 : 0)
-                                .opacity(1 - (scrollOffset / 200).clamped(to: 0...1))
-                            
-                            if viewModel.isLoading && viewModel.displayWeather == nil {
-                                ModernShimmerView()
-                                    .transition(.opacity.combined(with: .scale))
-                            } else if let weatherData = viewModel.displayWeather {
-                                VStack(spacing: 12) {
-                                    HeroWeatherCard(weather: weatherData)
-                                        .environmentObject(viewModel)
-                                    
-                                    ModernHourlyForecastView(hourlyData: viewModel.hourlyForecast)
-                                        .environmentObject(viewModel)
-                                    
-                                    // ADD ANALYTICS SECTION HERE
-                                    if viewModel.shouldShowAnalytics {
-                                        ModernAnalyticsPreviewCard()
-                                            .environmentObject(viewModel)
-                                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                                    }
-                                    
-                                    EnhancedBikeRecommendationView(weather: weatherData)
-                                        .environmentObject(viewModel)
-                                    
-//                                    WeatherInsightsCard(weather: weatherData)
-//                                        .environmentObject(viewModel)
-                                    WeatherInsightsCard(weather: weatherData, insights: viewModel.enhancedInsights)
-                                        .environmentObject(viewModel)
-                                    .transition(.opacity.combined(with: .scale(scale: 0.95)))}
-                                
-                            } else if let errorMessage = viewModel.errorMessage {
-                                ModernErrorView(message: errorMessage) {
-                                    Task { await viewModel.refreshWeather() }
-                                }
+            GeometryReader { geometry in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(spacing: 12) {
+                        headerView
+                            .offset(y: scrollOffset > 0 ? -scrollOffset * 0.7 : 0)
+                            .opacity(1 - (scrollOffset / 200).clamped(to: 0...1))
+                        
+                        if viewModel.isLoading && viewModel.displayWeather == nil {
+                            ModernShimmerView()
                                 .transition(.opacity.combined(with: .scale))
+                        } else if let weatherData = viewModel.displayWeather {
+                            VStack(spacing: 12) {
+                                HeroWeatherCard(weather: weatherData)
+                                    .environmentObject(viewModel)
+                                
+                                ModernHourlyForecastView(hourlyData: viewModel.hourlyForecast)
+                                    .environmentObject(viewModel)
+                                
+                                if viewModel.shouldShowAnalytics {
+                                    ModernAnalyticsPreviewCard()
+                                        .environmentObject(viewModel)
+                                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                                }
+                                
+                                EnhancedBikeRecommendationView(weather: weatherData)
+                                    .environmentObject(viewModel)
+                                
+                                WeatherInsightsCard(weather: weatherData, insights: viewModel.enhancedInsights)
+                                    .environmentObject(viewModel)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
                             }
                             
-                            Color.clear.frame(height: 20)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 10)
-                        .background(
-                            GeometryReader { scrollGeometry in
-                                Color.clear
-                                    .preference(key: ScrollOffsetPreferenceKey.self, value: scrollGeometry.frame(in: .named("scroll")).minY)
+                        } else if let errorMessage = viewModel.errorMessage {
+                            ModernErrorView(message: errorMessage) {
+                                Task { await viewModel.refreshWeather() }
                             }
-                        )
+                            .transition(.opacity.combined(with: .scale))
+                        }
+                        
+                        Color.clear.frame(height: 20)
                     }
-                    .coordinateSpace(name: "scroll")
-                    .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                        scrollOffset = -value
-                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                    .background(
+                        GeometryReader { scrollGeometry in
+                            Color.clear
+                                .preference(key: ScrollOffsetPreferenceKey.self, value: scrollGeometry.frame(in: .named("scroll")).minY)
+                        }
+                    )
                 }
-                .refreshable {
-                    await viewModel.refreshWeather()
+                .coordinateSpace(name: "scroll")
+                .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                    scrollOffset = -value
                 }
+            }
+            .animatedBackground(
+                gradient: .cyclingBackground(
+                    temperature: viewModel.displayWeather?.temp,
+                    rideDate: viewModel.rideDate
+                ),
+                decorationColor: .white,
+                decorationIntensity: 0.05
+            )
+            .refreshable {
+                await viewModel.refreshWeather()
             }
             .navigationTitle("Live Weather")
             .navigationBarTitleDisplayMode(.inline)
@@ -128,7 +126,6 @@ struct LiveWeatherView: View {
                 SettingsView()
                     .environmentObject(viewModel)
             }
-            // ADD ANALYTICS SHEET HERE
             .sheet(isPresented: $viewModel.showingAnalytics) {
                 AnalyticsDashboardView(hourlyData: viewModel.hourlyForecasts)
                     .environmentObject(viewModel)

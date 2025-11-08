@@ -109,7 +109,13 @@ struct TrainingLoadView: View {
                     syncingOverlay
                 }
             }
-            .sheet(isPresented: $showingExplanation) {
+            .animatedBackground(
+                gradient: .pacingPlanBackground,
+                showDecoration: true,
+                decorationColor: .white,
+                decorationIntensity: 0.06
+            )
+           .sheet(isPresented: $showingExplanation) {
                 TrainingLoadExplanationView()
             }
             .onAppear {

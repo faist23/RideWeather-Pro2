@@ -109,7 +109,11 @@ struct AnalyticsDashboardView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 100)
             }
-            .background(backgroundGradient.ignoresSafeArea())
+            .animatedBackground(
+                gradient: .analyticsBackground,
+                decorationColor: .white,
+                decorationIntensity: 0.05
+            )
             .navigationTitle("Weather Analytics")
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
@@ -235,130 +239,7 @@ struct AnalyticsDashboardView: View {
         .padding(20)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
     }
-    
- /*   private var mainChart: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Label("\(selectedMetric.rawValue) Trends", systemImage: selectedMetric.icon)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.white)
-                Spacer()
-            }
-            
-            if selectedForecast == nil {
-                Text("Tap or drag on the chart to see details")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.6))
-                    .frame(height: 60, alignment: .center)
-                    .frame(maxWidth: .infinity)
-                    .transition(.opacity)
-            } else {
-                Spacer().frame(height: 60)
-            }
 
-            if #available(iOS 16.0, *), !filteredData.isEmpty {
-                let xDomain = (filteredData.first?.date ?? Date())...(filteredData.last?.date ?? Date())
-
-                Chart(filteredData, id: \.id) { hour in
-                    switch selectedMetric {
-                    case .comfort:
-                        // ✅ CHANGED: Pass idealTemp to comfort function
-                        AreaMark(x: .value("Time", hour.date), y: .value("Comfort", hour.enhancedCyclingComfort(using: viewModel.settings.units, idealTemp: viewModel.settings.idealTemperature, uvIndex: hour.uvIndex, aqi: hour.aqi) * 100))
-                            .foregroundStyle(.linearGradient(colors: [selectedMetric.color.opacity(0.8), selectedMetric.color.opacity(0.2)], startPoint: .top, endPoint: .bottom))
-
-                    case .temperature:
-                        LineMark(x: .value("Time", hour.date), y: .value("Temperature", hour.temp))
-                            .foregroundStyle(selectedMetric.color)
-                        LineMark(x: .value("Time", hour.date), y: .value("Feels Like", hour.feelsLike))
-                            .foregroundStyle(selectedMetric.color.opacity(0.7))
-                            .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 5]))
-                    case .wind:
-                        AreaMark(x: .value("Time", hour.date), y: .value("Wind Speed", hour.windSpeed))
-                            .foregroundStyle(.linearGradient(colors: [selectedMetric.color.opacity(0.8), selectedMetric.color.opacity(0.2)], startPoint: .top, endPoint: .bottom))
-                    case .precipitation:
-                        BarMark(x: .value("Time", hour.date), y: .value("Rain Chance", hour.pop * 100))
-                            .foregroundStyle(selectedMetric.color)
-                            .cornerRadius(2)
-                    case .optimal:
-                        // ✅ CHANGED: Pass idealTemp to comfort function
-                        AreaMark(x: .value("Time", hour.date), y: .value("Optimal Score", hour.enhancedCyclingComfort(using: viewModel.settings.units, idealTemp: viewModel.settings.idealTemperature, uvIndex: hour.uvIndex, aqi: hour.aqi) * 100))
-                            .foregroundStyle(.linearGradient(colors: [selectedMetric.color.opacity(0.8), selectedMetric.color.opacity(0.2)], startPoint: .top, endPoint: .bottom))
-                    }
-                    
-                    if let selectedForecast, selectedForecast.id == hour.id {
-                        RuleMark(x: .value("Selected", selectedForecast.date))
-                            .foregroundStyle(.white.opacity(0.6))
-                            .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
-                            .annotation(position: .top, alignment: .center, spacing: 10) {
-                                ScrubbingInfoCard(forecast: selectedForecast)
-                                    .environmentObject(viewModel)
-                            }
-                    }
-                }
-                .chartXScale(domain: xDomain)
-
-                .chartXScale(domain: xDomain)
-                .chartYScale(domain: {
-                    switch selectedMetric {
-                    case .temperature:
-                        let minVal = filteredData.map(\.temp).min() ?? 0
-                        let maxVal = max(filteredData.map(\.feelsLike).max() ?? 0, minVal + 10)
-                        return (Double(minVal - 5))...(Double(maxVal + 5))
-                    case .wind:
-                        let maxVal = filteredData.map(\.windSpeed).max() ?? 0
-                        return 0...(maxVal * 1.2)
-                    case .precipitation:
-                        return 0...100
-                    case .comfort, .optimal:
-                        return 0...100
-                    }
-                }())
-
-
-                .frame(height: 250)
-                .chartOverlay { proxy in
-                    GeometryReader { geometry in
-                        Rectangle().fill(.clear).contentShape(Rectangle())
-                            .gesture(
-                                DragGesture(minimumDistance: 0)
-                                    .onChanged { value in
-                                        findSelectedHour(at: value.location, proxy: proxy, geometry: geometry)
-                                    }
-                                    .onEnded { _ in
-                                        selectedForecast = nil
-                                    }
-                            )
-                    }
-                }
-                .chartXAxis {
-                    AxisMarks(values: .stride(by: .hour, count: xAxisStride)) { value in
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(.white.opacity(0.2))
-                        if let date = value.as(Date.self) {
-                            AxisValueLabel(date.formatted(date: .omitted, time: .shortened))
-                                .foregroundStyle(.white.opacity(0.8))
-                        }
-                    }
-                }
-                .chartYAxis {
-                    AxisMarks { value in
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(.white.opacity(0.2))
-                        AxisValueLabel()
-                            .foregroundStyle(.white.opacity(0.8))
-                    }
-                }
-                .animation(.smooth, value: selectedForecast?.id)
-            } else {
-                SimpleChartView(data: filteredData, metric: selectedMetric, color: selectedMetric.color)
-                    // ✅ CHANGED: Add the missing environmentObject to fix the error
-                    .environmentObject(viewModel)
-                    .frame(height: 250)
-            }
-        }
-        .padding(20)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.2), lineWidth: 1))
-    }*/
     // Add this new computed property to your view
     @ViewBuilder
     private var interactiveChart: some View {
@@ -627,8 +508,6 @@ struct AnalyticsDashboardView: View {
         LinearGradient(colors: [.blue.opacity(0.8), .indigo.opacity(0.6), .purple.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
     
-    // Add this new view anywhere inside AnalyticsDashboardView
-
     @ViewBuilder
     private var comfortScoreExplanation: some View {
         // This view only appears for relevant metrics

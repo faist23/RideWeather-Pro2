@@ -48,12 +48,6 @@ struct RouteForecastView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Background color for empty state
-                if currentView == .empty {
-                    Color(.systemGroupedBackground)
-                        .ignoresSafeArea()
-                }
-                
                 // Main content based on state
                 switch currentView {
                 case .empty:
@@ -75,12 +69,20 @@ struct RouteForecastView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
+            .animatedBackground(
+                gradient: currentView == .empty ? .routeBackground :
+                         LinearGradient(colors: [Color(.systemGroupedBackground)],
+                                      startPoint: .top,
+                                      endPoint: .bottom),
+                showDecoration: currentView == .empty, // Only show animation on empty state
+                decorationColor: .white,
+                decorationIntensity: 0.08 // Increased for better visibility on dark background
+            )
             .animation(.smooth, value: currentView)
             .navigationTitle("Route Forecast")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    // Show different toolbar items based on state
                     toolbarContent
                 }
             }
@@ -112,12 +114,12 @@ struct RouteForecastView: View {
             }
         }
     }
-    
+
     // MARK: - Empty State View
     
     private var emptyStateView: some View {
         ScrollView {
-            VStack(spacing: 32) {
+            LazyVStack(spacing: 32) {
                 Spacer()
                     .frame(height: 40)
                 
@@ -130,10 +132,11 @@ struct RouteForecastView: View {
                     
                     Text("Import Your Route")
                         .font(.title2.weight(.bold))
+                        .foregroundStyle(.white) // Change to white for visibility
                     
                     Text("Get weather forecasts and analytics for your cycling route")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.9)) // Change to white
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
                 }
@@ -150,11 +153,24 @@ struct RouteForecastView: View {
                             Text("Import GPX or FIT File")
                                 .font(.headline)
                         }
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
+                        .background(
+                            LinearGradient(
+                                colors: [.blue.opacity(0.8), .blue.opacity(0.6)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            in: RoundedRectangle(cornerRadius: 12)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(.white.opacity(0.3), lineWidth: 1)
+                        )
+                        .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
+                    .buttonStyle(.plain)
                     
                     // Strava import (if authenticated)
                     if stravaService.isAuthenticated {
@@ -169,11 +185,24 @@ struct RouteForecastView: View {
                                 Text("Import from Strava")
                                     .font(.headline)
                             }
+                            .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
+                            .background(
+                                LinearGradient(
+                                    colors: [.orange.opacity(0.9), .orange.opacity(0.7)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                in: RoundedRectangle(cornerRadius: 12)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(.white.opacity(0.3), lineWidth: 1)
+                            )
+                            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
                         }
-                        .buttonStyle(.bordered)
-                        .tint(.orange)
+                        .buttonStyle(.plain)
                     }
                     
                     // Wahoo import (if authenticated)
@@ -189,11 +218,24 @@ struct RouteForecastView: View {
                                 Text("Import from Wahoo")
                                     .font(.headline)
                             }
+                            .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
+                            .background(
+                                LinearGradient(
+                                    colors: [.blue.opacity(0.9), .cyan.opacity(0.7)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                in: RoundedRectangle(cornerRadius: 12)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(.white.opacity(0.3), lineWidth: 1)
+                            )
+                            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
                         }
-                        .buttonStyle(.bordered)
-                        .tint(.blue)
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 24)
@@ -209,7 +251,9 @@ struct RouteForecastView: View {
                 Spacer()
             }
         }
+        // Remove the old background color here - now handled by the parent
     }
+
     
     // MARK: - Route Loaded View
     
@@ -623,21 +667,36 @@ struct FeatureRow: View {
         HStack(spacing: 16) {
             Image(systemName: icon)
                 .font(.title2)
-                .foregroundStyle(.blue)
+                .foregroundStyle(.white)
                 .frame(width: 32)
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
                 
                 Text(description)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.9))
             }
             
             Spacer()
         }
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.4),
+                    Color.black.opacity(0.3)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            ),
+            in: RoundedRectangle(cornerRadius: 12)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(.white.opacity(0.2), lineWidth: 1)
+        )
     }
 }

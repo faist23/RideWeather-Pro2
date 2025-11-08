@@ -88,6 +88,12 @@ struct RideAnalysisView: View {
                     weight: weatherViewModel.settings.bodyWeight
                 )
             }
+            .animatedBackground(
+                 gradient: .rideAnalysisBackground,
+                 showDecoration: true,
+                 decorationColor: .white,
+                 decorationIntensity: 0.06
+             )
             .sheet(isPresented: $viewModel.showingHistory) {
                 RideHistoryView(viewModel: viewModel)
             }
