@@ -110,20 +110,36 @@ struct InteractiveWeatherChart: View {
     
     private var foregroundChartView: some View {
         Chart {
+            // Feels Like Line
             let validTempData = chartData.filter { !$0.feelsLike.isNaN && !$0.feelsLike.isInfinite }
-            ForEach(validTempData) { LineMark(x: .value("Distance", $0.distance), y: .value("Feels Like", $0.feelsLike)).foregroundStyle(.orange).lineStyle(StrokeStyle(lineWidth: 3.0)).symbol(.circle).symbolSize(50) }
-            
+            ForEach(validTempData) { LineMark(x: .value("Distance", $0.distance),
+                                              y: .value("Feels Like", $0.feelsLike))
+                .foregroundStyle(.orange)
+                .lineStyle(StrokeStyle(lineWidth: 3.0))
+                .symbol(.circle)
+                .symbolSize(50)
+            }
+
+            // Wind Area
             let validWindData = chartData.filter { !$0.wind.isNaN && !$0.wind.isInfinite && $0.wind >= 0 }
-            ForEach(validWindData) { AreaMark(x: .value("Distance", $0.distance), yStart: .value("Wind Start", 0), yEnd: .value("Wind End", $0.wind)).foregroundStyle(.cyan.opacity(0.3)) }
-            
+            ForEach(validWindData) { AreaMark(x: .value("Distance", $0.distance),
+                                              yStart: .value("Wind Start", 0),
+                                              yEnd: .value("Wind End", $0.wind))
+                .foregroundStyle(.cyan.opacity(0.3))
+            }
+
+            // Chance of Rain Bars
             let validRainData = chartData.filter { !$0.chanceOfRain.isNaN && !$0.chanceOfRain.isInfinite }
-            ForEach(validRainData) { BarMark(x: .value("Distance", $0.distance), y: .value("Chance of Rain", $0.chanceOfRain)).foregroundStyle(.blue.opacity(0.5)) }
-            
+            ForEach(validRainData) { BarMark(x: .value("Distance", $0.distance),
+                                             y: .value("Chance of Rain", $0.chanceOfRain))
+                .foregroundStyle(.blue.opacity(0.5))
+            }
+
+            // Vertical Rule for selected distance
             if let selectedDistance {
                 RuleMark(x: .value("Selected", selectedDistance))
                     .foregroundStyle(.secondary.opacity(0.8))
                     .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
-                // <-- remove the .annotation entirely
             }
         }
         .chartXScale(domain: sharedXDomain)
@@ -137,21 +153,46 @@ struct InteractiveWeatherChart: View {
             }
         }
         .chartYAxis {
-            // VISIBLE Leading Axis
             AxisMarks(position: .leading, values: .automatic(desiredCount: 5)) { value in
                 AxisGridLine()
                 AxisTick()
                 AxisValueLabel("\(Int(value.as(Double.self) ?? 0))")
             }
-            // INVISIBLE Trailing Axis (Spacer)
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 4)) {
                 AxisValueLabel().font(.caption2).foregroundStyle(.clear)
             }
         }
+        // Floating weather card overlay
         .chartOverlay { proxy in
-            chartInteractionOverlay(proxy: proxy)
+            GeometryReader { geometry in
+                ZStack(alignment: .topLeading) {
+                    Rectangle().fill(.clear).contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in
+                                    let x = value.location.x
+                                    if let distance: Double = proxy.value(atX: x) {
+                                        selectedDistance = max(sharedXDomain.lowerBound,
+                                                               min(sharedXDomain.upperBound, distance))
+                                    }
+                                }
+                                .onEnded { _ in selectedDistance = nil }
+                        )
+
+                    if let selectedDistance, let point = findClosestPoint(to: selectedDistance) {
+                        let xPos = proxy.position(forX: selectedDistance) ?? 0
+                        scrubbingPopover(for: point)
+                            .frame(maxWidth: 220) // wide enough for text
+                            .position(
+                                x: min(max(xPos, 110), geometry.size.width - 110), // prevent clipping
+                                y: geometry.size.height / 2 // vertically centered
+                            )
+                    }
+                }
+            }
         }
     }
+
     
     // MARK: - Data Preparation & Helpers
     
