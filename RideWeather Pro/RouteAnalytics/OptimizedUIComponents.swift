@@ -11,12 +11,20 @@ import MapKit
 
 struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     @EnvironmentObject var viewModel: WeatherViewModel
-//    @Environment(\.dismiss) private var dismiss
     @State private var selectedDistance: Double? = nil
     @State private var analysisResult: ComprehensiveRouteAnalysis? = nil
     @State private var isAnalyzing = true
 
+    @State private var lastScrubUpdate = Date()
+
     @State private var mapCameraPosition = MapCameraPosition.automatic
+    
+    // MARK: - New State for Map Control
+    @State private var displayedAnnotations: [RouteWeatherPoint] = []
+    @State private var scrubbingMarkerCoordinate: CLLocationCoordinate2D? = nil
+    
+    // MARK: - State for Full Route Camera
+    @State private var fullRouteCameraPosition: MapCameraPosition? = nil
     
     private var analytics: UnifiedRouteAnalyticsEngine {
         UnifiedRouteAnalyticsEngine(
@@ -31,7 +39,6 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     }
     
     var body: some View {
-        //        NavigationStack {
         Group {
             if isAnalyzing {
                 analysisLoadingView
@@ -41,19 +48,58 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
                 analysisErrorView
             }
         }
-        /*            .navigationTitle("Route Analysis")
-         .navigationBarTitleDisplayMode(.inline)
-         .toolbar {
-         ToolbarItem(placement: .topBarTrailing) {
-         Button("Done") {
-         dismiss()
-         }
-         .fontWeight(.medium)
-         }
-         }*/
         .task {
+            // This task ONLY performs analysis now
             await performAnalysis()
         }
+        .onChange(of: selectedDistance) { _, newDistance in
+            guard let analysis = analysisResult else { return }
+
+/*            if let newDistance = newDistance {
+                // Hide weather cards
+                displayedAnnotations = []
+
+                // Compute red dot position only
+                let distanceInMeters = newDistance * (analysis.settings.units == .metric ? 1000 : 1609.34)
+                let newScrubCoord = coordinate(at: distanceInMeters, on: viewModel.routePoints)
+
+                withAnimation(.linear(duration: 0.1)) { // If the map still “twitches,” increase that duration slightly to 0.08 or 0.1
+                    scrubbingMarkerCoordinate = newScrubCoord
+                }
+
+                // Do NOT keep resetting mapCameraPosition
+            } else {
+                // Stop scrubbing
+                withAnimation {
+                    scrubbingMarkerCoordinate = nil
+                }
+                updateInitialAnnotations(for: analysis)
+                withAnimation(.smooth) {
+                    mapCameraPosition = fullRouteCameraPosition ?? mapCameraPosition
+                }
+            }*/
+            if let newDistance = newDistance {
+                // hide cards
+                // (they’ll hide automatically now because scrubbingMarkerCoordinate != nil)
+
+                // throttle to ~20–30 fps
+                let now = Date()
+                if now.timeIntervalSince(lastScrubUpdate) < 0.033 { return }
+                lastScrubUpdate = now
+
+                let meters = newDistance * (analysis.settings.units == .metric ? 1000 : 1609.34)
+                if let newCoord = coordinate(at: meters, on: viewModel.routePoints) {
+                    // ⚠️ remove animations entirely — MapKit updates fast markers better without them
+                    scrubbingMarkerCoordinate = newCoord
+                }
+
+            } else {
+                // show cards again when done
+                scrubbingMarkerCoordinate = nil
+            }
+
+        }
+
     }
     
     // MARK: - Loading View
@@ -87,17 +133,25 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     // MARK: - Content View
     private func analysisContentView(_ analysis: ComprehensiveRouteAnalysis) -> some View {
         VStack(spacing: 0) {
-            // --- 1. THE MAP (NOW IN A ZSTACK) ---
             ZStack(alignment: .bottomTrailing) {
-                RouteMapView(cameraPosition: $mapCameraPosition)
-                    .environmentObject(viewModel)
-                    .frame(height: 280)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                // --- 1. THE MAP ---
+                RouteMapView(
+                    cameraPosition: $mapCameraPosition,
+                    routePolyline: viewModel.routePoints,
+                    displayedAnnotations: displayedAnnotations,
+                    scrubbingMarkerCoordinate: scrubbingMarkerCoordinate
+                )
+                .environmentObject(viewModel)
+                .frame(height: 280)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
                 
-                // --- 2. YOUR RE-CENTER BUTTON ---
+                // --- 2. RE-CENTER BUTTON (Modified) ---
                 Button(action: {
-                    withAnimation(.smooth) {
-                        viewModel.centerMapOnRoute(&mapCameraPosition)
+                    if let fullRoutePos = fullRouteCameraPosition {
+                        withAnimation(.smooth) {
+                            // Re-center to the stored full route position
+                            mapCameraPosition = fullRoutePos
+                        }
                     }
                 }) {
                     Image(systemName: "scope")
@@ -106,19 +160,17 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
                         .padding(10)
                         .background(.regularMaterial, in: Circle())
                 }
-                .padding(10) // Padding to lift it from the corner
+                .padding(10)
             }
             .padding(.horizontal)
             .padding(.top)
             
-            // 3. THE SCROLLVIEW WITH CARDS
+            // ... (ScrollView with cards is unchanged) ...
             ScrollView {
                 LazyVStack(spacing: 20) {
                     RouteInfoCardView(viewModel: viewModel)
-                    // Hero Section - Overall Score
                     OptimizedOverallScoreCard(analysis: analysis, settings: viewModel.settings)
                     
-                    // Power Metrics (if available)
                     if let powerResult = analysis.powerAnalysis {
                         OptimizedPowerMetricsCard(
                             normalizedPower: powerResult.powerDistribution.normalizedPower,
@@ -127,7 +179,6 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
                         )
                     }
                     
-                    // Interactive Weather Chart
                     InteractiveWeatherChart(
                         weatherPoints: analysis.weatherPoints,
                         units: analysis.settings.units,
@@ -135,17 +186,14 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
                         selectedDistance: $selectedDistance
                     )
                     
-                    // Critical Recommendations
                     if !analysis.unifiedRecommendations.isEmpty {
                         OptimizedRecommendationsSection(recommendations: analysis.unifiedRecommendations)
                     }
                     
-                    // Better Start Times
                     if !analysis.betterStartTimes.isEmpty {
                         OptimizedStartTimesSection(times: analysis.betterStartTimes)
                     }
                     
-                    // Advanced Features Integration
                     if !viewModel.routePoints.isEmpty || !viewModel.isPowerBasedAnalysisEnabled {
                         OptimizedAdvancedFeaturesCard(viewModel: viewModel)
                     }
@@ -155,55 +203,12 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
                 .padding(.top, 20)
             }
         }
-        //        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .refreshable {
             await performAnalysis()
         }
-        .task {
-            // Auto-center the map on the route when view appears
-            viewModel.centerMapOnRoute(&mapCameraPosition)
-        }
-        
-        .onChange(of: selectedDistance) { _, newDistance in
-            // Use the 'analysis' object captured by analysisContentView
-            guard let analysis = analysisResult else { return }
-            
-            if let newDistance = newDistance {
-                // --- USER IS SCRUBBING ---
-                
-                // 1. Get the conversion factor from the analysis settings
-                let units = analysis.settings.units
-                let conversionFactor = (units == .metric ? 1000.0 : 1609.34)
-                
-                // 2. Convert the chart's distance (km/mi) back to METERS
-                let distanceInMeters = newDistance * conversionFactor
-                
-                // 3. Find the closest point in analysis.weatherPoints (which uses meters)
-                let closestPoint = analysis.weatherPoints.min(by: {
-                    abs($0.distance - distanceInMeters) < abs($1.distance - distanceInMeters)
-                })
-                
-                if let coordinate = closestPoint?.coordinate {
-                    // 4. Animate the map camera to the new position
-                    withAnimation(.smooth) {
-                        mapCameraPosition = .camera(
-                            MapCamera(
-                                centerCoordinate: coordinate,
-                                // 5. Set a fixed zoom level (e.g., 2000 meters) to zoom in
-                                distance: 2000,
-                                heading: mapCameraPosition.camera?.heading ?? 0,
-                                // Add a slight pitch for a 3D effect
-                                pitch: mapCameraPosition.camera?.pitch ?? 45
-                            )
-                        )
-                    }
-                }
-            } else {
-                // --- USER STOPPED SCRUBBING (newDistance is nil) ---
-                // Auto-reset the map to the full route view
-                withAnimation(.smooth) {
-                    viewModel.centerMapOnRoute(&mapCameraPosition)
-                }
+        .onAppear {
+            if fullRouteCameraPosition == nil {
+                centerMapOnRoute()
             }
         }
     }
@@ -222,17 +227,166 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     @MainActor
     private func performAnalysis() async {
         isAnalyzing = true
-        
-        // Simulate processing time for better UX
-        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-        
+        fullRouteCameraPosition = nil
+        try? await Task.sleep(nanoseconds: 500_000_000)
         analysisResult = analytics.comprehensiveAnalysis
+        
+        if let analysis = analysisResult {
+            updateInitialAnnotations(for: analysis)
+        }
         
         withAnimation(.easeInOut(duration: 0.3)) {
             isAnalyzing = false
         }
+        
+        centerMapOnRoute()
+    }
+    
+    /// Sets the initial map annotations to just Start, Middle, and End
+    private func updateInitialAnnotations(for analysis: ComprehensiveRouteAnalysis) {
+        let points = analysis.weatherPoints
+        guard !points.isEmpty else {
+            displayedAnnotations = []
+            return
+        }
+        
+        var initialAnnotations: [RouteWeatherPoint] = []
+        
+        if let first = points.first {
+            initialAnnotations.append(first)
+        }
+        
+        if points.count > 2 {
+            let middleIndex = points.count / 2
+            initialAnnotations.append(points[middleIndex])
+        }
+        
+        if let last = points.last, !initialAnnotations.contains(where: { $0.id == last.id }) {
+            initialAnnotations.append(last)
+        }
+        
+        withAnimation {
+            displayedAnnotations = initialAnnotations
+        }
+    }
+    
+    /// Returns the precise on-route coordinate for a given distance in meters.
+    /// Includes great-circle interpolation and auto-snap correction for data gaps.
+    private func coordinate(at distanceMeters: Double,
+                            on polyline: [CLLocationCoordinate2D]) -> CLLocationCoordinate2D? {
+        guard polyline.count > 1 else { return polyline.first }
+
+        var cumulative: Double = 0
+        var interpolated: CLLocationCoordinate2D? = nil
+
+        for i in 0..<(polyline.count - 1) {
+            let a = polyline[i]
+            let b = polyline[i + 1]
+
+            let aLoc = CLLocation(latitude: a.latitude, longitude: a.longitude)
+            let bLoc = CLLocation(latitude: b.latitude, longitude: b.longitude)
+            let segment = bLoc.distance(from: aLoc)
+            if segment == 0 { continue }
+
+            if cumulative + segment >= distanceMeters {
+                let remaining = distanceMeters - cumulative
+                let t = max(0, min(1, remaining / segment))
+
+                // --- Great-circle interpolation (geodesic) ---
+                let lat1 = a.latitude * .pi / 180
+                let lon1 = a.longitude * .pi / 180
+                let lat2 = b.latitude * .pi / 180
+                let lon2 = b.longitude * .pi / 180
+
+                let d = 2 * asin(sqrt(pow(sin((lat2 - lat1)/2), 2)
+                                     + cos(lat1) * cos(lat2) * pow(sin((lon2 - lon1)/2), 2)))
+                if d == 0 {
+                    interpolated = a
+                    break
+                }
+
+                let A = sin((1 - t) * d) / sin(d)
+                let B = sin(t * d) / sin(d)
+
+                let x = A * cos(lat1) * cos(lon1) + B * cos(lat2) * cos(lon2)
+                let y = A * cos(lat1) * sin(lon1) + B * cos(lat2) * sin(lon2)
+                let z = A * sin(lat1) + B * sin(lat2)
+
+                let newLat = atan2(z, sqrt(x * x + y * y))
+                let newLon = atan2(y, x)
+
+                interpolated = CLLocationCoordinate2D(
+                    latitude: newLat * 180 / .pi,
+                    longitude: newLon * 180 / .pi
+                )
+                break
+            }
+
+            cumulative += segment
+        }
+
+        guard let coord = interpolated ?? polyline.last else { return polyline.last }
+
+        // --- Optional off-path correction built-in ---
+        let coordLoc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+        var nearest = polyline.first!
+        var nearestDist = coordLoc.distance(
+            from: CLLocation(latitude: nearest.latitude, longitude: nearest.longitude)
+        )
+
+        for point in polyline {
+            let d = coordLoc.distance(
+                from: CLLocation(latitude: point.latitude, longitude: point.longitude)
+            )
+            if d < nearestDist {
+                nearest = point
+                nearestDist = d
+            }
+        }
+
+        // Snap if >15 m away from actual route vertex
+        if nearestDist > 15 {
+            return nearest
+        } else {
+            return coord
+        }
+    }
+
+    // MARK: - NEW HELPER: Map Centering
+    
+    /// Calculates and sets the camera position to fit the entire route.
+    /// This is adapted from the helper in `RouteForecastView`.
+    private func centerMapOnRoute() {
+        guard !viewModel.routePoints.isEmpty else { return }
+        
+        let coords = viewModel.routePoints
+        let minLat = coords.map(\.latitude).min() ?? 0
+        let maxLat = coords.map(\.latitude).max() ?? 0
+        let minLon = coords.map(\.longitude).min() ?? 0
+        let maxLon = coords.map(\.longitude).max() ?? 0
+        
+        let center = CLLocationCoordinate2D(
+            latitude: (minLat + maxLat) / 2.0,
+            longitude: (minLon + maxLon) / 2.0
+        )
+        
+        let span = MKCoordinateSpan(
+            latitudeDelta: max(abs(maxLat - minLat) * 1.4, 0.01), // 1.4x padding
+            longitudeDelta: max(abs(maxLon - minLon) * 1.4, 0.01) // 1.4x padding
+        )
+        
+        // In this view, the map is at the top, so no vertical offset is needed.
+        let region = MKCoordinateRegion(center: center, span: span)
+        
+        let newCameraPos = MapCameraPosition.region(region)
+        
+        // Set both the current position and the stored "full route" position
+        self.mapCameraPosition = newCameraPos
+        self.fullRouteCameraPosition = newCameraPos
     }
 }
+
+
 
 // MARK: - Optimized Overall Score Card
 
@@ -685,7 +839,7 @@ struct OptimizedAdvancedFeaturesCard: View {
         }
         .sheet(isPresented: $showingAdvancedFeatures) {
             OptimizedAdvancedCyclingTabView(viewModel: viewModel)
-//            RideAnalysisTabView(viewModel: viewModel)
+            //            RideAnalysisTabView(viewModel: viewModel)
         }
     }
 }
@@ -816,7 +970,7 @@ struct OptimizedPacingPlanTab: View {
             }
         }
     }
-        
+    
     // MARK: - Strategy Selection Card
     
     private var strategySelectionCard: some View {
@@ -876,7 +1030,7 @@ struct OptimizedPacingPlanTab: View {
             .disabled(isGenerating || viewModel.isGeneratingAdvancedPlan)
             
             Divider()
-
+            
             Stepper(
                 "Intensity Adjustment: \(viewModel.intensityAdjustment, specifier: "%.0f")%",
                 value: $viewModel.intensityAdjustment,
@@ -884,7 +1038,7 @@ struct OptimizedPacingPlanTab: View {
                 step: 1
             )
             .disabled(viewModel.advancedController?.pacingPlan == nil) // Disable if no plan exists
-
+            
         }
         .padding(20)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
@@ -902,7 +1056,7 @@ struct OptimizedPacingPlanTab: View {
             strategy: viewModel.selectedPacingStrategy,  // Use viewModel property
             startTime: viewModel.rideDate,
         )
-
+        
         isGenerating = false
     }
     
@@ -1121,19 +1275,19 @@ struct EmptyPacingPlanCard: View {
     }
 }
 
-// MARK: - Optimized Export Tab 
+// MARK: - Optimized Export Tab
 
 struct UpdatedOptimizedExportTab: View {
     @ObservedObject var viewModel: WeatherViewModel
     @EnvironmentObject var wahooService: WahooService // Add this
-
+    
     @State private var exportingFIT = false
     @State private var exportingCSV = false
     @State private var exportingSummary = false
-    @State private var exportingToWahoo = false 
+    @State private var exportingToWahoo = false
     @State private var exportError: String?
     @State private var currentShareItem: URL? = nil
-
+    
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 20) {
@@ -1447,7 +1601,7 @@ struct UpdatedOptimizedExportTab: View {
             let csvData = await MainActor.run {
                 controller.exportPacingPlanCSV(using: planToExport) // <-- Pass the adjusted plan
             }
-
+            
             let tempDir = FileManager.default.temporaryDirectory
             let customFilename = viewModel.generateExportFilename(
                 baseName: nil,
@@ -1470,7 +1624,7 @@ struct UpdatedOptimizedExportTab: View {
             }
         }
     }
-
+    
     private func exportPlanSummary() async {
         await MainActor.run {
             exportingSummary = true
@@ -1500,7 +1654,7 @@ struct UpdatedOptimizedExportTab: View {
                 // Call the correct, detailed summary function on the controller
                 controller.generateRaceDaySummary(using: planToExport)
             }
-
+            
             let tempDir = FileManager.default.temporaryDirectory
             let customFilename = viewModel.generateExportFilename(
                 baseName: nil,

@@ -217,9 +217,16 @@ struct RouteForecastView: View {
         GeometryReader { geometry in
             ZStack {
                 // Map with route
-                RouteMapView(cameraPosition: $cameraPosition)
-                    .environmentObject(viewModel)
-                    .ignoresSafeArea()
+                // --- THIS IS THE FIX ---
+                RouteMapView(
+                    cameraPosition: $cameraPosition,
+                    routePolyline: viewModel.routePoints,
+                    displayedAnnotations: [], // No annotations before analysis
+                    scrubbingMarkerCoordinate: nil // No scrubbing on this view
+                )
+                .environmentObject(viewModel)
+                .ignoresSafeArea()
+                // --- END FIX ---
                 
                 // Floating controls at bottom
                 VStack {

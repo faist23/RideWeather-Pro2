@@ -123,9 +123,7 @@ struct InteractiveWeatherChart: View {
                 RuleMark(x: .value("Selected", selectedDistance))
                     .foregroundStyle(.secondary.opacity(0.8))
                     .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
-                    .annotation(position: .top, alignment: popoverAlignment(for: selectedDistance)) {
-                        if let point = findClosestPoint(to: selectedDistance) { scrubbingPopover(for: point) }
-                    }
+                // <-- remove the .annotation entirely
             }
         }
         .chartXScale(domain: sharedXDomain)
@@ -172,22 +170,35 @@ struct InteractiveWeatherChart: View {
 
     private func chartInteractionOverlay(proxy: ChartProxy) -> some View {
         GeometryReader { geometry in
-            Rectangle().fill(.clear).contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            let x = value.location.x
-                            if let distance: Double = proxy.value(atX: x) {
-                                selectedDistance = max(
-                                    sharedXDomain.lowerBound,
-                                    min(sharedXDomain.upperBound, distance)
-                                )
+            ZStack(alignment: .topLeading) {
+                Rectangle().fill(.clear).contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                let x = value.location.x
+                                if let distance: Double = proxy.value(atX: x) {
+                                    selectedDistance = max(
+                                        sharedXDomain.lowerBound,
+                                        min(sharedXDomain.upperBound, distance)
+                                    )
+                                }
                             }
-                        }
-                        .onEnded { _ in selectedDistance = nil }
-                )
+                            .onEnded { _ in selectedDistance = nil }
+                    )
+
+                if let selectedDistance, let point = findClosestPoint(to: selectedDistance) {
+                    // Compute X position in the chart
+                    let xPos = proxy.position(forX: selectedDistance) ?? 0
+                    // Center the popover horizontally
+                    scrubbingPopover(for: point)
+                        .frame(maxWidth: 220) // or whatever max width works for legibility
+                        .position(x: min(max(xPos, 110), geometry.size.width - 110), // prevents clipping
+                                  y: geometry.size.height / 2) // vertically centered
+                }
+            }
         }
     }
+
     
     private func prepareChartData() {
         let distanceConverter: (Double) -> Double = { $0 / (units == .metric ? 1000.0 : 1609.34) }
