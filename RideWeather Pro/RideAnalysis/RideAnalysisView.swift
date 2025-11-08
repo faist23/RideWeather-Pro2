@@ -268,7 +268,13 @@ struct RideAnalysisView: View {
                             analysis: analysis,
                             source: viewModel.getRideSource(for: analysis)
                         )
-                             .id("top")
+                        // Quick Stats
+                        QuickStatsCard(analysis: analysis, useMetric: weatherViewModel.settings.units == .metric)
+                        
+                        // Power Metrics Card
+                        PowerMetricsCard(analysis: analysis)
+                        
+                        .id("top")
 
                         // Add the map card right here
                         if let breadcrumbs = analysis.metadata?.routeBreadcrumbs, !breadcrumbs.isEmpty {
@@ -346,12 +352,6 @@ struct RideAnalysisView: View {
                         if let segments = analysis.terrainSegments, !segments.isEmpty {
                             TerrainSegmentsCard(analysis: analysis)
                         }
-                        
-                        // Quick Stats
-                        QuickStatsCard(analysis: analysis, useMetric: weatherViewModel.settings.units == .metric)
-                        
-                        // Power Metrics Card
-                        PowerMetricsCard(analysis: analysis)
                         
                         // Pacing Analysis Card
                         PacingAnalysisCard(analysis: analysis)

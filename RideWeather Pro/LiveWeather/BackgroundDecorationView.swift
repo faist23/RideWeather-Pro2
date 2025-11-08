@@ -219,4 +219,15 @@ extension LinearGradient {
             endPoint: .bottomTrailing
         )
     }
+    static var settingsBackground: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(red: 0.08, green: 0.08, blue: 0.12),  // Dark gray-blue
+                Color(red: 0.12, green: 0.12, blue: 0.18),  // Medium dark
+                Color(red: 0.1, green: 0.1, blue: 0.15)     // Dark slate
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
 }

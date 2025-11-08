@@ -110,7 +110,7 @@ struct TrainingLoadView: View {
                 }
             }
             .animatedBackground(
-                gradient: .pacingPlanBackground,
+                gradient: .rideAnalysisBackground,
                 showDecoration: true,
                 decorationColor: .white,
                 decorationIntensity: 0.06

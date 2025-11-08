@@ -450,6 +450,14 @@ struct SettingsView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden) // ← ADD THIS to hide default Form background
+            .animatedBackground(
+                gradient: .settingsBackground,
+                showDecoration: true,
+                decorationColor: .white,
+                decorationIntensity: 0.05
+            )
+
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
