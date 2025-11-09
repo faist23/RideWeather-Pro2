@@ -466,7 +466,7 @@ struct OptimizedOverallScoreCard: View {
         guard let lastSegment = analysis.routeSegments.last else { return "0 mi" }
         let distance = lastSegment.endMile
         let unit = lastSegment.units == .metric ? "km" : "mi"
-        return String(format: "%.1f %@", distance, unit)
+        return String(format: "%.2f %@", distance, unit)
     }
     
     private func formatEstimatedTime() -> String {
@@ -1179,10 +1179,10 @@ struct OptimizedPacingPlanCard: View {
     
     private func formatDistance(_ distanceKm: Double) -> String {
         if settings.units == .metric {
-            return String(format: "%.1f km", distanceKm)
+            return String(format: "%.2f km", distanceKm)
         } else {
             let miles = distanceKm * 0.621371
-            return String(format: "%.1f mi", miles)
+            return String(format: "%.2f mi", miles)
         }
     }
     

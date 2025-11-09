@@ -499,38 +499,38 @@ struct RouteForecastView: View {
     }
     
     private func formatRouteDistance() -> String {
-        // Try to get distance from last weather point (already calculated)
-        if let lastPoint = viewModel.weatherDataForRoute.last {
-            let distanceMeters = lastPoint.distance
-            if viewModel.settings.units == .metric {
-                let km = distanceMeters / 1000
-                return String(format: "%.1f km", km)
-            } else {
-                let miles = distanceMeters / 1609.34
-                return String(format: "%.1f mi", miles)
+        let totalMeters: Double
+        
+        // 1. Try to use the authoritative distance first
+        if let authoritativeDistance = viewModel.authoritativeRouteDistanceMeters, authoritativeDistance > 0 {
+            totalMeters = authoritativeDistance
+            
+            // 2. Fallback: Try to get distance from generated weather points
+        } else if let lastPoint = viewModel.weatherDataForRoute.last {
+            totalMeters = lastPoint.distance
+            
+            // 3. Fallback: Manually calculate from routePoints (the original, buggy method)
+        } else if viewModel.routePoints.count > 1 {
+            var calculatedMeters: Double = 0
+            for i in 0..<(viewModel.routePoints.count - 1) {
+                let loc1 = CLLocation(latitude: viewModel.routePoints[i].latitude,
+                                      longitude: viewModel.routePoints[i].longitude)
+                let loc2 = CLLocation(latitude: viewModel.routePoints[i + 1].latitude,
+                                      longitude: viewModel.routePoints[i + 1].longitude)
+                calculatedMeters += loc1.distance(from: loc2)
             }
+            totalMeters = calculatedMeters
+        } else {
+            totalMeters = 0
         }
         
-        // Fallback: Calculate from route points
-        guard viewModel.routePoints.count > 1 else {
-            return viewModel.settings.units == .metric ? "0.0 km" : "0.0 mi"
-        }
-        
-        var totalMeters: Double = 0
-        for i in 0..<(viewModel.routePoints.count - 1) {
-            let loc1 = CLLocation(latitude: viewModel.routePoints[i].latitude,
-                                 longitude: viewModel.routePoints[i].longitude)
-            let loc2 = CLLocation(latitude: viewModel.routePoints[i + 1].latitude,
-                                 longitude: viewModel.routePoints[i + 1].longitude)
-            totalMeters += loc1.distance(from: loc2)
-        }
-        
+        // Format the final value
         if viewModel.settings.units == .metric {
             let km = totalMeters / 1000
-            return String(format: "%.1f km", km)
+            return String(format: "%.2f km", km)
         } else {
             let miles = totalMeters / 1609.34
-            return String(format: "%.1f mi", miles)
+            return String(format: "%.2f mi", miles)
         }
     }
     

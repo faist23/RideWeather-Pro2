@@ -92,7 +92,7 @@ struct WeatherInsightsCard: View {
             }
         } else {
             let miles = Double(meters) * 0.000621371
-            return String(format: "%.1f mi", miles)
+            return String(format: "%.2f mi", miles)
         }
     }
     

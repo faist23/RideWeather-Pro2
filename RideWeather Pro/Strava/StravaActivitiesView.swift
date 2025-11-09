@@ -205,8 +205,8 @@ struct ActivityRow: View {
                 
                 Label(
                     weatherViewModel.settings.units == .metric ?
-                        String(format: "%.1f km", activity.distanceKm) :
-                        String(format: "%.1f mi", activity.distanceMiles),
+                        String(format: "%.2f km", activity.distanceKm) :
+                        String(format: "%.2f mi", activity.distanceMiles),
                     systemImage: "figure.outdoor.cycle"
                 )
                     .font(.caption)

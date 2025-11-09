@@ -979,12 +979,12 @@ class RideFileAnalyzer {
                 return "\(Int(feet))ft"
             }
             let miles = meters / 1609.34
-            return String(format: "%.1f mi", miles)
+            return String(format: "%.2f mi", miles)
         } else {
             if meters < 1000 {
                 return "\(Int(meters))m"
             }
-            return String(format: "%.1f km", meters / 1000)
+            return String(format: "%.2f km", meters / 1000)
         }
     }
     
@@ -2592,12 +2592,12 @@ extension RideAnalysis {
     
     var formattedDistance: String {
         let km = distance / 1000
-        return String(format: "%.1f km", km)
+        return String(format: "%.2f km", km)
     }
     
     var formattedDistanceMiles: String {
         let miles = distance / 1609.34
-        return String(format: "%.1f mi", miles)
+        return String(format: "%.2f mi", miles)
     }
     
     func exportToCSV() -> String {

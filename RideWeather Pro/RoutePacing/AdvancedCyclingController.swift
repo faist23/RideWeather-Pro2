@@ -142,7 +142,7 @@ final class AdvancedCyclingController: ObservableObject {
         
         📍 ROUTE OVERVIEW
         ─────────────────────────────────────────────
-        Distance:        \(String(format: "%.1f km", pacingPlan.totalDistance))
+        Distance:        \(String(format: "%.2f km", pacingPlan.totalDistance))
         Estimated Time:  \(formatDuration(pacingPlan.totalTimeMinutes * 60))
         Start Time:      \(formatter.string(from: pacingPlan.startTime))
         Arrival:         \(formatter.string(from: pacingPlan.estimatedArrival))

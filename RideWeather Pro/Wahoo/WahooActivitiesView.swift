@@ -117,50 +117,6 @@ struct WahooActivitiesView: View {
     }
 }
 
-/*struct WahooActivityRow: View {
-    let activity: WahooWorkoutSummary
-    var body: some View {
-        VStack(alignment: .leading) {
-            Text(activity.displayName)
-                .font(.headline)
-            if let date = activity.rideDate {
-                Text(date.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            } else {
-                Text("No Date")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-}*/
-/*struct WahooActivityRow: View {
-    let activity: WahooWorkoutSummary
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(activity.workoutSummary?.name ?? activity.name ?? "Wahoo Ride")
-                .font(.headline)
-            HStack {
-                if let date = activity.rideDate {
-                    Text(date.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    Text("No Date")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                Text(String(format: "%.1f mi", activity.distanceMiles))
-                    .font(.caption)
-                Text(activity.movingTimeFormatted)
-                    .font(.caption)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-}*/
-
 struct WahooActivityRow: View {
     let activity: WahooWorkoutSummary
     @EnvironmentObject var weatherViewModel: WeatherViewModel
@@ -189,8 +145,8 @@ struct WahooActivityRow: View {
                 
                 Label(
                     weatherViewModel.settings.units == .metric ?
-                        String(format: "%.1f km", activity.distanceKm) :
-                        String(format: "%.1f mi", activity.distanceMiles),
+                        String(format: "%.2f km", activity.distanceKm) :
+                        String(format: "%.2f mi", activity.distanceMiles),
                     systemImage: "figure.outdoor.cycle"
                 )
                 .font(.caption)
@@ -249,8 +205,8 @@ struct WahooImportSheet: View {
                             WahooInfoRow(  // <-- RENAMED
                                 label: "Distance",
                                 value: weatherViewModel.settings.units == .metric ?
-                                    String(format: "%.1f km", activity.distanceKm) :
-                                    String(format: "%.1f mi", activity.distanceMiles)
+                                    String(format: "%.2f km", activity.distanceKm) :
+                                    String(format: "%.2f mi", activity.distanceMiles)
                             )
                             WahooInfoRow(label: "Duration", value: activity.movingTimeFormatted) // <-- RENAMED
                             

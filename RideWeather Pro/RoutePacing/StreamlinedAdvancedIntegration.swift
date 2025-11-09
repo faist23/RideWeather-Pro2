@@ -282,19 +282,19 @@ struct PacingPlanHeaderView: View {
         let speedKph = distanceKm / timeHours
         
         if settings.units == .metric {
-            return String(format: "%.1f km/h", speedKph)
+            return String(format: "%.2f km/h", speedKph)
         } else {
             let speedMph = speedKph * 0.621371
-            return String(format: "%.1f mph", speedMph)
+            return String(format: "%.2f mph", speedMph)
         }
     }
     
     private func formatDistance(_ distanceKm: Double) -> String {
         if settings.units == .metric {
-            return String(format: "%.1f km", distanceKm)
+            return String(format: "%.2f km", distanceKm)
         } else {
             let miles = distanceKm * 0.621371
-            return String(format: "%.1f mi", miles)
+            return String(format: "%.2f mi", miles)
         }
     }
     
@@ -459,10 +459,10 @@ struct SegmentBreakdownView: View {
         let cumulativeKm = pacing.segments.prefix(index).reduce(0.0) { $0 + $1.distanceKm }
         
         if settings.units == .metric {
-            return String(format: "%.1f km", cumulativeKm)
+            return String(format: "%.2f km", cumulativeKm)
         } else {
             let miles = cumulativeKm * 0.621371
-            return String(format: "%.1f mi", miles)
+            return String(format: "%.2f mi", miles)
         }
     }
 }

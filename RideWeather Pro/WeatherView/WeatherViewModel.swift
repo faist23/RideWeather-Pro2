@@ -34,6 +34,7 @@ class WeatherViewModel: ObservableObject {
         }
     }
     @Published var routePoints: [CLLocationCoordinate2D] = []
+    @Published var authoritativeRouteDistanceMeters: Double? = nil
     @Published var weatherDataForRoute: [RouteWeatherPoint] = []
     @Published var averageSpeedInput: String = "16.5"
     @Published var locationName: String = "Loading location..."
@@ -197,6 +198,7 @@ class WeatherViewModel: ObservableObject {
             weatherDataForRoute = []
             routePoints = []
             elevationAnalysis = nil
+            authoritativeRouteDistanceMeters = nil // ✅ ADD THIS
             
             // ✅ ADDED: Clear the advanced plan and cached power analysis to prevent showing stale data.
             advancedController = nil
@@ -230,6 +232,10 @@ class WeatherViewModel: ObservableObject {
 
                 self.routePoints = result.coordinates
                 self.elevationAnalysis = result.elevationAnalysis
+                
+                // ✅ ADD THIS: Calculate distance for file-based imports
+                self.authoritativeRouteDistanceMeters = self.calculateTotalDistance(result.coordinates)
+                
                 self.powerAnalysisResult = nil // Clear the cache
 
                 self.finalizeRouteImport()
@@ -638,6 +644,7 @@ extension WeatherViewModel {
         weatherDataForRoute.removeAll()
         enhancedRoutePoints.removeAll()
         lastImportedFileName = ""
+        authoritativeRouteDistanceMeters = nil // ✅ ADD THIS
         // Reset any other route-related state
     }
 }

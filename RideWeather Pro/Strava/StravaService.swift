@@ -703,7 +703,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     // MARK: - API Methods
     
     /// Fetches recent activities from Strava with pagination
-    func fetchRecentActivities(page: Int = 1, perPage: Int = 30) async throws -> [StravaActivity] {
+    func fetchRecentActivities(page: Int = 1, perPage: Int = 100) async throws -> [StravaActivity] {
         // Ensure we have a valid token
         await refreshTokenIfNeededAsync()
         
@@ -925,7 +925,128 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     }
     
     /// Extracts GPS route from a Strava activity for weather analysis
-    func extractRouteFromActivity(activityId: Int) async throws -> [CLLocationCoordinate2D] {
+    func extractRouteFromStravaRoute(routeId: Int) async throws -> (coordinates: [CLLocationCoordinate2D], totalDistanceMeters: Double) { // ✅ CHANGED
+            print("StravaService: Fetching route detail for route \(routeId)")
+            
+            // Fetch route detail
+            let routeDetail = try await fetchRouteDetail(routeId: routeId)
+            
+            // ✅ ADDED: Get the authoritative distance
+            let totalDistance = routeDetail.distance // This is in meters
+            
+            guard let map = routeDetail.map,
+                  let polyline = map.polyline ?? map.summary_polyline else {
+                throw StravaError.noRouteData
+            }
+            
+            print("StravaService: Decoding polyline for route")
+            
+            // Decode polyline to coordinates
+            let coordinates = decodePolyline(polyline)
+            
+            guard !coordinates.isEmpty else {
+                throw StravaError.noRouteData
+            }
+            
+            print("StravaService: Extracted \(coordinates.count) GPS points from route")
+            // ✅ CHANGED: Return both coordinates and distance
+            return (coordinates: coordinates, totalDistanceMeters: totalDistance)
+        }
+        
+        /// Extracts GPS route from a Strava activity for weather analysis
+    func extractRouteFromActivity(activityId: Int) async throws -> (coordinates: [CLLocationCoordinate2D], totalDistanceMeters: Double) {
+            await refreshTokenIfNeededAsync()
+            
+            guard let accessToken = currentTokens?.accessToken else {
+                throw StravaError.notAuthenticated
+            }
+            
+            // ✅ CHANGED: Request "time", "distance", "latlng", AND "moving".
+            // --- "watts" has been removed ---
+            let streamTypes = ["time", "distance", "latlng", "moving"]
+            
+            var components = URLComponents(string: "https://www.strava.com/api/v3/activities/\(activityId)/streams")!
+            components.queryItems = [
+                URLQueryItem(name: "keys", value: streamTypes.joined(separator: ",")),
+                URLQueryItem(name: "key_by_type", value: "true")
+            ]
+            
+            guard let url = components.url else {
+                throw StravaError.invalidURL
+            }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw StravaError.invalidResponse
+            }
+            
+            guard httpResponse.statusCode == 200 else {
+                throw StravaError.apiError(statusCode: httpResponse.statusCode)
+            }
+            
+            let streams = try JSONDecoder().decode(StravaStreams.self, from: data)
+
+            // ✅ ALL LOGIC BELOW IS REVISED
+            
+            guard let timeData = streams.time?.data, !timeData.isEmpty,
+                  let latlngData = streams.latlng?.data,
+                  let distanceData = streams.distance?.data else {
+                // We need these three streams at a minimum.
+                throw StravaError.noRouteData
+            }
+            
+            // Get the moving stream, or default to all true if it's not present
+            let movingData = streams.moving?.data
+
+            var filteredCoordinates: [CLLocationCoordinate2D] = []
+            var filteredDistances: [Double] = []
+            
+            for i in 0..<timeData.count {
+                // Check 1: Check if moving. If movingData is nil, assume true.
+                let isMoving = movingData?[safe: i] ?? true
+                
+                if !isMoving {
+                    continue // Skip this data point if it's marked as "stopped"
+                }
+                
+                // ✅ REMOVED: The check for `powerData` is gone.
+                
+                // Now we know it's a "moving" point, get its data
+                guard let latlng = latlngData[safe: i], latlng.count == 2,
+                      let distance = distanceData[safe: i] else {
+                    continue // Skip if data is misaligned
+                }
+                
+                let lat = latlng[0]
+                let lon = latlng[1]
+
+                // Validate coordinates
+                guard abs(lat) <= 90, abs(lon) <= 180, lat != 0, lon != 0 else {
+                    continue
+                }
+                
+                filteredCoordinates.append(CLLocationCoordinate2D(latitude: lat, longitude: lon))
+                filteredDistances.append(distance)
+            }
+
+            // Now, get the last distance from the *filtered* list
+            guard let totalDistance = filteredDistances.last, !filteredCoordinates.isEmpty else {
+                // This would mean the entire activity was marked "stopped" or had no GPS
+                throw StravaError.noRouteData
+            }
+            
+            print("StravaService: Extracted \(filteredCoordinates.count) MOVING GPS points and \(totalDistance)m from activity")
+            
+            // Return the filtered coordinates and the correct distance
+            return (coordinates: filteredCoordinates, totalDistanceMeters: totalDistance)
+        }
+    
+/*    func extractRouteFromActivity(activityId: Int) async throws -> [CLLocationCoordinate2D] {
         await refreshTokenIfNeededAsync()
         
         guard let accessToken = currentTokens?.accessToken else {
@@ -960,7 +1081,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         print("StravaService: Extracted \(coordinates.count) GPS points from activity")
         return coordinates
     }
-    
+*/
     /// Decodes Google's encoded polyline format to coordinates
     private func decodePolyline(_ polyline: String) -> [CLLocationCoordinate2D] {
         var coordinates: [CLLocationCoordinate2D] = []

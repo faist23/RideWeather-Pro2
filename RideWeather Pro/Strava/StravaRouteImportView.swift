@@ -366,8 +366,8 @@ struct StravaRouteRow: View {
             HStack(spacing: 16) {
                 Label(
                     weatherViewModel.settings.units == .metric ?
-                    String(format: "%.1f km", route.distanceKm) :
-                        String(format: "%.1f mi", route.distanceMiles),
+                    String(format: "%.2f km", route.distanceKm) :
+                        String(format: "%.2f mi", route.distanceMiles),
                     systemImage: "map"
                 )
                 .font(.caption)
@@ -409,9 +409,17 @@ struct StravaActivityRow: View {
                 
                 Spacer()
                 
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
-                    .font(.caption)
+                // ✅ CHANGED: Show bolt icon if power data exists
+                if let watts = activity.average_watts, watts > 0 {
+                    Image(systemName: "bolt.fill")
+                        .foregroundColor(.orange)
+                        .font(.caption)
+                } else {
+                    // Fallback to checkmark
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                        .font(.caption)
+                }
             }
             
             HStack(spacing: 16) {
@@ -420,11 +428,17 @@ struct StravaActivityRow: View {
                 
                 Label(
                     weatherViewModel.settings.units == .metric ?
-                    String(format: "%.1f km", activity.distanceKm) :
-                        String(format: "%.1f mi", activity.distanceMiles),
+                    String(format: "%.2f km", activity.distanceKm) :
+                        String(format: "%.2f mi", activity.distanceMiles),
                     systemImage: "figure.outdoor.cycle"
                 )
                 .font(.caption)
+                // ✅ ADDED: Show average watts if it exists
+                if let watts = activity.average_watts, watts > 0 {
+                    Label("\(Int(watts))W", systemImage: "bolt")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
             }
             .foregroundColor(.secondary)
             
@@ -484,7 +498,7 @@ class StravaRoutesViewModel: ObservableObject {
         Task {
             do {
                 print("🔵 Step 1: Extracting route \(routeId)")
-                let coordinates = try await service.extractRouteFromStravaRoute(routeId: routeId)
+                let (coordinates, totalDistance) = try await service.extractRouteFromStravaRoute(routeId: routeId)
                 print("🔵 Step 2: Got \(coordinates.count) coordinates")
                 
                 guard !coordinates.isEmpty else {
@@ -497,6 +511,9 @@ class StravaRoutesViewModel: ObservableObject {
                 await MainActor.run {
                     print("🔵 Step 4: Setting route points (\(coordinates.count) points)")
                     weatherViewModel.routePoints = coordinates
+
+                    // ✅ ADDED: Set the authoritative distance
+                    weatherViewModel.authoritativeRouteDistanceMeters = totalDistance
                     
                     print("🔵 Step 5: Setting route name to '\(routeName)'")
                     weatherViewModel.routeDisplayName = routeName
@@ -633,7 +650,8 @@ class StravaActivitiesImportViewModel: ObservableObject {
         Task {
             do {
                 print("🔵 Step 1: Extracting route for activity \(activityId)")
-                let coordinates = try await service.extractRouteFromActivity(activityId: activityId)
+                // ✅ CHANGED: Capture both returned values
+                let (coordinates, totalDistance) = try await service.extractRouteFromActivity(activityId: activityId)
                 print("🔵 Step 2: Got \(coordinates.count) coordinates")
                 
                 guard !coordinates.isEmpty else {
@@ -646,6 +664,9 @@ class StravaActivitiesImportViewModel: ObservableObject {
                 await MainActor.run {
                     print("🔵 Step 4: Setting route points (\(coordinates.count) points)")
                     weatherViewModel.routePoints = coordinates
+                    
+                    // ✅ ADDED: Set the authoritative distance
+                    weatherViewModel.authoritativeRouteDistanceMeters = totalDistance
                     
                     print("🔵 Step 5: Setting route name to '\(activityName)'")
                     weatherViewModel.routeDisplayName = activityName
