@@ -69,7 +69,7 @@ struct TrainingLoadView: View {
                 }
                 .padding()
             }
-            .navigationTitle("Training Load")
+            .navigationTitle("Fitness")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
