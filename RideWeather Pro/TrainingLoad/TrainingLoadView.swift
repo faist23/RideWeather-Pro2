@@ -76,7 +76,7 @@ struct TrainingLoadView: View {
                                 ))
                         }
                         
-                        // Add this somewhere visible in your TrainingLoadView body
+/*                        // Add this somewhere visible in your TrainingLoadView body
                         // (I'd put it right after the DailyReadinessCard or AI insight cards)
 
                         // TEMPORARY TEST BUTTON - Remove once you're satisfied
@@ -111,7 +111,7 @@ struct TrainingLoadView: View {
                             .opacity(aiInsightsManager.isLoading ? 0.6 : 1.0)
                         }
                         //------------------------romove if satisfied with ai output
-                        
+ */
                         // Training Load Chart
                         TrainingLoadChart(
                             dailyLoads: viewModel.dailyLoads,
@@ -139,7 +139,7 @@ struct TrainingLoadView: View {
                         }
                     }
                 }
-                // Add this in the VStack after your other cards (around line 100)
+/*                // Add this in the VStack after your other cards (around line 100)
                 Button("🧪 Force AI Analysis") {
                     Task {
                         await aiInsightsManager.forceAnalyze(
@@ -151,13 +151,14 @@ struct TrainingLoadView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.purple)
-                
+ */
                 .padding()
             }
             .navigationTitle("Fitness")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                // --- LEADING ITEM GROUP ---
+                ToolbarItemGroup(placement: .navigationBarLeading) {
                     if stravaService.isAuthenticated && !syncManager.isSyncing {
                         Button {
                             Task {
@@ -171,31 +172,36 @@ struct TrainingLoadView: View {
                                     userLTHR: nil,
                                     startDate: startDate
                                 )
-                                viewModel.refresh(readiness: healthManager.readiness) // <-- Pass readiness
+                                viewModel.refresh(readiness: healthManager.readiness)
                             }
                         } label: {
                             Label("Sync", systemImage: syncManager.needsSync ? "exclamationmark.arrow.triangle.2.circlepath" : "arrow.triangle.2.circlepath")
                                 .foregroundColor(syncManager.needsSync ? .orange : .blue)
                         }
+                    } else {
+                        // This is good practice for layout stability
+                        Color.clear.frame(width: 0)
                     }
                 }
                 
-                ToolbarItem(placement: .navigationBarTrailing) {
+                // --- TRAILING ITEM GROUP ---
+                // Even with one button, this is a more stable structure
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button {
                         showingExplanation = true
                     } label: {
                         Image(systemName: "info.circle")
                     }
+                    
+                    // If you want to add your debug button back,
+                    // you can safely add it *right here*.
+                    
+                    // Button {
+                    //    showingAIDebug = true
+                    // } label: {
+                    //    Image(systemName: "dollarsign.circle")
+                    // }
                 }
-                // Debug button (you can remove this later)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingAIDebug = true
-                    } label: {
-                        Image(systemName: "dollarsign.circle")
-                    }
-                }
-                //-----------------
             }
             .overlay {
                 if syncManager.isSyncing {
@@ -215,21 +221,15 @@ struct TrainingLoadView: View {
                 AIInsightsDebugView(manager: aiInsightsManager)
             }
             .onAppear {
+                // The data is already being fetched by MainView.
+                // We just need to load it into the view.
                 syncManager.loadSyncDate()
-                TrainingLoadManager.shared.fillMissingDays()
-                // Refresh with whatever health data we have (might be nil)
                 viewModel.refresh(readiness: healthManager.readiness)
                 viewModel.loadPeriod(selectedPeriod)
                 
-                // --- MODIFIED onAppear ---
+                // We can still trigger the AI analysis and a Strava sync here
                 Task {
-                    // 1. Fetch health data (it will only fetch if authorized)
-                    await healthManager.fetchReadinessData()
-                    
-                    // 2. Refresh insights with new health data
-                    viewModel.refresh(readiness: healthManager.readiness)
-                    
-                    // 3. Run Strava sync if needed
+                    // 1. Run Strava sync if needed
                     if syncManager.needsSync && stravaService.isAuthenticated {
                         await syncManager.syncFromStrava(
                             stravaService: stravaService,
@@ -237,11 +237,12 @@ struct TrainingLoadView: View {
                             userLTHR: nil,
                             startDate: nil
                         )
-                        // 4. Refresh all data after sync
+                        // 2. Refresh all data after sync
                         viewModel.refresh(readiness: healthManager.readiness)
                         viewModel.loadPeriod(selectedPeriod)
                     }
-                    // 4. NEW: Trigger AI analysis if conditions warrant it
+                    
+                    // 3. Trigger AI analysis
                     await aiInsightsManager.analyzeIfNeeded(
                         summary: viewModel.summary,
                         readiness: healthManager.readiness,

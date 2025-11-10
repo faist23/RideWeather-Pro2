@@ -72,7 +72,7 @@ class AIInsightsManager: ObservableObject {
             
             // Try to see what's actually in the file
             if let rawDict = NSDictionary(contentsOfFile: path) {
-                print("🤖 AI Insights: 📋 Raw plist contents: \(rawDict)")
+ //               print("🤖 AI Insights: 📋 Raw plist contents: \(rawDict)")
             }
             
             anthropicConfig = [:]
@@ -80,8 +80,8 @@ class AIInsightsManager: ObservableObject {
         }
         
         self.anthropicConfig = config
-        print("🤖 AI Insights: ✅ Loaded config: \(config)")
-        print("🤖 AI Insights: 🔑 Keys in plist: \(config.keys)")
+ //       print("🤖 AI Insights: ✅ Loaded config: \(config)")
+ //       print("🤖 AI Insights: 🔑 Keys in plist: \(config.keys)")
     }
     
     // MARK: - Public Methods

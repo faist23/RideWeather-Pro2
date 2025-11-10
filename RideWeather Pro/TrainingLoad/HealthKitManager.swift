@@ -117,9 +117,9 @@ class HealthKitManager: ObservableObject {
                 averageSleepDuration: avgSleepData // <-- ADD THIS
             )
             
-            print("HealthKit Data Updated:")
-            print("  HRV: \(self.readiness.latestHRV ?? -1)ms (Avg: \(self.readiness.averageHRV ?? -1)ms)")
-            print("  RHR: \(self.readiness.latestRHR ?? -1)bpm (Avg: \(self.readiness.averageRHR ?? -1)bpm)")
+//            print("HealthKit Data Updated:")
+//            print("  HRV: \(self.readiness.latestHRV ?? -1)ms (Avg: \(self.readiness.averageHRV ?? -1)ms)")
+//            print("  RHR: \(self.readiness.latestRHR ?? -1)bpm (Avg: \(self.readiness.averageRHR ?? -1)bpm)")
             let sleepAvg = self.readiness.averageSleepDuration ?? 0
             print("  Sleep: \(Int((self.readiness.sleepDuration ?? 0) / 3600))h \(Int(((self.readiness.sleepDuration ?? 0).truncatingRemainder(dividingBy: 3600)) / 60))m (Avg: \(Int(sleepAvg / 3600))h \(Int((sleepAvg.truncatingRemainder(dividingBy: 3600)) / 60))m)")
         }
@@ -203,7 +203,7 @@ class HealthKitManager: ObservableObject {
         let stageSum = await getSleepStagesDuration()
         
         if stageSum > 0 {
-            print("HealthKit: Found sleep stages (Core, Deep, REM). Total: \(stageSum / 3600) hrs")
+//            print("HealthKit: Found sleep stages (Core, Deep, REM). Total: \(stageSum / 3600) hrs")
             return stageSum
         }
         
@@ -266,7 +266,7 @@ class HealthKitManager: ObservableObject {
                 guard let sleepSamples = samples as? [HKCategorySample], error == nil else {
                     continuation.resume(returning: nil)
                     return
-                }
+                }                
                 
                 let totalSleep = sleepSamples.reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
                 continuation.resume(returning: totalSleep > 0 ? totalSleep : nil)
@@ -279,7 +279,7 @@ class HealthKitManager: ObservableObject {
         // First, try to get the average of stages
         let stageAvg = await getAverageSleepStagesDuration(days: days)
         if stageAvg > 0 {
-            print("HealthKit: Found 7-day avg for sleep stages.")
+//            print("HealthKit: Found 7-day avg for sleep stages.")
             return stageAvg
         }
         
