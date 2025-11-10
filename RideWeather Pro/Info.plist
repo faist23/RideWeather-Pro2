@@ -13,5 +13,7 @@
         <array>
             <string>strava</string>
         </array>
+        <key>NSHealthShareUsageDescription</key>
+        <string>To provide readiness insights by correlating your training load (TSB) with recovery metrics (HRV, Resting HR, and Sleep).</string>
     </dict>
 </plist>

@@ -8,11 +8,11 @@ struct SettingsView: View {
     @EnvironmentObject var viewModel: WeatherViewModel
     @EnvironmentObject var stravaService: StravaService // Get the service
     @EnvironmentObject var wahooService: WahooService // Get the service
+    @EnvironmentObject var healthManager: HealthKitManager // <-- ADD THIS
     @Environment(\.dismiss) private var dismiss
     
-    // This state is no longer needed as the manual button is gone
-    // @State private var isSyncingWeight = false
-    
+    @State private var isConnectingHealth = false // <-- ADD THIS
+
     var body: some View {
         NavigationStack {
             Form {
@@ -321,6 +321,52 @@ struct SettingsView: View {
                     Toggle("Avoid Gluten", isOn: $viewModel.settings.avoidGluten)
                     Toggle("Avoid Caffeine", isOn: $viewModel.settings.avoidCaffeine)
                 }
+
+                Section("Apple Health") { // <-- ADD THIS ENTIRE SECTION
+                    if healthManager.isAuthorized {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Image(systemName: "heart.fill")
+                                    .foregroundStyle(.red)
+                                Text("Connected to Health")
+                                    .font(.headline)
+                            }
+                            Text("Your readiness insights (HRV, RHR, Sleep) are active on the Fitness tab.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            
+                            Button("Refetch Health Data") {
+                                Task {
+                                    await healthManager.fetchReadinessData()
+                                }
+                            }
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Connect Apple Health to get smarter readiness insights by correlating your training load with HRV, Resting HR, and Sleep.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            
+                            Button {
+                                Task {
+                                    isConnectingHealth = true
+                                    await healthManager.requestAuthorization()
+                                    isConnectingHealth = false
+                                }
+                            } label: {
+                                if isConnectingHealth {
+                                    ProgressView()
+                                } else {
+                                    Text("Connect to Apple Health")
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .disabled(isConnectingHealth)
+                        }
+                    }
+                }
+
                 Section("Strava") {
                     if stravaService.isAuthenticated {
                         HStack(spacing: 12) {

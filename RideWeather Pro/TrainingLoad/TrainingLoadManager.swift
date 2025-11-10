@@ -109,8 +109,8 @@ class TrainingLoadManager {
             .sorted { $0.date > $1.date }
     }
     
-    /// Gets insights based on current training load
-    func getInsights() -> [TrainingLoadInsight] {
+    /// Gets insights based on current training load AND physiological readiness
+    func getInsights(readiness: PhysiologicalReadiness? = nil) -> [TrainingLoadInsight] {
         guard let summary = getCurrentSummary() else {
             return [TrainingLoadInsight(
                 priority: .info,
@@ -123,37 +123,98 @@ class TrainingLoadManager {
         
         var insights: [TrainingLoadInsight] = []
         
-        // Form status insight
-        switch summary.formStatus {
-        case .veryFatigued:
-            insights.append(TrainingLoadInsight(
-                priority: .critical,
-                title: "High Fatigue Level",
-                message: "TSB: \(Int(summary.currentTSB)). Your body needs recovery.",
-                recommendation: "Take 2-3 easy days or rest completely. Fatigue this high increases injury risk.",
-                icon: "exclamationmark.triangle.fill"
-            ))
+        // --- 1. NEW: HEALTHKIT-BASED INSIGHTS ---
+        if let readiness = readiness {
             
-        case .fatigued:
-            insights.append(TrainingLoadInsight(
-                priority: .warning,
-                title: "Building Fatigue",
-                message: "TSB: \(Int(summary.currentTSB)). You're carrying significant fatigue.",
-                recommendation: "Schedule an easy day or rest day in the next 48 hours.",
-                icon: "battery.25"
-            ))
+            // Check for Readiness Mismatch (High TSB, but poor metrics)
+            let hrvIsLow = (readiness.latestHRV ?? 50) < ((readiness.averageHRV ?? 50) * 0.85) // 15% below avg
+            let rhrIsHigh = (readiness.latestRHR ?? 60) > ((readiness.averageRHR ?? 60) + 4) // 4bpm+ above avg
             
-        case .fresh, .veryFresh:
-            insights.append(TrainingLoadInsight(
-                priority: .success,
-                title: "Well Recovered",
-                message: "TSB: \(Int(summary.currentTSB)). You're fresh and ready for hard efforts.",
-                recommendation: "Good time for high-intensity training or racing.",
-                icon: "bolt.fill"
-            ))
+            if summary.currentTSB > 5 && (hrvIsLow || rhrIsHigh) {
+                var reason = ""
+                if hrvIsLow, let hrv = readiness.latestHRV, let avgHRV = readiness.averageHRV {
+                    reason = "HRV is \(Int(hrv))ms (well below your avg of \(Int(avgHRV))ms)."
+                }
+                if rhrIsHigh, let rhr = readiness.latestRHR, let avgRHR = readiness.averageRHR {
+                    reason = "Resting HR is \(Int(rhr))bpm (above your avg of \(Int(avgRHR))bpm)."
+                }
+                
+                insights.append(TrainingLoadInsight(
+                    priority: .critical,
+                    title: "Readiness Mismatch",
+                    message: "Your Form (TSB \(Int(summary.currentTSB))) is positive, but your body shows high stress. \(reason)",
+                    recommendation: "Your body is not recovered (illness, poor sleep, life stress). A high TSB is misleading. Strongly consider an easy recovery day.",
+                    icon: "exclamationmark.triangle.fill"
+                ))
+            }
             
-        default:
-            break
+            // Check for "Green Light" (Good TSB, Good metrics)
+            let hrvIsHigh = (readiness.latestHRV ?? 0) > (readiness.averageHRV ?? 1)
+            let rhrIsNormal = (readiness.latestRHR ?? 100) < (readiness.averageRHR ?? 101)
+            let goodSleep = (readiness.sleepDuration ?? 0) > (7 * 3600)
+            
+            if (summary.currentTSB > -15 && summary.currentTSB < 15) && (hrvIsHigh || rhrIsNormal) && goodSleep {
+                insights.append(TrainingLoadInsight(
+                    priority: .success,
+                    title: "Primed for Performance",
+                    message: "TSB is optimal and recovery metrics (HRV/RHR/Sleep) are strong.",
+                    recommendation: "This is a perfect day to execute a key high-intensity workout. Your body is fit, fresh, and ready to adapt.",
+                    icon: "checkmark.seal.fill"
+                ))
+            }
+            
+            // Check for "Inadequate Recovery" (Rising ATL, poor sleep)
+            let isBuildingFatigue = summary.currentATL > (summary.currentCTL * 0.9) // ATL is high relative to CTL
+            let shortSleep = (readiness.sleepDuration ?? 8*3600) < (6 * 3600) // Less than 6 hours
+            
+            if isBuildingFatigue && shortSleep {
+                insights.append(TrainingLoadInsight(
+                    priority: .warning,
+                    title: "Inadequate Recovery",
+                    message: "Your Fatigue (ATL) is high, but you only slept \(Int((readiness.sleepDuration ?? 0) / 3600)) hours.",
+                    recommendation: "You are not recovering from your training. Prioritize 7-9 hours of sleep tonight or schedule a rest day to avoid overtraining.",
+                    icon: "battery.25"
+                ))
+            }
+        }
+        
+        // --- 2. EXISTING TSB-BASED INSIGHTS ---
+        
+        // Form status insight (only add if we didn't add a critical one)
+        if !insights.contains(where: { $0.priority == .critical }) {
+            switch summary.formStatus {
+            case .veryFatigued:
+                insights.append(TrainingLoadInsight(
+                    priority: .critical,
+                    title: "High Fatigue Level",
+                    message: "TSB: \(Int(summary.currentTSB)). Your body needs recovery.",
+                    recommendation: "Take 2-3 easy days or rest completely. Fatigue this high increases injury risk.",
+                    icon: "exclamationmark.triangle.fill"
+                ))
+                
+            case .fatigued:
+                insights.append(TrainingLoadInsight(
+                    priority: .warning,
+                    title: "Building Fatigue",
+                    message: "TSB: \(Int(summary.currentTSB)). You're carrying significant fatigue.",
+                    recommendation: "Schedule an easy day or rest day in the next 48 hours.",
+                    icon: "battery.25"
+                ))
+                
+            case .fresh, .veryFresh:
+                // Only add if we don't already have a "Green Light"
+                if !insights.contains(where: { $0.priority == .success }) {
+                    insights.append(TrainingLoadInsight(
+                        priority: .success,
+                        title: "Well Recovered",
+                        message: "TSB: \(Int(summary.currentTSB)). You're fresh and ready for hard efforts.",
+                        recommendation: "Good time for high-intensity training or racing.",
+                        icon: "bolt.fill"
+                    ))
+                }
+            default:
+                break
+            }
         }
         
         // Ramp rate insight
@@ -199,7 +260,7 @@ class TrainingLoadManager {
         
         // Weekly TSS targets
         let targetWeeklyTSS = summary.currentCTL * 0.7  // Rough target
-        if summary.weeklyTSS < targetWeeklyTSS * 0.5 {
+        if summary.weeklyTSS < targetWeeklyTSS * 0.5 && summary.currentCTL > 10 { // Only show if user has some fitness
             insights.append(TrainingLoadInsight(
                 priority: .info,
                 title: "Low Training Volume",
@@ -449,5 +510,63 @@ class TrainingLoadManager {
         
         print("===============================\n")
     }
-    
+
+    /// Generates projected training load data for a number of days into the future.
+    /// This assumes a TSS of 0 for each future day to model recovery.
+    func getProjectedLoads(for days: Int) -> [DailyTrainingLoad] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        // Find the latest historical data point to start from
+        let allLoads = loadAllDailyLoads()
+        guard let latestLoad = allLoads.sorted(by: { $0.date < $1.date }).last(where: { !$0.isProjected }) else {
+            // No historical data, can't project
+            return []
+        }
+        
+        var projectedLoads: [DailyTrainingLoad] = []
+        var previousATL = latestLoad.atl ?? 0
+        var previousCTL = latestLoad.ctl ?? 0
+        
+        for i in 1...days {
+            guard let futureDate = calendar.date(byAdding: .day, value: i, to: today) else { continue }
+            
+            let todayTSS = 0.0 // The assumption for future projection
+            
+            // Calculate future values based on 0 TSS
+            let atl = calculateEMA(
+                previousValue: previousATL,
+                newValue: todayTSS,
+                days: emaATLDays
+            )
+            
+            let ctl = calculateEMA(
+                previousValue: previousCTL,
+                newValue: todayTSS,
+                days: emaCTLDays
+            )
+            
+            let tsb = ctl - atl
+            
+            let projectedLoad = DailyTrainingLoad(
+                date: futureDate,
+                tss: todayTSS,
+                atl: atl,
+                ctl: ctl,
+                tsb: tsb,
+                rideCount: 0,
+                totalDistance: 0,
+                totalDuration: 0,
+                isProjected: true // <-- Mark as projected
+            )
+            
+            projectedLoads.append(projectedLoad)
+            
+            // Set up for the next day's calculation
+            previousATL = atl
+            previousCTL = ctl
+        }
+        
+        return projectedLoads
+    }
 }

@@ -8,11 +8,12 @@ import MapKit
 @main
 struct RideWeatherProApp: App {
     @StateObject private var weatherViewModel = WeatherViewModel()
-    @StateObject private var stravaService = StravaService() // Add this
-    @StateObject private var wahooService = WahooService() // Add this
+    @StateObject private var stravaService = StravaService()
+    @StateObject private var wahooService = WahooService()
+    @StateObject private var healthManager = HealthKitManager()
     @State private var showLaunchView = true
     
-    @Environment(\.scenePhase) private var scenePhase // <-- ADD THIS
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -20,8 +21,9 @@ struct RideWeatherProApp: App {
                 Color.blue.opacity(0.6).ignoresSafeArea()
                 MainView()
                     .environmentObject(weatherViewModel)
-                    .environmentObject(stravaService) // Pass it down
-                    .environmentObject(wahooService) // Pass it down
+                    .environmentObject(stravaService)
+                    .environmentObject(wahooService)
+                    .environmentObject(healthManager)
                 
                 if showLaunchView {
                     LaunchView()
@@ -60,9 +62,7 @@ struct RideWeatherProApp: App {
                     
                     // For now, you can print to confirm it works:
                     print("Wahoo auth code received: \(url.absoluteString)")
-                    
-                    // --- END OF NEW BLOCK ---
-                    
+                                        
                 } else if url.isFileURL {
                     print("Handling imported file URL...")
                     weatherViewModel.importRoute(from: url)
@@ -77,6 +77,7 @@ struct RideWeatherProApp: App {
                     // Run the daily sync logic
                     Task {
                         await syncWeight()
+                        await healthManager.fetchReadinessData() // <-- ADD THIS
                     }
                     
                     // Also run the training load fill logic

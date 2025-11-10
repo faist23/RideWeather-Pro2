@@ -5,6 +5,7 @@
 //  Main training load tracking interface
 //
 
+
 import SwiftUI
 import Charts
 import Combine
@@ -14,13 +15,22 @@ struct TrainingLoadView: View {
     @StateObject private var syncManager = TrainingLoadSyncManager()
     @EnvironmentObject private var stravaService: StravaService
     @EnvironmentObject private var weatherViewModel: WeatherViewModel
+    @EnvironmentObject private var healthManager: HealthKitManager
+
     @State private var selectedPeriod: TrainingLoadPeriod = .month
     @State private var showingExplanation = false
+    @StateObject private var aiInsightsManager = AIInsightsManager()
+
+    @State private var showingAIDebug = false
+
     
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    
+                    // --- REMOVED ConnectHealthCard ---
+                    
                     if let summary = viewModel.summary {
                         // Sync Status Banner (if applicable)
                         if stravaService.isAuthenticated {
@@ -28,18 +38,17 @@ struct TrainingLoadView: View {
                                 syncManager: syncManager,
                                 onSync: {
                                     Task {
-                                        // ADD THIS: Force full sync if no data exists
                                         let startDate = viewModel.summary == nil
-                                            ? Calendar.current.date(byAdding: .day, value: -365, to: Date())
-                                            : nil
+                                        ? Calendar.current.date(byAdding: .day, value: -365, to: Date())
+                                        : nil
                                         
                                         await syncManager.syncFromStrava(
                                             stravaService: stravaService,
                                             userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
                                             userLTHR: nil,
-                                            startDate: startDate  // ADD THIS PARAMETER
+                                            startDate: startDate
                                         )
-                                        viewModel.refresh()
+                                        viewModel.refresh(readiness: healthManager.readiness) // <-- Pass readiness
                                     }
                                 }
                             )
@@ -47,7 +56,62 @@ struct TrainingLoadView: View {
                         
                         // Current Status Card
                         CurrentFormCard(summary: summary)
+                        
+                        // --- ADD DailyReadinessCard ---
+                        if healthManager.isAuthorized && (viewModel.readiness?.latestHRV != nil || viewModel.readiness?.latestRHR != nil || viewModel.readiness?.sleepDuration != nil || viewModel.readiness?.averageHRV != nil) {
+                            DailyReadinessCard(readiness: viewModel.readiness!)
+                                .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
+                        }
+                        // ---
+ 
+                        // AI Insights (NEW)
+                        if aiInsightsManager.isLoading {
+                            AIInsightLoadingCard()
+                                .transition(.opacity)
+                        } else if let aiInsight = aiInsightsManager.currentInsight {
+                            AIInsightCard(insight: aiInsight)
+                                .transition(.asymmetric(
+                                    insertion: .opacity.combined(with: .move(edge: .top)),
+                                    removal: .opacity
+                                ))
+                        }
+                        
+                        // Add this somewhere visible in your TrainingLoadView body
+                        // (I'd put it right after the DailyReadinessCard or AI insight cards)
 
+                        // TEMPORARY TEST BUTTON - Remove once you're satisfied
+                        if viewModel.summary != nil {
+                            Button {
+                                Task {
+                                    await aiInsightsManager.forceAnalyze(
+                                        summary: viewModel.summary,
+                                        readiness: healthManager.readiness,
+                                        recentLoads: viewModel.dailyLoads
+                                    )
+                                }
+                            } label: {
+                                HStack {
+                                    Image(systemName: "sparkles")
+                                    Text("Generate AI Insight")
+                                }
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(
+                                    LinearGradient(
+                                        colors: [.purple, .blue],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .cornerRadius(12)
+                            }
+                            .disabled(aiInsightsManager.isLoading)
+                            .opacity(aiInsightsManager.isLoading ? 0.6 : 1.0)
+                        }
+                        //------------------------romove if satisfied with ai output
+                        
                         // Training Load Chart
                         TrainingLoadChart(
                             dailyLoads: viewModel.dailyLoads,
@@ -64,9 +128,30 @@ struct TrainingLoadView: View {
                         TrainingLoadInsightsSection(insights: viewModel.insights)
                         
                     } else {
-                        emptyStateView
+                        // Show empty state *unless* health is connected but Strava isn't
+                        if !healthManager.isAuthorized && !stravaService.isAuthenticated {
+                            emptyStateView
+                        } else if healthManager.isAuthorized && !stravaService.isAuthenticated {
+                            // Special empty state if only Health is connected
+                            stravaEmptyStateView
+                        } else {
+                            emptyStateView // Default empty state
+                        }
                     }
                 }
+                // Add this in the VStack after your other cards (around line 100)
+                Button("🧪 Force AI Analysis") {
+                    Task {
+                        await aiInsightsManager.forceAnalyze(
+                            summary: viewModel.summary,
+                            readiness: healthManager.readiness,
+                            recentLoads: viewModel.dailyLoads
+                        )
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.purple)
+                
                 .padding()
             }
             .navigationTitle("Fitness")
@@ -76,7 +161,6 @@ struct TrainingLoadView: View {
                     if stravaService.isAuthenticated && !syncManager.isSyncing {
                         Button {
                             Task {
-                                // ADD THIS: Force full sync if no data exists
                                 let startDate = viewModel.summary == nil
                                 ? Calendar.current.date(byAdding: .day, value: -90, to: Date())
                                 : nil
@@ -85,9 +169,9 @@ struct TrainingLoadView: View {
                                     stravaService: stravaService,
                                     userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
                                     userLTHR: nil,
-                                    startDate: startDate  // ADD THIS PARAMETER
+                                    startDate: startDate
                                 )
-                                viewModel.refresh()
+                                viewModel.refresh(readiness: healthManager.readiness) // <-- Pass readiness
                             }
                         } label: {
                             Label("Sync", systemImage: syncManager.needsSync ? "exclamationmark.arrow.triangle.2.circlepath" : "arrow.triangle.2.circlepath")
@@ -103,6 +187,15 @@ struct TrainingLoadView: View {
                         Image(systemName: "info.circle")
                     }
                 }
+                // Debug button (you can remove this later)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingAIDebug = true
+                    } label: {
+                        Image(systemName: "dollarsign.circle")
+                    }
+                }
+                //-----------------
             }
             .overlay {
                 if syncManager.isSyncing {
@@ -115,38 +208,53 @@ struct TrainingLoadView: View {
                 decorationColor: .white,
                 decorationIntensity: 0.06
             )
-           .sheet(isPresented: $showingExplanation) {
+            .sheet(isPresented: $showingExplanation) {
                 TrainingLoadExplanationView()
+            }
+            .sheet(isPresented: $showingAIDebug) {
+                AIInsightsDebugView(manager: aiInsightsManager)
             }
             .onAppear {
                 syncManager.loadSyncDate()
                 TrainingLoadManager.shared.fillMissingDays()
-                viewModel.refresh()
+                // Refresh with whatever health data we have (might be nil)
+                viewModel.refresh(readiness: healthManager.readiness)
                 viewModel.loadPeriod(selectedPeriod)
                 
-                if syncManager.needsSync {
-                    Task {
+                // --- MODIFIED onAppear ---
+                Task {
+                    // 1. Fetch health data (it will only fetch if authorized)
+                    await healthManager.fetchReadinessData()
+                    
+                    // 2. Refresh insights with new health data
+                    viewModel.refresh(readiness: healthManager.readiness)
+                    
+                    // 3. Run Strava sync if needed
+                    if syncManager.needsSync && stravaService.isAuthenticated {
                         await syncManager.syncFromStrava(
                             stravaService: stravaService,
                             userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
                             userLTHR: nil,
-                            startDate: nil // Lets the sync manager use the last sync date
+                            startDate: nil
                         )
-                        viewModel.refresh()
+                        // 4. Refresh all data after sync
+                        viewModel.refresh(readiness: healthManager.readiness)
                         viewModel.loadPeriod(selectedPeriod)
                     }
-                }
-                
-                // Debug: Print what we're showing
-                if let summary = viewModel.summary {
-                    print("📊 Summary: CTL=\(summary.currentCTL), ATL=\(summary.currentATL), TSB=\(summary.currentTSB)")
-                } else {
-                    print("⚠️ No summary available")
+                    // 4. NEW: Trigger AI analysis if conditions warrant it
+                    await aiInsightsManager.analyzeIfNeeded(
+                        summary: viewModel.summary,
+                        readiness: healthManager.readiness,
+                        recentLoads: viewModel.dailyLoads
+                    )
                 }
             }
             .onChange(of: selectedPeriod) { oldValue, newValue in
-                // ADD THIS - reload when period changes
                 viewModel.loadPeriod(newValue)
+            }
+            // Refresh insights when health data changes ---
+            .onChange(of: healthManager.readiness) {
+                viewModel.refresh(readiness: healthManager.readiness)
             }
         }
     }
@@ -193,8 +301,7 @@ struct TrainingLoadView: View {
             .padding(.horizontal)
         }
     }
-
-    // Add this new view at the bottom of TrainingLoadView.swift, before the ViewModel
+    
     struct PeriodButton: View {
         let period: TrainingLoadPeriod
         let isSelected: Bool
@@ -215,7 +322,7 @@ struct TrainingLoadView: View {
             }
         }
     }
-
+    
     private var emptyStateView: some View {
         VStack(spacing: 20) {
             Spacer()
@@ -237,17 +344,16 @@ struct TrainingLoadView: View {
                 
                 Button {
                     Task {
-                        // ADD THIS: Force full 90-day sync
                         let startDate = Calendar.current.date(byAdding: .day, value: -365, to: Date())
                         
                         await syncManager.syncFromStrava(
                             stravaService: stravaService,
                             userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
                             userLTHR: nil,
-                            startDate: startDate  // ADD THIS PARAMETER
+                            startDate: startDate
                         )
                         
-                        viewModel.refresh()
+                        viewModel.refresh(readiness: healthManager.readiness) // Pass readiness
                     }
                 } label: {
                     HStack(spacing: 12) {
@@ -261,7 +367,6 @@ struct TrainingLoadView: View {
                     .background(Color.orange)
                     .cornerRadius(12)
                 }
-                
                 .padding(.horizontal, 40)
                 .disabled(syncManager.isSyncing)
                 
@@ -295,7 +400,83 @@ struct TrainingLoadView: View {
             Spacer()
         }
     }
+    
+    // --- ADD THIS NEW EMPTY STATE ---
+    private var stravaEmptyStateView: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            
+            Image(systemName: "heart.text.square.fill")
+                .font(.system(size: 70))
+                .foregroundColor(.red)
+            
+            Text("Health Data Connected!")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            Text("Connect to Strava in Settings to combine your physiological readiness with your training load (TSS, CTL, ATL) for the most powerful insights.")
+                .font(.body)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+            
+            Text("Connect in Settings → Strava")
+                .font(.subheadline)
+                .foregroundColor(.blue)
+                .padding(.top, 8)
+            
+            Spacer()
+        }
+    }
 }
+
+/*// --- ADD THIS NEW VIEW ---
+struct ConnectHealthCard: View {
+    var onConnect: () -> Void
+    var healthError: String?
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "heart.fill")
+                    .font(.title2)
+                    .foregroundColor(.red)
+                
+                VStack(alignment: .leading) {
+                    Text("Connect to Apple Health")
+                        .font(.headline.weight(.semibold))
+                    Text("Get smarter readiness insights.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            Text("Allow access to HRV, Resting Heart Rate, and Sleep to get personalized recovery advice alongside your training load.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            Button {
+                onConnect()
+            } label: {
+                Text("Connect Apple Health")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            
+            if let error = healthError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+}*/
 
 // MARK: - Current Form Card
 
@@ -386,6 +567,42 @@ struct TrainingLoadChart: View {
     let dailyLoads: [DailyTrainingLoad]
     let period: TrainingLoadPeriod
     
+    // 1. Get the full X-axis domain (historical + future)
+    private var xDomain: ClosedRange<Date> {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        let defaultStart = calendar.date(byAdding: .day, value: -period.days, to: today)!
+        let defaultEnd = calendar.date(byAdding: .day, value: 14, to: today)!
+        
+        guard !dailyLoads.isEmpty, let firstDate = dailyLoads.first?.date, let lastDate = dailyLoads.last?.date else {
+            return defaultStart...defaultEnd
+        }
+        // Ensure the domain includes the full period AND the projection
+        let startDate = min(defaultStart, firstDate)
+        let endDate = max(defaultEnd, lastDate)
+        return startDate...endDate
+    }
+    
+    // 2. Prepare the two separate data series
+    private var historicalData: [DailyTrainingLoad] {
+        dailyLoads.filter { !$0.isProjected }
+    }
+    
+    private var projectedData: [DailyTrainingLoad] {
+        // We must include the *last* historical point to "connect" the dashed line
+        let lastHistorical = historicalData.last
+        let futureData = dailyLoads.filter { $0.isProjected }
+        
+        if let lastHistorical {
+            // Only add if it's not already in the future data (which it shouldn't be)
+            if !futureData.contains(where: { $0.id == lastHistorical.id }) {
+                return [lastHistorical] + futureData
+            }
+        }
+        return futureData
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Training Load Trend")
@@ -404,8 +621,9 @@ struct TrainingLoadChart: View {
                         .foregroundStyle(.gray.opacity(0.3))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                     
-                    // Fitness (CTL) - Blue
-                    ForEach(dailyLoads) { load in
+                    // --- 3. Draw Historical (Solid) Lines ---
+                    // These use the "base" series names: "CTL", "ATL", "TSB"
+                    ForEach(historicalData) { load in
                         if let ctl = load.ctl {
                             LineMark(
                                 x: .value("Date", load.date),
@@ -413,12 +631,8 @@ struct TrainingLoadChart: View {
                             )
                             .foregroundStyle(by: .value("Type", "CTL"))
                             .interpolationMethod(.catmullRom)
-                            .lineStyle(StrokeStyle(lineWidth: 3))
+                            .lineStyle(StrokeStyle(lineWidth: 3)) // Solid
                         }
-                    }
-                    
-                    // Fatigue (ATL) - Orange
-                    ForEach(dailyLoads) { load in
                         if let atl = load.atl {
                             LineMark(
                                 x: .value("Date", load.date),
@@ -426,12 +640,8 @@ struct TrainingLoadChart: View {
                             )
                             .foregroundStyle(by: .value("Type", "ATL"))
                             .interpolationMethod(.catmullRom)
-                            .lineStyle(StrokeStyle(lineWidth: 2))
+                            .lineStyle(StrokeStyle(lineWidth: 2)) // Solid
                         }
-                    }
-                    
-                    // Form (TSB) - Green dashed
-                    ForEach(dailyLoads) { load in
                         if let tsb = load.tsb {
                             LineMark(
                                 x: .value("Date", load.date),
@@ -439,44 +649,91 @@ struct TrainingLoadChart: View {
                             )
                             .foregroundStyle(by: .value("Type", "TSB"))
                             .interpolationMethod(.catmullRom)
-                            .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 3]))
+                            .lineStyle(StrokeStyle(lineWidth: 2)) // Solid
+                        }
+                    }
+                    
+                    // --- 4. Draw Projected (Dashed) Lines ---
+                    // These use *unique* series names: "CTL_Projected", etc.
+                    ForEach(projectedData) { load in
+                        if let ctl = load.ctl {
+                            LineMark(
+                                x: .value("Date", load.date),
+                                y: .value("CTL", ctl)
+                            )
+                            .foregroundStyle(by: .value("Type", "CTL_Projected")) // <-- UNIQUE NAME
+                            .interpolationMethod(.catmullRom)
+                            // --- THINNER LINE ---
+                            .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 4])) // Dashed, thinner (was 3)
+                        }
+                        if let atl = load.atl {
+                            LineMark(
+                                x: .value("Date", load.date),
+                                y: .value("ATL", atl)
+                            )
+                            .foregroundStyle(by: .value("Type", "ATL_Projected")) // <-- UNIQUE NAME
+                            .interpolationMethod(.catmullRom)
+                            // --- THINNER LINE ---
+                            .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 4])) // Dashed, thinner (was 2)
+                        }
+                        if let tsb = load.tsb {
+                            LineMark(
+                                x: .value("Date", load.date),
+                                y: .value("TSB", tsb)
+                            )
+                            .foregroundStyle(by: .value("Type", "TSB_Projected")) // <-- UNIQUE NAME
+                            .interpolationMethod(.catmullRom)
+                            // --- THINNER LINE ---
+                            .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 4])) // Dashed, thinner (was 2)
                         }
                     }
                 }
+                .chartXScale(domain: xDomain) // Use the full domain
+                // 5. Map all 6 series names to their correct colors
                 .chartForegroundStyleScale([
                     "CTL": .blue,
                     "ATL": .orange,
-                    "TSB": .green
+                    "TSB": .green,
+                    "CTL_Projected": .blue,    // <-- Map dashed to same color
+                    "ATL_Projected": .orange, // <-- Map dashed to same color
+                    "TSB_Projected": .green   // <-- Map dashed to same color
                 ])
-                .chartSymbolScale([
-                    "CTL": Circle().strokeBorder(lineWidth: 1),
-                    "ATL": Circle().strokeBorder(lineWidth: 1),
-                    "TSB": Circle().strokeBorder(lineWidth: 1)
-                ])
+                .chartSymbolScale(range: []) // Hide symbols
                 .chartLegend(.hidden)
                 .frame(height: 250)
                 .chartYAxis {
                     AxisMarks(position: .leading)
                 }
+                // X-Axis (Label fix is retained)
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .day, count: period.days < 30 ? 7 : 30)) { value in
-                        AxisGridLine()
-                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                    let today = Calendar.current.startOfDay(for: Date())
+                    
+                    // Automatic grid lines and labels
+                    AxisMarks(preset: .automatic, values: .automatic(desiredCount: 5)) { value in
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(.white.opacity(0.2))
+                        
+                        let isToday = Calendar.current.isDate(value.as(Date.self) ?? Date.distantPast, inSameDayAs: today)
+                        
+                        if !isToday {
+                            AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                                .foregroundStyle(.white.opacity(0.8))
+                        } else {
+                            AxisValueLabel()
+                                .foregroundStyle(.clear)
+                        }
                     }
-                }
-
-                .frame(height: 250)
-                .chartYAxis {
-                    AxisMarks(position: .leading)
-                }
-                .chartXAxis {
-                    AxisMarks(values: .stride(by: .day, count: period.days < 30 ? 7 : 30)) { value in
-                        AxisGridLine()
-                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                    
+                    // Explicit "Today" marker
+                    AxisMarks(values: [today]) {
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 1.5)).foregroundStyle(.white.opacity(0.7))
+                        AxisValueLabel("Today")
+                            .font(.caption.bold())
+                            .foregroundStyle(.white)
+                            .offset(y: 3)
                     }
                 }
                 
-                // Keep your custom legend too for redundancy
+                // Custom legend
                 HStack(spacing: 20) {
                     HStack(spacing: 4) {
                         Circle().fill(Color.blue).frame(width: 8, height: 8)
@@ -492,7 +749,7 @@ struct TrainingLoadChart: View {
                     }
                 }
                 .padding(.top, 8)
-                .frame(maxWidth: .infinity, alignment: .center) // <-- ADD THIS LINE
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
         .padding()
@@ -738,13 +995,16 @@ class TrainingLoadViewModel: ObservableObject {
     @Published var summary: TrainingLoadSummary?
     @Published var dailyLoads: [DailyTrainingLoad] = []
     @Published var insights: [TrainingLoadInsight] = []
+    @Published var readiness: PhysiologicalReadiness?
     
     private let manager = TrainingLoadManager.shared
     private var currentPeriodDays: Int = 0
     
-    func refresh() {
+    func refresh(readiness: PhysiologicalReadiness?) {
+        self.readiness = readiness // Store the latest readiness
         summary = manager.getCurrentSummary()
-        insights = manager.getInsights()
+        // Pass the latest readiness data when generating insights
+        insights = manager.getInsights(readiness: readiness)
     }
     
     func loadPeriod(_ period: TrainingLoadPeriod) {
@@ -759,11 +1019,18 @@ class TrainingLoadViewModel: ObservableObject {
         let today = Calendar.current.startOfDay(for: Date())
         let cutoffDate = Calendar.current.date(byAdding: .day, value: -period.days, to: today)!
         
-        // Filter to period AND exclude future dates
-        dailyLoads = allLoads.filter { $0.date >= cutoffDate && $0.date <= today }
+        // 1. Get historical data for the period
+        let historicalLoads = allLoads.filter { $0.date >= cutoffDate && $0.date <= today }
             .sorted { $0.date < $1.date }
             .filter { $0.ctl != nil && $0.atl != nil } // Only include days with metrics
         
-        print("📊 Chart: Showing \(dailyLoads.count) days from \(cutoffDate.formatted(date: .abbreviated, time: .omitted)) to today")
+        // 2. Get projected data (14 days into the future)
+        let projectedLoads = manager.getProjectedLoads(for: 14)
+        
+        // 3. Combine them
+        self.dailyLoads = historicalLoads + projectedLoads
+        
+        print("📊 Chart: Showing \(historicalLoads.count) historical days + \(projectedLoads.count) projected days")
     }
 }
+

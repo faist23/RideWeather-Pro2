@@ -28,7 +28,7 @@ struct StravaTokenResponse: Decodable {
 }
 
 struct StravaAthlete: Codable {
-    let id: Int?  // ✅ ADD THIS
+    let id: Int?
     let firstname: String?
     let lastname: String?
 }
