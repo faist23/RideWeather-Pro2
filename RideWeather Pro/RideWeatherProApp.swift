@@ -10,6 +10,7 @@ struct RideWeatherProApp: App {
     @StateObject private var weatherViewModel = WeatherViewModel()
     @StateObject private var stravaService = StravaService()
     @StateObject private var wahooService = WahooService()
+    @StateObject private var garminService = GarminService()
     @StateObject private var healthManager = HealthKitManager()
     @State private var showLaunchView = true
     
@@ -23,6 +24,7 @@ struct RideWeatherProApp: App {
                     .environmentObject(weatherViewModel)
                     .environmentObject(stravaService)
                     .environmentObject(wahooService)
+                    .environmentObject(garminService)
                     .environmentObject(healthManager)
                 
                 if showLaunchView {
@@ -55,14 +57,12 @@ struct RideWeatherProApp: App {
                     // Check for the new Wahoo callback URL
                 } else if url.scheme == "rideweatherpro" && url.host == "wahoo-auth" {
                     print("Handling Wahoo auth redirect...")
-                    // You will need to create a WahooService that mirrors
-                    // your StravaService and has its own handleRedirect method.
-                    
                     wahooService.handleRedirect(url: url)
                     
-                    // For now, you can print to confirm it works:
-                    print("Wahoo auth code received: \(url.absoluteString)")
-                                        
+                } else if url.scheme == "rideweatherpro" && url.host == "garmin-auth" {
+                    print("Handling Garmin auth redirect...")
+                    garminService.handleRedirect(url: url)
+                    
                 } else if url.isFileURL {
                     print("Handling imported file URL...")
                     weatherViewModel.importRoute(from: url)

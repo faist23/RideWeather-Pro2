@@ -1314,12 +1314,14 @@ struct EmptyPacingPlanCard: View {
 
 struct UpdatedOptimizedExportTab: View {
     @ObservedObject var viewModel: WeatherViewModel
-    @EnvironmentObject var wahooService: WahooService // Add this
+    @EnvironmentObject var wahooService: WahooService
+    @EnvironmentObject var garminService: GarminService
     
     @State private var exportingFIT = false
     @State private var exportingCSV = false
     @State private var exportingSummary = false
     @State private var exportingToWahoo = false
+    @State private var exportingToGarmin = false
     @State private var exportError: String?
     @State private var currentShareItem: URL? = nil
     
@@ -1371,15 +1373,21 @@ struct UpdatedOptimizedExportTab: View {
             
             VStack(alignment: .leading, spacing: 8) {
                 ExportStatusRow(
-                    title: "Garmin Course FIT",
-                    status: .available,
-                    description: "GPS route with power targets for Garmin Edge/Forerunner"
+                    title: "Garmin Course Sync", // <-- RENAME
+                    status: garminService.isAuthenticated ? .available : .unavailable, // <-- UPDATE
+                    description: garminService.isAuthenticated ? "Push route directly to your Garmin account" : "Connect Garmin in Settings to enable"
                 )
                 
                 ExportStatusRow(
                     title: "Wahoo Route Sync",
                     status: wahooService.isAuthenticated ? .available : .unavailable,
                     description: wahooService.isAuthenticated ? "Push route directly to your Wahoo account" : "Connect Wahoo in Settings to enable"
+                )
+                
+                ExportStatusRow(
+                    title: "Garmin Course FIT", // <-- ADD THIS (for manual file)
+                    status: .available,
+                    description: "GPS route with power targets for manual upload"
                 )
                 
                 ExportStatusRow(
@@ -1406,6 +1414,17 @@ struct UpdatedOptimizedExportTab: View {
                 .fontWeight(.semibold)
             
             VStack(spacing: 12) {
+                ExportOptionButton(
+                    title: "Sync to Garmin",
+                    subtitle: "Push route to your Garmin Connect",
+                    icon: "arrow.up.circle.fill",
+                    isLoading: exportingToGarmin
+                ) {
+                    await exportToGarmin()
+                }
+                .tint(.primary) // Garmin is black/blue, primary works well
+                .disabled(!garminService.isAuthenticated)
+                
                 ExportOptionButton(
                     title: "Sync to Wahoo",
                     subtitle: "Push route to your Wahoo ELEMNT",
@@ -1459,6 +1478,60 @@ struct UpdatedOptimizedExportTab: View {
         }
         .padding(20)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func exportToGarmin() async {
+        await MainActor.run {
+            exportingToGarmin = true
+            exportError = nil
+        }
+        
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        
+        guard let controller = viewModel.advancedController,
+              let pacingPlan = viewModel.finalPacingPlan,
+              !viewModel.enhancedRoutePoints.isEmpty else {
+            await MainActor.run {
+                exportError = "No workout data available to sync."
+                exportingToGarmin = false
+            }
+            return
+        }
+        
+        do {
+            // 1. Generate the FIT data
+            let courseName = viewModel.generateExportFilename(
+                baseName: viewModel.routeDisplayName,
+                suffix: "",
+                extension: ""
+            ).replacingOccurrences(of: "_", with: " ")
+            
+            let fitData = try controller.generateGarminCourseFIT(
+                pacingPlan: pacingPlan,
+                routePoints: viewModel.enhancedRoutePoints,
+                courseName: courseName
+            )
+            
+            guard let data = fitData else {
+                throw GarminService.GarminError.invalidResponse
+            }
+            
+            // 2. Call the GarminService to upload
+            // This is the function you created in GarminService.swift
+            try await garminService.uploadCourse(fitData: data, courseName: courseName)
+            
+            // 3. Show success
+            await MainActor.run {
+                exportingToGarmin = false
+                // You could add a temporary success message here
+            }
+            
+        } catch {
+            await MainActor.run {
+                exportError = "Garmin Sync Failed: \(error.localizedDescription)"
+                exportingToGarmin = false
+            }
+        }
     }
     
     private var exportUnavailableCard: some View {

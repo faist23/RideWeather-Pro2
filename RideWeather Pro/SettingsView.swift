@@ -6,12 +6,13 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var viewModel: WeatherViewModel
-    @EnvironmentObject var stravaService: StravaService // Get the service
-    @EnvironmentObject var wahooService: WahooService // Get the service
-    @EnvironmentObject var healthManager: HealthKitManager // <-- ADD THIS
+    @EnvironmentObject var stravaService: StravaService
+    @EnvironmentObject var wahooService: WahooService
+    @EnvironmentObject var garminService: GarminService
+    @EnvironmentObject var healthManager: HealthKitManager
     @Environment(\.dismiss) private var dismiss
     
-    @State private var isConnectingHealth = false // <-- ADD THIS
+    @State private var isConnectingHealth = false
 
     var body: some View {
         NavigationStack {
@@ -146,7 +147,7 @@ struct SettingsView: View {
                     } footer: {
                         Text("Weight affects climbing speed and rolling resistance calculations.")
                     }
-                    // --- END OF RESTORED/FIXED SECTION ---
+                    
                 }
                 
                 // MARK: - Temperature Preferences
@@ -416,6 +417,49 @@ struct SettingsView: View {
                                     .fontWeight(.semibold)
                             }
                         }
+                    }
+                }
+                
+                Section("Garmin") {
+                    if garminService.isAuthenticated {
+                        HStack(spacing: 12) {
+                            Image("garmin_logo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 80, height: 50)
+                                .foregroundColor(.primary)
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Connected to Garmin")
+                                    .font(.headline)
+                                if let name = garminService.athleteName {
+                                    Text(name).font(.subheadline).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            Button(role: .destructive) {
+                                garminService.disconnect()
+                            } label: { Text("Disconnect") }
+                        }
+                    } else {
+                        Button {
+                            garminService.authenticate()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image("garmin_logo")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 80, height: 50)
+                                Text("Connect with Garmin").fontWeight(.semibold)
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                    }
+                    
+                    if let error = garminService.errorMessage {
+                        Text("Error: \(error)")
+                            .font(.caption)
+                            .foregroundColor(.red)
                     }
                 }
                 
