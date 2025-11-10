@@ -18,13 +18,15 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     private var clientId: String { configValue(forKey: "GarminClientID") ?? "INVALID_CLIENT_ID" }
     private var clientSecret: String { configValue(forKey: "GarminClientSecret") ?? "INVALID_CLIENT_SECRET" }
     
-    // OAuth 2.0 PKCE Endpoints
-    private let authUrl = "https://diauth.garmin.com/di-oauth2-service/oauth/authorize"
+    // ✅ FIXED: Correct Garmin OAuth 2.0 PKCE Endpoints
+    private let authUrl = "https://connect.garmin.com/oauth2Confirm"
     private let tokenUrl = "https://diauth.garmin.com/di-oauth2-service/oauth/token"
     private let apiBaseUrl = "https://apis.garmin.com"
     
     private let redirectUri = "https://faist23.github.io/rideweatherpro-redirect/garmin-redirect.html"
-    private let scope = "activity:read_all profile:read_all course:write" // Request course write scope
+    
+    // ✅ REMOVED: Garmin doesn't use scope parameter in authorization request
+    // Scopes are managed during app creation in Garmin Developer Portal
     
     // MARK: - Published State
     @Published var isAuthenticated: Bool = false
@@ -80,15 +82,20 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         self.currentPkceVerifier = pkce.verifier
         
         var components = URLComponents(string: authUrl)!
+        // ✅ FIXED: Correct parameters according to Garmin OAuth2 PKCE spec
         components.queryItems = [
-            URLQueryItem(name: "client_id", value: clientId),
-            URLQueryItem(name: "redirect_uri", value: redirectUri),
-            URLQueryItem(name: "scope", value: scope),
             URLQueryItem(name: "response_type", value: "code"),
+            URLQueryItem(name: "client_id", value: clientId),
             URLQueryItem(name: "code_challenge", value: pkce.challenge),
-            URLQueryItem(name: "code_challenge_method", value: "S256")
+            URLQueryItem(name: "code_challenge_method", value: "S256"),
+            URLQueryItem(name: "redirect_uri", value: redirectUri)
+            // ✅ REMOVED: scope parameter (not used by Garmin)
+            // ✅ Optional: Add state parameter for extra security if needed
+            // URLQueryItem(name: "state", value: UUID().uuidString)
         ]
         guard let authURL = components.url else { return }
+        
+        print("GarminService: Starting auth with URL: \(authURL)")
 
         webAuthSession = ASWebAuthenticationSession(
             url: authURL,
@@ -116,8 +123,10 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
               url.host == "garmin-auth",
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let code = components.queryItems?.first(where: { $0.name == "code" })?.value else {
+            print("GarminService: Invalid redirect URL: \(url)")
             return
         }
+        print("GarminService: Received auth code")
         guard let pkceVerifier = self.currentPkceVerifier else {
             errorMessage = "Authentication failed: PKCE verifier was lost."
             return
@@ -131,24 +140,78 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        var body = URLComponents()
-        body.queryItems = [
-            URLQueryItem(name: "client_id", value: clientId),
-            URLQueryItem(name: "client_secret", value: clientSecret),
-            URLQueryItem(name: "code", value: code),
-            URLQueryItem(name: "grant_type", value: "authorization_code"),
-            URLQueryItem(name: "redirect_uri", value: redirectUri),
-            URLQueryItem(name: "code_verifier", value: pkceVerifier)
+        // ✅ FIXED: Match exact parameter order from Garmin documentation
+        // Note: redirect_uri MUST match exactly what was sent in authorization request
+        var parameters: [(String, String)] = [
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("code_verifier", pkceVerifier),
+            ("client_id", clientId),
+            ("client_secret", clientSecret)
         ]
-        request.httpBody = body.percentEncodedQuery?.data(using: .utf8)
+        
+        // Only add redirect_uri if it was used in authorization (which it was)
+        parameters.insert(("redirect_uri", redirectUri), at: 1)
+        
+        // Create properly formatted form data
+        let formData = parameters
+            .map { key, value in
+                let encodedKey = key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? key
+                let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
+                return "\(encodedKey)=\(encodedValue)"
+            }
+            .joined(separator: "&")
+        
+        request.httpBody = formData.data(using: .utf8)
+        
+        print("GarminService: Exchanging token with code")
+        print("GarminService: Request URL: \(tokenURL)")
+        print("GarminService: Redirect URI being sent: \(redirectUri)")
+        print("GarminService: Request body length: \(request.httpBody?.count ?? 0) bytes")
+        // Debug: Print sanitized body (hide secrets)
+        let debugBody = formData
+            .replacingOccurrences(of: clientSecret, with: "***SECRET***")
+            .replacingOccurrences(of: code, with: "***CODE***")
+            .replacingOccurrences(of: pkceVerifier, with: "***VERIFIER***")
+        print("GarminService: Request body (sanitized): \(debugBody)")
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
             Task { @MainActor in
                 if let error = error {
-                    self.errorMessage = error.localizedDescription; return
+                    print("GarminService: Network error: \(error.localizedDescription)")
+                    self.errorMessage = error.localizedDescription
+                    return
                 }
-                guard let data = data else { return }
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    print("GarminService: Invalid response type")
+                    self.errorMessage = "Invalid response from server"
+                    return
+                }
+                
+                print("GarminService: Token exchange response status: \(httpResponse.statusCode)")
+                
+                guard let data = data else {
+                    print("GarminService: No data in response")
+                    self.errorMessage = "No data received from server"
+                    return
+                }
+                
+                // Always print the response body for debugging
+                if let responseBody = String(data: data, encoding: .utf8) {
+                    print("GarminService: Response body: \(responseBody)")
+                }
+                
+                // Check for successful response
+                guard httpResponse.statusCode == 200 else {
+                    if httpResponse.statusCode == 401 {
+                        self.errorMessage = "Authentication failed. Please check your Garmin app credentials and redirect URI configuration."
+                    } else {
+                        self.errorMessage = "Token exchange failed (HTTP \(httpResponse.statusCode))"
+                    }
+                    return
+                }
 
                 do {
                     let decoder = JSONDecoder()
@@ -161,13 +224,11 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                         expiresAt: Date().timeIntervalSince1970 + tokenResponse.expiresIn
                     )
                     self.errorMessage = nil
+                    print("GarminService: Token exchange successful")
                     await self.fetchUserName()
                 } catch {
                     print("GarminService: Token decoding error: \(error)")
-                    if let errorBody = String(data: data, encoding: .utf8) {
-                        print("GarminService: Error body: \(errorBody)")
-                    }
-                    self.errorMessage = "Token decoding failed."
+                    self.errorMessage = "Token exchange failed. Please try again."
                 }
             }
         }.resume()
@@ -189,14 +250,23 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        var body = URLComponents()
-        body.queryItems = [
-            URLQueryItem(name: "client_id", value: clientId),
-            URLQueryItem(name: "client_secret", value: clientSecret),
-            URLQueryItem(name: "refresh_token", value: tokens.refreshToken),
-            URLQueryItem(name: "grant_type", value: "refresh_token")
+        // ✅ FIXED: Build form data correctly for Garmin API
+        let parameters = [
+            "grant_type": "refresh_token",
+            "client_id": clientId,
+            "client_secret": clientSecret,
+            "refresh_token": tokens.refreshToken
         ]
-        request.httpBody = body.percentEncodedQuery?.data(using: .utf8)
+        
+        let formData = parameters
+            .map { key, value in
+                let encodedKey = key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? key
+                let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
+                return "\(encodedKey)=\(encodedValue)"
+            }
+            .joined(separator: "&")
+        
+        request.httpBody = formData.data(using: .utf8)
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
@@ -240,7 +310,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         try? await refreshTokenIfNeededAsync()
         guard let token = currentTokens?.accessToken else { return }
         
-        // This endpoint is from the Wellness API, often granted with activity scopes
+        // Use the user permissions endpoint to verify token works
         guard let url = URL(string: "\(apiBaseUrl)/wellness-api/rest/user/permissions") else { return }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -248,14 +318,15 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                print("GarminService: Could not fetch user permissions")
                 return
             }
             
-            // We don't need to decode the response, just knowing it's valid is enough
-            // to assume the token works. We can't get the user's name directly.
+            // Token is valid, set a generic name
             let name = "Garmin User"
             self.athleteName = name
             saveAthleteNameToKeychain(name)
+            print("GarminService: User authenticated successfully")
             
         } catch {
             print("GarminService: Could not fetch user permissions: \(error.localizedDescription)")
@@ -267,8 +338,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         try await refreshTokenIfNeededAsync()
         guard let token = currentTokens?.accessToken else { throw GarminError.notAuthenticated }
         
-        // This is the placeholder URL. You will need to confirm this in your
-        // Garmin Developer Portal API documentation for the "Courses API".
+        // Note: Verify the correct endpoint in your Garmin Developer Portal API documentation
         guard let url = URL(string: "\(apiBaseUrl)/v1/courses") else {
             throw GarminError.invalidURL
         }
@@ -439,7 +509,7 @@ struct GarminTokenResponse: Decodable {
     let expiresIn: TimeInterval
 }
 
-/*// MARK: - PKCE Extensions
+/*// MARK: - PKCE Extensions (keeping commented code for reference)
 extension Data {
     func base64URLEncodedString() -> String {
         return self.base64EncodedString()
