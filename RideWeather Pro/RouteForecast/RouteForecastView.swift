@@ -101,11 +101,11 @@ struct RouteForecastView: View {
                     .environmentObject(wahooService)
                     .environmentObject(viewModel)
             }
-            .sheet(isPresented: $showingGarminImport) {
+/*            .sheet(isPresented: $showingGarminImport) {
                 GarminRouteImportView()
                     .environmentObject(garminService)
                     .environmentObject(viewModel)
-            }
+            }*/
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
                     .environmentObject(viewModel)
@@ -244,7 +244,7 @@ struct RouteForecastView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    if garminService.isAuthenticated {
+/*                    if garminService.isAuthenticated {
                         Button {
                             showingGarminImport = true
                         } label: {
@@ -275,7 +275,7 @@ struct RouteForecastView: View {
                             .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
                         }
                         .buttonStyle(.plain)
-                    }
+                    }*/
                 }
                 .padding(.horizontal, 24)
                 
