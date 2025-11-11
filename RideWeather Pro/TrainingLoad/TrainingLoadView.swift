@@ -713,12 +713,14 @@ struct TrainingLoadChart: View {
                     AxisMarks(preset: .automatic, values: .automatic(desiredCount: 5)) { value in
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(.white.opacity(0.2))
                         
+                        // Check if this value is 'Today' to avoid overlap
                         let isToday = Calendar.current.isDate(value.as(Date.self) ?? Date.distantPast, inSameDayAs: today)
                         
                         if !isToday {
                             AxisValueLabel(format: .dateTime.month(.abbreviated).day())
                                 .foregroundStyle(.white.opacity(0.8))
                         } else {
+                            // Draw an empty label to prevent overlap
                             AxisValueLabel()
                                 .foregroundStyle(.clear)
                         }
