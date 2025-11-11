@@ -18,7 +18,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     private var clientId: String { configValue(forKey: "GarminClientID") ?? "INVALID_CLIENT_ID" }
     private var clientSecret: String { configValue(forKey: "GarminClientSecret") ?? "INVALID_CLIENT_SECRET" }
     
-    // ✅ Use the correct URLs for the standard OAuth 2.0 flow
+    // ✅ Garmin uses PKCE OAuth 2.0 flow
     private let authUrl = "https://connect.garmin.com/oauth2Confirm"
     private let tokenUrl = "https://diauth.garmin.com/di-oauth2-service/oauth/token"
     private let apiBaseUrl = "https://apis.garmin.com"
@@ -32,8 +32,8 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     
     // MARK: - Internal State
     private var webAuthSession: ASWebAuthenticationSession?
-    // ⚠️ We do NOT use PKCE for this flow
-    // private var currentPkceVerifier: String?
+    // ✅ PKCE is REQUIRED for Garmin
+    private var currentPkceVerifier: String?
     
     private var currentTokens: GarminTokens? {
         didSet {
@@ -77,19 +77,20 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             return
         }
 
-        // --- ✅ FIXED: Standard OAuth 2.0 (non-PKCE) Auth URL ---
-        // This flow does NOT send code_challenge or code_challenge_method
+        // ✅ FIXED: Generate PKCE challenge (REQUIRED by Garmin)
+        let pkce = generatePKCE()
+        currentPkceVerifier = pkce.verifier
         
         var components = URLComponents(string: authUrl)!
         components.queryItems = [
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "client_id", value: clientId),
-            URLQueryItem(name: "redirect_uri", value: redirectUri)
-            // NO PKCE parameters
+            URLQueryItem(name: "redirect_uri", value: redirectUri),
+            URLQueryItem(name: "code_challenge", value: pkce.challenge),
+            URLQueryItem(name: "code_challenge_method", value: "S256")
         ]
 
         guard let authURL = components.url else { return }
-        // --- END FIXED BLOCK ---
 
         print("GarminService: Starting auth with URL \(authURL.absoluteString)")
 
@@ -124,26 +125,35 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         }
         print("GarminService: Received auth code")
         
-        // ⚠️ We do not pass a PKCE verifier
-        exchangeToken(code: code)
+        // ✅ Pass the PKCE verifier for token exchange
+        guard let verifier = currentPkceVerifier else {
+            print("GarminService: ERROR - No PKCE verifier stored")
+            errorMessage = "Authentication error: Missing verification code"
+            return
+        }
+        
+        exchangeToken(code: code, pkceVerifier: verifier)
     }
 
-    private func exchangeToken(code: String) { // ⚠️ Removed pkceVerifier
+    private func exchangeToken(code: String, pkceVerifier: String) {
         guard let tokenURL = URL(string: tokenUrl) else { return }
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        // --- ✅ FIXED: Standard OAuth 2.0 (non-PKCE) Token Exchange ---
-        // This flow REQUIRES the client_secret and MUST NOT have the code_verifier
+        // ✅ FIXED: Use Basic Authentication header (REQUIRED by Garmin)
+        let credentials = "\(clientId):\(clientSecret)"
+        if let credentialsData = credentials.data(using: .utf8) {
+            let base64Credentials = credentialsData.base64EncodedString()
+            request.setValue("Basic \(base64Credentials)", forHTTPHeaderField: "Authorization")
+        }
         
+        // ✅ FIXED: Include code_verifier and DO NOT include client credentials in body
         var parameters: [(String, String)] = [
             ("grant_type", "authorization_code"),
             ("redirect_uri", redirectUri),
             ("code", code),
-            ("client_id", clientId),
-            ("client_secret", clientSecret) // ✅ REQUIRED
-            // NO code_verifier
+            ("code_verifier", pkceVerifier)  // ✅ REQUIRED by Garmin
         ]
         
         let formData = parameters
@@ -162,7 +172,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         // Debug: Print sanitized body
         let debugBody = formData
             .replacingOccurrences(of: code, with: "***CODE***")
-            .replacingOccurrences(of: clientSecret, with: "***SECRET***")
+            .replacingOccurrences(of: pkceVerifier, with: "***VERIFIER***")
         print("GarminService: Request body (sanitized): \(debugBody)")
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
@@ -208,6 +218,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                         expiresAt: Date().timeIntervalSince1970 + tokenResponse.expiresIn
                     )
                     self.errorMessage = nil
+                    self.currentPkceVerifier = nil // Clear after successful exchange
                     print("GarminService: ✅ Token exchange successful!")
                     await self.fetchUserName()
                 } catch {
@@ -234,11 +245,15 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        // ✅ FIXED: Refresh token flow also uses client_id/secret
+        // ✅ FIXED: Use Basic Authentication for refresh token
+        let credentials = "\(clientId):\(clientSecret)"
+        if let credentialsData = credentials.data(using: .utf8) {
+            let base64Credentials = credentialsData.base64EncodedString()
+            request.setValue("Basic \(base64Credentials)", forHTTPHeaderField: "Authorization")
+        }
+        
         let parameters = [
             "grant_type": "refresh_token",
-            "client_id": clientId,
-            "client_secret": clientSecret,
             "refresh_token": tokens.refreshToken
         ]
         
@@ -284,6 +299,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     func disconnect() {
         currentTokens = nil
         athleteName = nil
+        currentPkceVerifier = nil
         deleteAthleteNameFromKeychain()
         isAuthenticated = false
     }
@@ -485,6 +501,22 @@ struct GarminTokenResponse: Decodable {
     let expiresIn: TimeInterval
 }
 
-// Note: The PKCE extensions (Data.base64URLEncodedString, Data.random)
-// are intentionally removed from this file, as they are already
-// defined in WahooService.swift and would cause a redeclaration error.
+// MARK: - PKCE Extensions
+// Note: If these extensions already exist in WahooService.swift and cause
+// redeclaration errors, remove this section.
+/*extension Data {
+    static func random(length: Int) -> Data {
+        var data = Data(count: length)
+        _ = data.withUnsafeMutableBytes { bytes in
+            SecRandomCopyBytes(kSecRandomDefault, length, bytes.baseAddress!)
+        }
+        return data
+    }
+    
+    func base64URLEncodedString() -> String {
+        return self.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+}*/
