@@ -1,3 +1,5 @@
+
+
 //
 //  GarminService.swift
 //  RideWeather Pro
@@ -10,6 +12,43 @@ import UIKit
 import CoreLocation
 import CryptoKit
 
+struct GarminActivity: Codable, Identifiable {
+    var id: String { activityId } // Conform to Identifiable
+    let activityId: String
+    let activityName: String?
+    let description: String?
+    let startTimeLocal: String?
+    let distance: Double? // in meters
+    let duration: Double? // in seconds
+    let averageSpeed: Double? // in m/s
+    let averagePower: Double? // in watts
+    let activityType: GarminActivityType?
+    
+    var distanceMeters: Double {
+        return distance ?? 0
+    }
+    
+    var durationFormatted: String {
+        let seconds = Int(duration ?? 0)
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+    }
+    
+    var startTime: Date? {
+        guard let startTimeLocal else { return nil }
+        // Garmin uses ISO 8601 format like "2023-10-27T10:00:00.0"
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: startTimeLocal)
+    }
+}
+
+struct GarminActivityType: Codable {
+    let typeKey: String? // e.g., "cycling", "running"
+    let typeId: Int?
+}
+
 @MainActor
 class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
 
@@ -21,8 +60,10 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     // ✅ Garmin uses PKCE OAuth 2.0 flow
     private let authUrl = "https://connect.garmin.com/oauth2Confirm"
     private let tokenUrl = "https://diauth.garmin.com/di-oauth2-service/oauth/token"
-    private let apiBaseUrl = "https://apis.garmin.com"
-    
+//    private let apiBaseUrl = "https://apis.garmin.com"
+    // Use the secure API host that Garmin's gateway expects
+    private let apiBaseUrl = "https://apis-secure.garmin.com"
+
     private let redirectUri = "https://faist23.github.io/rideweatherpro-redirect/garmin-redirect.html"
     
     // MARK: - Published State
@@ -383,13 +424,120 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     // MARK: - Not Supported (Client-Side)
     
     func fetchRoutes() async throws -> [Any] {
-        print("GarminService: Fetching routes is not supported by the client-side API.")
-        throw GarminError.notSupported
+        print("GarminService: fetchRoutes() called.")
+        throw GarminError.notSupportedByAPI
     }
-
-    func fetchRecentActivities() async throws -> [Any] {
-        print("GarminService: Fetching activities is not supported by the client-side API.")
-        throw GarminError.notSupported
+    
+    // --- NEW: fetchRecentActivities ---
+    
+    /// Fetches a list of completed activities from the Garmin Connect Activity API.
+    func fetchRecentActivities(startDate: Date, limit: Int = 50, start: Int = 0) async throws -> [GarminActivity] {
+        try await refreshTokenIfNeededAsync()
+        guard let token = currentTokens?.accessToken else { throw GarminError.notAuthenticated }
+        
+        // Use the official Activity API endpoint
+        guard var components = URLComponents(string: "\(apiBaseUrl)/activity-api/rest/activities") else {
+            throw GarminError.invalidURL
+        }
+        
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        
+        components.queryItems = [
+            // Garmin API uses timestamps
+            URLQueryItem(name: "uploadStartTimeInSeconds", value: "\(Int(startDate.timeIntervalSince1970))"),
+            URLQueryItem(name: "uploadEndTimeInSeconds", value: "\(Int(Date().timeIntervalSince1970))"),
+            URLQueryItem(name: "limit", value: "\(limit)"),
+            URLQueryItem(name: "start", value: "\(start)")
+        ]
+        
+        guard let url = components.url else { throw GarminError.invalidURL }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        print("GarminService: Fetching activities from \(url.absoluteString)")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GarminError.invalidResponse
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            print("GarminService: Fetch activities failed. Status: \(httpResponse.statusCode). Response: \(String(data: data, encoding: .utf8) ?? "N/A")")
+            throw GarminError.apiError(statusCode: httpResponse.statusCode)
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        
+        do {
+            let activities = try decoder.decode([GarminActivity].self, from: data)
+            print("GarminService: Successfully fetched \(activities.count) activities")
+            return activities
+        } catch {
+            print("GarminService: Decoding activities failed: \(error)")
+            print("GarminService: Raw response: \(String(data: data, encoding: .utf8) ?? "No data")")
+            throw error
+        }
+    }
+    
+    /// Downloads the original .FIT file for a completed activity.
+    func downloadActivityFile(activityId: String) async throws -> Data {
+        try await refreshTokenIfNeededAsync()
+        guard let token = currentTokens?.accessToken else { throw GarminError.notAuthenticated }
+        
+        // This is the official endpoint for downloading the original file
+        guard let url = URL(string: "\(apiBaseUrl)/download-api/rest/download/activity/\(activityId)") else {
+            throw GarminError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        print("GarminService: Downloading .fit file for activity \(activityId)")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GarminError.invalidResponse
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            print("GarminService: Download .fit file failed. Status: \(httpResponse.statusCode).")
+            throw GarminError.apiError(statusCode: httpResponse.statusCode)
+        }
+        
+        print("GarminService: Successfully downloaded \(data.count) bytes for activity \(activityId)")
+        return data
+    }
+    
+    // --- NEW: extractRouteFromGarminActivity ---
+    
+    /// Downloads and parses a Garmin activity's .FIT file to extract its GPS route.
+    func extractRouteFromGarminActivity(activityId: String) async throws -> (coordinates: [CLLocationCoordinate2D], totalDistanceMeters: Double) {
+        // 1. Download the file data
+        let fitData = try await downloadActivityFile(activityId: activityId)
+        
+        // 2. Parse the .fit file
+        let parser = RouteParser()
+        let (coordinates, elevationAnalysis) = try parser.parseWithElevation(fitData: fitData)
+        
+        guard !coordinates.isEmpty else {
+            throw GarminError.noRouteData
+        }
+        
+        // 3. Get total distance from the elevation analysis
+        let totalDistance = elevationAnalysis?.elevationProfile.last?.distance ?? 0.0
+        
+        if totalDistance == 0.0 {
+            print("GarminService: Warning - parsed coordinates but total distance is 0.")
+        }
+        
+        return (coordinates, totalDistance)
     }
 
     // MARK: - Presentation Anchor
@@ -474,7 +622,8 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         case invalidURL
         case invalidResponse
         case apiError(statusCode: Int)
-        case notSupported
+        case notSupportedByAPI
+        case noRouteData
         
         var errorDescription: String? {
             switch self {
@@ -482,7 +631,8 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             case .invalidURL: return "Invalid API URL."
             case .invalidResponse: return "Invalid response from Garmin."
             case .apiError(let code): return "Garmin API error: \(code)."
-            case .notSupported: return "This feature is not supported by the Garmin client-side API."
+            case .notSupportedByAPI: return "This feature (importing saved routes) is not supported by the official Garmin API. Please import a completed activity instead."
+            case .noRouteData: return "This activity does not contain any GPS data to import."
             }
         }
     }
@@ -500,23 +650,3 @@ struct GarminTokenResponse: Decodable {
     let refreshToken: String
     let expiresIn: TimeInterval
 }
-
-// MARK: - PKCE Extensions
-// Note: If these extensions already exist in WahooService.swift and cause
-// redeclaration errors, remove this section.
-/*extension Data {
-    static func random(length: Int) -> Data {
-        var data = Data(count: length)
-        _ = data.withUnsafeMutableBytes { bytes in
-            SecRandomCopyBytes(kSecRandomDefault, length, bytes.baseAddress!)
-        }
-        return data
-    }
-    
-    func base64URLEncodedString() -> String {
-        return self.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-    }
-}*/

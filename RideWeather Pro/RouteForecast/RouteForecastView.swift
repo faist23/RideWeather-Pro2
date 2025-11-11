@@ -11,10 +11,12 @@ struct RouteForecastView: View {
     @EnvironmentObject var viewModel: WeatherViewModel
     @EnvironmentObject var stravaService: StravaService
     @EnvironmentObject var wahooService: WahooService
+    @EnvironmentObject var garminService: GarminService
     
     @State private var isImporting = false
     @State private var showingStravaImport = false
     @State private var showingWahooImport = false
+    @State private var showingGarminImport = false
     @State private var showingSettings = false
     @State private var showingDatePicker = false
     @State private var showingTimePicker = false
@@ -97,6 +99,11 @@ struct RouteForecastView: View {
             .sheet(isPresented: $showingWahooImport) {
                 WahooRouteImportView(onDismiss: { showingWahooImport = false })
                     .environmentObject(wahooService)
+                    .environmentObject(viewModel)
+            }
+            .sheet(isPresented: $showingGarminImport) {
+                GarminRouteImportView()
+                    .environmentObject(garminService)
                     .environmentObject(viewModel)
             }
             .sheet(isPresented: $showingSettings) {
@@ -224,6 +231,38 @@ struct RouteForecastView: View {
                             .background(
                                 LinearGradient(
                                     colors: [.blue.opacity(0.9), .cyan.opacity(0.7)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                in: RoundedRectangle(cornerRadius: 12)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(.white.opacity(0.3), lineWidth: 1)
+                            )
+                            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if garminService.isAuthenticated {
+                        Button {
+                            showingGarminImport = true
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image("garmin_logo")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(height: 24)
+                                    .foregroundColor(.primary)
+                                Text("Import from Garmin")
+                                    .font(.headline)
+                            }
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color.black.opacity(0.8), Color.gray.opacity(0.6)],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 ),
