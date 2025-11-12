@@ -671,14 +671,26 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         body.append("Content-Disposition: form-data; name=\"name\"\r\n\r\n".data(using: .utf8)!)
         body.append("\(routeName)\r\n".data(using: .utf8)!)
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(routeName).fit\"\r\n".data(using: .utf8)!)
+        
+        // ------------------- FIX 1: START -------------------
+        // The API parameter for the file is "route", not "file"
+        body.append("Content-Disposition: form-data; name=\"route\"; filename=\"\(routeName).fit\"\r\n".data(using: .utf8)!)
+        // -------------------- FIX 1: END --------------------
+        
         body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
         body.append(fitData)
         body.append("\r\n".data(using: .utf8)!)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-        request.httpBody = body
         
+        // ------------------- FIX 2: START -------------------
+        // DO NOT set request.httpBody when using upload(for:from:).
+        // This was causing the console warning.
+        // request.httpBody = body // <-- REMOVE THIS LINE
+        // -------------------- FIX 2: END --------------------
+        
+        // The 'from: body' parameter handles the upload
         let (data, response) = try await URLSession.shared.upload(for: request, from: body)
+        
         guard let httpResponse = response as? HTTPURLResponse else {
             throw WahooError.invalidResponse
         }

@@ -11,7 +11,7 @@ import Combine
 
 // MARK: - Main Import View
 
-struct GarminRouteImportView: View {
+/*struct GarminRouteImportView: View {
     @EnvironmentObject var garminService: GarminService
     @EnvironmentObject var weatherViewModel: WeatherViewModel
     @Environment(\.dismiss) private var dismiss
@@ -85,3 +85,4 @@ struct GarminRouteImportView: View {
         }
     }
 }
+*/

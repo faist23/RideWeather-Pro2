@@ -314,56 +314,75 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         }
     }
     
-    /// ✅ THIS WORKS - Upload a course/route TO Garmin
     func uploadCourse(fitData: Data, courseName: String) async throws {
-        print("GarminService: 🚀 Starting course upload for '\(courseName)'")
-        print("GarminService: FIT file size: \(fitData.count) bytes")
-        
         try await refreshTokenIfNeededAsync()
-        guard let token = currentTokens?.accessToken else {
-            print("GarminService: ❌ Not authenticated")
-            throw GarminError.notAuthenticated
+        guard let token = currentTokens?.accessToken else { throw GarminError.notAuthenticated }
+        
+        // This is the official Garmin Courses API endpoint
+        guard let url = URL(string: "\(apiBaseUrl)/courses-api/rest/course/import") else {
+            throw GarminError.invalidURL
         }
         
-        print("GarminService: ✅ Token refreshed, proceeding with upload")
+        // ------------------- FIX 1: START -------------------
+        // Sanitize the name for the API and filename to avoid WAF block
+        let allowedChars = CharacterSet.alphanumerics.union(.whitespaces).union(.init(charactersIn: "-_"))
+        let sanitizedName = String(courseName.unicodeScalars.filter(allowedChars.contains))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .prefix(50) // Enforce a reasonable length
         
-        // Try multiple known Garmin course upload endpoints
-        let endpoints = [
-            "\(apiBaseUrl)/course-api/course/import",
-            "\(apiBaseUrl)/course-service/course/import",
-            "\(apiBaseUrl)/course-api/rest/course/import"
-        ]
+        // Create a filename-safe version
+        let sanitizedFilename = sanitizedName
+            .replacingOccurrences(of: " ", with: "_")
+            .appending(".fit")
+        // -------------------- FIX 1: END --------------------
         
-        var lastError: Error?
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
-        for (index, endpoint) in endpoints.enumerated() {
-            print("GarminService: Trying endpoint \(index + 1)/\(endpoints.count): \(endpoint)")
-            do {
-                try await attemptUpload(to: endpoint, fitData: fitData, courseName: courseName, token: token)
-                print("GarminService: ✅✅✅ Course uploaded successfully to \(endpoint)")
-                return // Success!
-            } catch let error as GarminError {
-                print("GarminService: ⚠️ Failed endpoint \(endpoint): \(error.localizedDescription)")
-                lastError = error
-                
-                // If it's a 404, try next endpoint
-                if case .apiError(let statusCode) = error, statusCode == 404 {
-                    print("GarminService: 404 error, trying next endpoint...")
-                    continue
-                }
-                
-                // For other errors, throw immediately
-                print("GarminService: ❌ Non-404 error, stopping: \(error)")
-                throw error
-            } catch {
-                print("GarminService: ❌ Unexpected error: \(error)")
-                throw error
-            }
+        // ------------------- FIX 2: START -------------------
+        // Add a User-Agent. This is CRITICAL for avoiding Cloudflare 403 blocks.
+        request.setValue("RideWeatherPro/1.0", forHTTPHeaderField: "User-Agent")
+        // -------------------- FIX 2: END --------------------
+        
+        let boundary = "Boundary-\(UUID().uuidString)"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        
+        var body = Data()
+        
+        // Course Name (as form data)
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"courseName\"\r\n\r\n".data(using: .utf8)!)
+        // Use the sanitized name
+        body.append("\(sanitizedName)\r\n".data(using: .utf8)!)
+        
+        // FIT File Data (as form data)
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        // Use the sanitized filename
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(sanitizedFilename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: application/vnd.garmin.fit\r\n\r\n".data(using: .utf8)!)
+        body.append(fitData)
+        body.append("\r\n".data(using: .utf8)!)
+        
+        // End boundary
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        
+        request.httpBody = body
+        
+        // Note: Your log showed retry logic, but your file uses .data(for:).
+        // This implementation matches your provided file.
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GarminError.invalidResponse
         }
         
-        // If all endpoints failed, throw the last error
-        print("GarminService: ❌ All endpoints failed")
-        throw lastError ?? GarminError.apiError(statusCode: 500)
+        guard (200...299).contains(httpResponse.statusCode) else {
+            print("GarminService: Upload failed. Status: \(httpResponse.statusCode). Response: \(String(data: data, encoding: .utf8) ?? "N/A")")
+            throw GarminError.apiError(statusCode: httpResponse.statusCode)
+        }
+        
+        print("GarminService: Course uploaded successfully!")
     }
     
     /// Helper function to attempt upload to a specific endpoint

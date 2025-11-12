@@ -167,6 +167,7 @@ class WeatherViewModel: ObservableObject {
         return nameWithoutExtension
             .replacingOccurrences(of: "_", with: " ")
             .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "\n", with: " ") // <-- ADD THIS LINE
     }
     
     /// Generates export filename with custom suffix
@@ -186,6 +187,7 @@ class WeatherViewModel: ObservableObject {
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "\\", with: "_")
             .replacingOccurrences(of: ":", with: "_")
+            .replacingOccurrences(of: "\n", with: "_") // <-- ADD THIS LINE
         
         return "\(cleanName)-\(suffix).\(fileExtension)"
     }

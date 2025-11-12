@@ -1483,60 +1483,6 @@ struct UpdatedOptimizedExportTab: View {
         .padding(20)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
-
-    private func exportToGarmin() async {
-        await MainActor.run {
-            exportingToGarmin = true
-            exportError = nil
-        }
-        
-        try? await Task.sleep(nanoseconds: 50_000_000)
-        
-        guard let controller = viewModel.advancedController,
-              let pacingPlan = viewModel.finalPacingPlan,
-              !viewModel.enhancedRoutePoints.isEmpty else {
-            await MainActor.run {
-                exportError = "No workout data available to sync."
-                exportingToGarmin = false
-            }
-            return
-        }
-        
-        do {
-            // 1. Generate the FIT data
-            let courseName = viewModel.generateExportFilename(
-                baseName: viewModel.routeDisplayName,
-                suffix: "",
-                extension: ""
-            ).replacingOccurrences(of: "_", with: " ")
-            
-            let fitData = try controller.generateGarminCourseFIT(
-                pacingPlan: pacingPlan,
-                routePoints: viewModel.enhancedRoutePoints,
-                courseName: courseName
-            )
-            
-            guard let data = fitData else {
-                throw GarminService.GarminError.invalidResponse
-            }
-            
-            // 2. Call the GarminService to upload
-            // This is the function you created in GarminService.swift
-            try await garminService.uploadCourse(fitData: data, courseName: courseName)
-            
-            // 3. Show success
-            await MainActor.run {
-                exportingToGarmin = false
-                // You could add a temporary success message here
-            }
-            
-        } catch {
-            await MainActor.run {
-                exportError = "Garmin Sync Failed: \(error.localizedDescription)"
-                exportingToGarmin = false
-            }
-        }
-    }
     
     private var exportUnavailableCard: some View {
         VStack(spacing: 16) {
@@ -1613,7 +1559,90 @@ struct UpdatedOptimizedExportTab: View {
     
     // MARK: - Export Methods
     
+    private func exportToGarmin() async {
+        print("📱 UI: exportToGarmin() called") // Added logging
+        await MainActor.run {
+            exportingToGarmin = true
+            exportError = nil
+        }
+        
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        
+        // ------------------- FIX 1: START -------------------
+        // Build enhanced points if they don't exist.
+        // This is the step that was missing.
+        if viewModel.enhancedRoutePoints.isEmpty {
+            print("📱 UI: ❌ No route points") // Your log
+            await MainActor.run {
+                viewModel.buildEnhancedRoutePoints()
+            }
+            print("✅ Built \(viewModel.enhancedRoutePoints.count) enhanced route points")
+        }
+        // -------------------- FIX 1: END --------------------
+        
+        guard let controller = viewModel.advancedController,
+              let pacingPlan = viewModel.finalPacingPlan,
+              !viewModel.enhancedRoutePoints.isEmpty else {
+            
+            let errorMsg = "No workout data available to sync."
+            print("📱 UI: ❌ \(errorMsg)")
+            await MainActor.run {
+                exportError = errorMsg
+                exportingToGarmin = false
+            }
+            return
+        }
+        
+        print("📱 UI: ✅ Prerequisites validated")
+        print("📱 UI: Route points: \(viewModel.enhancedRoutePoints.count)")
+        
+        do {
+            // 1. Generate the FIT data
+            // Re-sanitize the course name to remove newlines
+            let courseName = viewModel.generateExportFilename(
+                baseName: viewModel.routeDisplayName,
+                suffix: "",
+                extension: ""
+            )
+                .replacingOccurrences(of: "_", with: " ")
+                .replacingOccurrences(of: "\n", with: " ") // Sanitize newline
+            
+            print("📱 UI: Course name: \(courseName)")
+            print("📱 UI: Generating FIT data...")
+            
+            let fitData = try controller.generateGarminCourseFIT(
+                pacingPlan: pacingPlan,
+                routePoints: viewModel.enhancedRoutePoints,
+                courseName: courseName
+            )
+            
+            guard let data = fitData else {
+                throw GarminService.GarminError.invalidResponse
+            }
+            
+            print("📱 UI: ✅ FIT data generated: \(data.count) bytes")
+            print("📱 UI: Calling garminService.uploadCourse()...")
+            
+            // 2. Call the GarminService to upload
+            try await garminService.uploadCourse(fitData: data, courseName: courseName)
+            
+            // 3. Show success
+            await MainActor.run {
+                exportingToGarmin = false
+                // Add a temporary success message here
+            }
+            
+        } catch {
+            print("📱 UI: ❌ Export failed: \(error.localizedDescription)")
+            await MainActor.run {
+                exportError = "Garmin Sync Failed: \(error.localizedDescription)"
+                exportingToGarmin = false
+            }
+        }
+    }
+    
     private func exportToWahoo() async {
+        print("📱 UI: exportToWahoo() called") // Added logging
         await MainActor.run {
             exportingToWahoo = true
             exportError = nil
@@ -1621,23 +1650,46 @@ struct UpdatedOptimizedExportTab: View {
         
         try? await Task.sleep(nanoseconds: 50_000_000)
         
-        guard let controller = viewModel.advancedController,
-              let pacingPlan = viewModel.finalPacingPlan, // Use the adjusted plan
-              !viewModel.enhancedRoutePoints.isEmpty else {
+        // ------------------- FIX 1: START -------------------
+        // Build enhanced points if they don't exist.
+        if viewModel.enhancedRoutePoints.isEmpty {
+            print("📱 UI: ❌ No route points")
             await MainActor.run {
-                exportError = "No workout data available to sync."
+                viewModel.buildEnhancedRoutePoints()
+            }
+            print("✅ Built \(viewModel.enhancedRoutePoints.count) enhanced route points")
+        }
+        // -------------------- FIX 1: END --------------------
+        
+        guard let controller = viewModel.advancedController,
+              let pacingPlan = viewModel.finalPacingPlan,
+              !viewModel.enhancedRoutePoints.isEmpty else {
+            
+            let errorMsg = "No workout data available to sync."
+            print("📱 UI: ❌ \(errorMsg)")
+            await MainActor.run {
+                exportError = errorMsg
                 exportingToWahoo = false
             }
             return
         }
         
+        print("📱 UI: ✅ Prerequisites validated")
+        print("📱 UI: Route points: \(viewModel.enhancedRoutePoints.count)")
+        
         do {
             // 1. Generate the FIT data
+            // Re-sanitize the course name to remove newlines
             let courseName = viewModel.generateExportFilename(
                 baseName: viewModel.routeDisplayName,
                 suffix: "",
                 extension: ""
-            ).replacingOccurrences(of: "_", with: " ")
+            )
+                .replacingOccurrences(of: "_", with: " ")
+                .replacingOccurrences(of: "\n", with: " ") // Sanitize newline
+            
+            print("📱 UI: Course name: \(courseName)")
+            print("📱 UI: Generating FIT data...")
             
             let fitData = try controller.generateGarminCourseFIT(
                 pacingPlan: pacingPlan,
@@ -1649,16 +1701,20 @@ struct UpdatedOptimizedExportTab: View {
                 throw WahooService.WahooError.invalidResponse
             }
             
+            print("📱 UI: ✅ FIT data generated: \(data.count) bytes")
+            print("📱 UI: Calling wahooService.uploadRouteToWahoo()...")
+            
             // 2. Call the WahooService to upload
             try await wahooService.uploadRouteToWahoo(fitData: data, routeName: courseName)
             
             // 3. Show success
             await MainActor.run {
                 exportingToWahoo = false
-                // You could add a temporary success message here
+                // Add a temporary success message here
             }
             
         } catch {
+            print("📱 UI: ❌ Export failed: \(error.localizedDescription)")
             await MainActor.run {
                 exportError = "Wahoo Sync Failed: \(error.localizedDescription)"
                 exportingToWahoo = false
