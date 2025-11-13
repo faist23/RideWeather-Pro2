@@ -14,7 +14,7 @@ import CryptoKit
 
 @MainActor
 class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
-
+    
     // MARK: - Configuration
     private var garminConfig: [String: String]?
     private var clientId: String { configValue(forKey: "GarminClientID") ?? "INVALID_CLIENT_ID" }
@@ -45,14 +45,14 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     private let keychainService = Bundle.main.bundleIdentifier ?? "com.rideweatherpro.garmin"
     private let keychainAccount = "garminUserTokensV1"
     private let athleteNameKey = "garmin_athlete_name"
-
+    
     override init() {
         super.init()
         loadConfig()
         loadTokensFromKeychain()
         loadAthleteNameFromKeychain()
     }
-
+    
     private func loadConfig() {
         guard let path = Bundle.main.path(forResource: "GarminConfig", ofType: "plist"),
               let dict = NSDictionary(contentsOfFile: path) as? [String: String] else {
@@ -64,11 +64,11 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         garminConfig = dict
         print("GarminService: Configuration loaded.")
     }
-
+    
     private func configValue(forKey key: String) -> String? {
         return garminConfig?[key]
     }
-
+    
     // MARK: - Authentication (unchanged - this works)
     
     func authenticate() {
@@ -76,7 +76,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             errorMessage = "Invalid Garmin configuration."
             return
         }
-
+        
         let pkce = generatePKCE()
         currentPkceVerifier = pkce.verifier
         
@@ -88,11 +88,11 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             URLQueryItem(name: "code_challenge", value: pkce.challenge),
             URLQueryItem(name: "code_challenge_method", value: "S256")
         ]
-
+        
         guard let authURL = components.url else { return }
-
+        
         print("GarminService: Starting auth with URL \(authURL.absoluteString)")
-
+        
         webAuthSession = ASWebAuthenticationSession(
             url: authURL,
             callbackURLScheme: "rideweatherpro"
@@ -113,7 +113,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         webAuthSession?.prefersEphemeralWebBrowserSession = true
         _ = webAuthSession?.start()
     }
-
+    
     func handleRedirect(url: URL) {
         guard url.scheme == "rideweatherpro",
               url.host == "garmin-auth",
@@ -132,13 +132,13 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         
         exchangeToken(code: code, pkceVerifier: verifier)
     }
-
+    
     private func exchangeToken(code: String, pkceVerifier: String) {
         guard let tokenURL = URL(string: tokenUrl) else { return }
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-
+        
         let credentials = "\(clientId):\(clientSecret)"
         if let credentialsData = credentials.data(using: .utf8) {
             let base64Credentials = credentialsData.base64EncodedString()
@@ -161,7 +161,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             .joined(separator: "&")
         
         request.httpBody = formData.data(using: .utf8)
-
+        
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
             Task { @MainActor in
@@ -189,7 +189,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                     self.errorMessage = "Token exchange failed (HTTP \(httpResponse.statusCode))."
                     return
                 }
-
+                
                 do {
                     let decoder = JSONDecoder()
                     decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -211,7 +211,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             }
         }.resume()
     }
-
+    
     func refreshTokenIfNeeded(completion: @escaping (Result<Void, Error>) -> Void) {
         guard let tokens = currentTokens else {
             completion(.failure(GarminError.notAuthenticated)); return
@@ -227,7 +227,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-
+        
         let credentials = "\(clientId):\(clientSecret)"
         if let credentialsData = credentials.data(using: .utf8) {
             let base64Credentials = credentialsData.base64EncodedString()
@@ -248,7 +248,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             .joined(separator: "&")
         
         request.httpBody = formData.data(using: .utf8)
-
+        
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
             Task { @MainActor in
@@ -256,9 +256,9 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                     self.disconnect(); completion(.failure(error)); return
                 }
                 guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200, let data = data else {
-                    self.disconnect(); completion(.failure(GarminError.apiError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? -1))); return
+                    self.disconnect(); completion(.failure(GarminError.apiError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? -1, message: "refresh_token"))); return
                 }
-
+                
                 do {
                     let decoder = JSONDecoder()
                     decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -277,7 +277,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             }
         }.resume()
     }
-
+    
     func disconnect() {
         currentTokens = nil
         athleteName = nil
@@ -285,7 +285,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         deleteAthleteNameFromKeychain()
         isAuthenticated = false
     }
-
+    
     // MARK: - API Methods (ONLY UPLOAD - Import requires backend)
     
     func fetchUserName() async {
@@ -314,76 +314,178 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         }
     }
     
-    func uploadCourse(fitData: Data, courseName: String) async throws {
+    func uploadCourse(routePoints: [EnhancedRoutePoint], courseName: String, pacingPlan: PacingPlan? = nil, activityType: String = "ROAD_CYCLING") async throws {
         try await refreshTokenIfNeededAsync()
         guard let token = currentTokens?.accessToken else { throw GarminError.notAuthenticated }
         
-        // This is the official Garmin Courses API endpoint
-        guard let url = URL(string: "\(apiBaseUrl)/courses-api/rest/course/import") else {
+        let coursesEndpoint = "https://apis.garmin.com/training-api/courses/v1/course"
+        
+        guard let url = URL(string: coursesEndpoint) else {
             throw GarminError.invalidURL
         }
         
-        // ------------------- FIX 1: START -------------------
-        // Sanitize the name for the API and filename to avoid WAF block
+        // Sanitize the name
         let allowedChars = CharacterSet.alphanumerics.union(.whitespaces).union(.init(charactersIn: "-_"))
         let sanitizedName = String(courseName.unicodeScalars.filter(allowedChars.contains))
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .prefix(50) // Enforce a reasonable length
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "-.", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-._ "))
+            .prefix(100)
         
-        // Create a filename-safe version
-        let sanitizedFilename = sanitizedName
-            .replacingOccurrences(of: " ", with: "_")
-            .appending(".fit")
-        // -------------------- FIX 1: END --------------------
+        // Calculate course statistics
+        let totalDistance = routePoints.last?.distance ?? 0.0
+        var elevationGain: Double = 0.0
+        var elevationLoss: Double = 0.0
+        
+        for i in 1..<routePoints.count {
+            let currentElev = routePoints[i].elevation ?? 0.0
+            let prevElev = routePoints[i-1].elevation ?? 0.0
+            let elevDiff = currentElev - prevElev
+            
+            if elevDiff > 0 {
+                elevationGain += elevDiff
+            } else {
+                elevationLoss += abs(elevDiff)
+            }
+        }
+        
+        // Build geoPoints array with power targets
+        var geoPointsArray: [[String: Any]] = []
+        
+        // ✅ Build a lookup map of segment boundaries
+        var segmentBoundaries: [(start: Double, end: Double, power: Double)] = []
+        if let plan = pacingPlan {
+            var cumulativeDistance: Double = 0.0
+            for segment in plan.segments {
+                let start = cumulativeDistance
+                let end = cumulativeDistance + segment.originalSegment.distanceMeters
+                segmentBoundaries.append((start, end, segment.targetPower))
+                cumulativeDistance = end
+            }
+            print("GarminService: Built \(segmentBoundaries.count) segment boundaries")
+        }
+        
+        for point in routePoints {
+            var geoPoint: [String: Any] = [
+                "latitude": point.coordinate.latitude,
+                "longitude": point.coordinate.longitude
+            ]
+            
+            // Add elevation if available
+            if let elevation = point.elevation {
+                geoPoint["elevation"] = elevation
+            }
+            
+            // Check if this point should have a power target marker
+            if !segmentBoundaries.isEmpty {
+                let pointDistance = point.distance
+                
+                // Find which segment this point belongs to
+                for (start, end, power) in segmentBoundaries {
+                    if pointDistance >= start && pointDistance < end {
+                        // Only add course point at segment starts (within 50m)
+                        let distanceFromStart = abs(pointDistance - start)
+                        if distanceFromStart < 50 {
+                            let coursePoint: [String: Any] = [
+                                "name": "Power \(Int(power))W",
+                                "coursePointType": "INFO"
+                            ]
+                            geoPoint["information"] = coursePoint
+                            break
+                        }
+                    }
+                }
+            }
+            
+            geoPointsArray.append(geoPoint)
+        }
+        
+        // Build the course JSON payload
+        let coursePayload: [String: Any] = [
+            "courseName": sanitizedName,
+            "description": "Created by RideWeatherPro with power guidance",
+            "distance": totalDistance,
+            "elevationGain": elevationGain,
+            "elevationLoss": elevationLoss,
+            "geoPoints": geoPointsArray,
+            "activityType": activityType,
+            "coordinateSystem": "WGS84"
+        ]
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        
-        // ------------------- FIX 2: START -------------------
-        // Add a User-Agent. This is CRITICAL for avoiding Cloudflare 403 blocks.
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("RideWeatherPro/1.0", forHTTPHeaderField: "User-Agent")
-        // -------------------- FIX 2: END --------------------
         
-        let boundary = "Boundary-\(UUID().uuidString)"
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        
-        var body = Data()
-        
-        // Course Name (as form data)
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"courseName\"\r\n\r\n".data(using: .utf8)!)
-        // Use the sanitized name
-        body.append("\(sanitizedName)\r\n".data(using: .utf8)!)
-        
-        // FIT File Data (as form data)
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        // Use the sanitized filename
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(sanitizedFilename)\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: application/vnd.garmin.fit\r\n\r\n".data(using: .utf8)!)
-        body.append(fitData)
-        body.append("\r\n".data(using: .utf8)!)
-        
-        // End boundary
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-        
-        request.httpBody = body
-        
-        // Note: Your log showed retry logic, but your file uses .data(for:).
-        // This implementation matches your provided file.
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw GarminError.invalidResponse
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: coursePayload, options: []) else {
+            throw GarminError.invalidJSON
         }
         
-        guard (200...299).contains(httpResponse.statusCode) else {
-            print("GarminService: Upload failed. Status: \(httpResponse.statusCode). Response: \(String(data: data, encoding: .utf8) ?? "N/A")")
-            throw GarminError.apiError(statusCode: httpResponse.statusCode)
+        request.httpBody = jsonData
+        
+        print("GarminService: Uploading course to \(url.absoluteString)")
+        print("GarminService: Course name: \(sanitizedName)")
+        print("GarminService: Total distance: \(String(format: "%.2f", totalDistance/1000.0))km")
+        print("GarminService: Elevation gain: \(String(format: "%.0f", elevationGain))m")
+        print("GarminService: Elevation loss: \(String(format: "%.0f", elevationLoss))m")
+        print("GarminService: Number of geoPoints: \(geoPointsArray.count)")
+        if !segmentBoundaries.isEmpty {
+            let powerPointsCount = geoPointsArray.filter { ($0["information"] as? [String: Any]) != nil }.count
+            print("GarminService: Power target course points: \(powerPointsCount)")
         }
         
-        print("GarminService: Course uploaded successfully!")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw GarminError.invalidResponse
+            }
+            
+            print("GarminService: Response status: \(httpResponse.statusCode)")
+            
+            if let responseBody = String(data: data, encoding: .utf8) {
+                print("GarminService: Response body: \(responseBody)")
+            }
+            
+            switch httpResponse.statusCode {
+            case 200:
+                print("GarminService: ✅ Course created successfully!")
+                
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let courseId = json["courseId"] as? Int {
+                    print("GarminService: Course ID: \(courseId)")
+                }
+                
+            case 401:
+                print("GarminService: User access token doesn't exist")
+                throw GarminError.notAuthenticated
+                
+            case 412:
+                print("GarminService: User permission error")
+                throw GarminError.insufficientPermissions
+                
+            case 429:
+                print("GarminService: Rate limit exceeded")
+                throw GarminError.rateLimitExceeded
+                
+            default:
+                let errorMsg = String(data: data, encoding: .utf8) ?? "Unknown error"
+                print("GarminService: Unexpected status code: \(httpResponse.statusCode)")
+                print("GarminService: Response: \(errorMsg)")
+                throw GarminError.apiError(statusCode: httpResponse.statusCode, message: errorMsg)
+            }
+            
+        } catch let error as GarminError {
+            throw error
+        } catch {
+            print("GarminService: Network error: \(error.localizedDescription)")
+            throw GarminError.networkError(error)
+        }
     }
+
+    
     
     /// Helper function to attempt upload to a specific endpoint
     private func attemptUpload(to urlString: String, fitData: Data, courseName: String, token: String) async throws {
@@ -427,10 +529,10 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         guard (200...299).contains(httpResponse.statusCode) else {
             let responseBody = String(data: data, encoding: .utf8) ?? "N/A"
             print("GarminService: Upload failed. Status: \(httpResponse.statusCode). Response: \(responseBody)")
-            throw GarminError.apiError(statusCode: httpResponse.statusCode)
+            throw GarminError.apiError(statusCode: httpResponse.statusCode, message: responseBody)
         }
     }
-
+    
     // MARK: - Presentation Anchor
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -439,7 +541,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         }
         return window
     }
-
+    
     // MARK: - Helpers
     private func refreshTokenIfNeededAsync() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -471,7 +573,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             print("GarminService: Failed to save tokens: \(error)")
         }
     }
-
+    
     private func loadTokensFromKeychain() {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: keychainService, kSecAttrAccount as String: keychainAccount, kSecReturnData as String: kCFBooleanTrue!, kSecMatchLimit as String: kSecMatchLimitOne]
         var item: CFTypeRef?
@@ -486,14 +588,14 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             }
         }
     }
-
+    
     private func saveAthleteNameToKeychain(_ name: String) {
         let data = Data(name.utf8)
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: athleteNameKey, kSecValueData as String: data]
         SecItemDelete(query as CFDictionary)
         SecItemAdd(query as CFDictionary, nil)
     }
-
+    
     private func loadAthleteNameFromKeychain() {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: athleteNameKey, kSecReturnData as String: kCFBooleanTrue!, kSecMatchLimit as String: kSecMatchLimitOne]
         var ref: AnyObject?
@@ -501,7 +603,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             athleteName = name
         }
     }
-
+    
     private func deleteAthleteNameFromKeychain() {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: athleteNameKey]
         SecItemDelete(query as CFDictionary)
@@ -512,14 +614,30 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         case notAuthenticated
         case invalidURL
         case invalidResponse
-        case apiError(statusCode: Int)
+        case invalidJSON
+        case apiError(statusCode: Int, message: String)
+        case networkError(Error)
+        case insufficientPermissions
+        case rateLimitExceeded
         
         var errorDescription: String? {
             switch self {
-            case .notAuthenticated: return "Not authenticated with Garmin."
-            case .invalidURL: return "Invalid API URL."
-            case .invalidResponse: return "Invalid response from Garmin."
-            case .apiError(let code): return "Garmin API error: \(code)."
+            case .notAuthenticated:
+                return "Not authenticated with Garmin. Please reconnect your account."
+            case .invalidURL:
+                return "Invalid API URL."
+            case .invalidResponse:
+                return "Invalid response from Garmin."
+            case .invalidJSON:
+                return "Failed to create JSON payload."
+            case .apiError(let code, let message):
+                return "Garmin API error (\(code)): \(message)"
+            case .networkError(let error):
+                return "Network error: \(error.localizedDescription)"
+            case .insufficientPermissions:
+                return "Your app does not have permission to upload courses. Please verify your Courses API access in the Garmin Developer Portal."
+            case .rateLimitExceeded:
+                return "Rate limit exceeded. Please try again later."
             }
         }
     }
