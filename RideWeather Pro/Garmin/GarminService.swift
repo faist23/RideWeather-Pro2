@@ -445,9 +445,9 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             
             print("GarminService: Response status: \(httpResponse.statusCode)")
             
-            if let responseBody = String(data: data, encoding: .utf8) {
-                print("GarminService: Response body: \(responseBody)")
-            }
+//            if let responseBody = String(data: data, encoding: .utf8) {
+//                print("GarminService: Response body: \(responseBody)")
+//            }
             
             switch httpResponse.statusCode {
             case 200:

@@ -181,7 +181,7 @@ struct WahooWorkoutData: Decodable {
 // MARK: - Main Service
 @MainActor
 class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
-
+    
     // (All configuration, published, and internal state properties are correct)
     private var wahooConfig: [String: String]?
     private var clientId: String { configValue(forKey: "WahooClientID") ?? "INVALID_CLIENT_ID" }
@@ -201,7 +201,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         }
     }
     private let athleteNameKey = "wahoo_athlete_name"
-
+    
     // (init is correct)
     override init() {
         super.init()
@@ -209,7 +209,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         loadTokensFromKeychain()
         loadAthleteNameFromKeychain()
     }
-
+    
     // (loadConfig and configValue are correct)
     private func loadConfig() {
         guard let path = Bundle.main.path(forResource: "WahooConfig", ofType: "plist"),
@@ -225,7 +225,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
     private func configValue(forKey key: String) -> String? {
         return wahooConfig?[key]
     }
-
+    
     // (authenticate and handleRedirect are correct)
     func authenticate() {
         guard wahooConfig != nil,
@@ -247,7 +247,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
             URLQueryItem(name: "code_challenge_method", value: "S256")
         ]
         guard let authURL = components.url else { return }
-
+        
         webAuthSession = ASWebAuthenticationSession(
             url: authURL,
             callbackURLScheme: "rideweatherpro"
@@ -281,14 +281,14 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         }
         exchangeToken(code: code, pkceVerifier: pkceVerifier)
     }
-
+    
     // --- FIX: Add .keyDecodingStrategy = .convertFromSnakeCase ---
     private func exchangeToken(code: String, pkceVerifier: String) {
         guard let tokenURL = URL(string: "\(apiBaseUrl)/oauth/token") else { return }
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-
+        
         var body = URLComponents()
         body.queryItems = [
             URLQueryItem(name: "client_id", value: clientId),
@@ -299,7 +299,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
             URLQueryItem(name: "code_verifier", value: pkceVerifier)
         ]
         request.httpBody = body.percentEncodedQuery?.data(using: .utf8)
-
+        
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
             Task { @MainActor in
@@ -307,7 +307,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
                     self.errorMessage = error.localizedDescription; return
                 }
                 guard let data = data else { return }
-
+                
                 do {
                     let decoder = JSONDecoder()
                     decoder.keyDecodingStrategy = .convertFromSnakeCase // <-- FIX
@@ -330,7 +330,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
             }
         }.resume()
     }
-
+    
     // --- FIX: Add .keyDecodingStrategy = .convertFromSnakeCase ---
     func refreshTokenIfNeeded(completion: @escaping (Result<Void, Error>) -> Void) {
         guard let tokens = currentTokens else {
@@ -347,7 +347,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-
+        
         var body = URLComponents()
         body.queryItems = [
             URLQueryItem(name: "client_id", value: clientId),
@@ -356,7 +356,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
             URLQueryItem(name: "grant_type", value: "refresh_token")
         ]
         request.httpBody = body.percentEncodedQuery?.data(using: .utf8)
-
+        
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
             Task { @MainActor in
@@ -366,7 +366,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
                 guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200, let data = data else {
                     self.disconnect(); completion(.failure(WahooError.apiError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? -1))); return
                 }
-
+                
                 do {
                     let decoder = JSONDecoder()
                     decoder.keyDecodingStrategy = .convertFromSnakeCase // <-- FIX
@@ -398,7 +398,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
     // We are encoding our *own* Swift struct (WahooTokens), which is already camelCase.
     private let keychainService = Bundle.main.bundleIdentifier ?? "com.rideweatherpro.wahoo"
     private let keychainAccount = "wahooUserTokensV1"
-
+    
     private func saveTokensToKeychain() {
         guard let tokens = currentTokens else {
             let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: keychainService, kSecAttrAccount as String: keychainAccount]
@@ -459,7 +459,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         // Fallback if nothing found
         fatalError("No valid UIWindowScene found for authentication presentation")
     }
-
+    
     private func generatePKCE() -> (verifier: String, challenge: String) {
         let verifier = Data.random(length: 32).base64URLEncodedString()
         let challenge = Data(SHA256.hash(data: Data(verifier.utf8))).base64URLEncodedString()
@@ -507,18 +507,18 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
             print("WahooService: Could not fetch user name: \(error.localizedDescription)")
         }
     }
-
+    
     // Fetch workouts list
     func fetchRecentWorkouts(page: Int, perPage: Int = 50) async throws -> WahooWorkoutsResponse {
-/*        let url = URL(string: "https://api.wahooligan.com/v1/workouts?page=1&per_page=50")!
-        var request = URLRequest(url: url)
-        // Add your authentication headers here...
-
-        guard let token = currentTokens?.accessToken else { throw WahooError.notAuthenticated }
-        print("WahooService: Using token:", token)*/
-        try await refreshTokenIfNeededAsync()
+        /*        let url = URL(string: "https://api.wahooligan.com/v1/workouts?page=1&per_page=50")!
+         var request = URLRequest(url: url)
+         // Add your authentication headers here...
+         
          guard let token = currentTokens?.accessToken else { throw WahooError.notAuthenticated }
-         var components = URLComponents(string: "\(apiBaseUrl)/v1/workouts")!
+         print("WahooService: Using token:", token)*/
+        try await refreshTokenIfNeededAsync()
+        guard let token = currentTokens?.accessToken else { throw WahooError.notAuthenticated }
+        var components = URLComponents(string: "\(apiBaseUrl)/v1/workouts")!
         components.queryItems = [
             URLQueryItem(name: "page", value: String(page)), // <-- USE PARAMETER
             URLQueryItem(name: "per_page", value: String(perPage)), // <-- USE PARAMETER
@@ -527,31 +527,31 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         ]
         guard let url = components.url else { throw WahooError.invalidURL }
         var request = URLRequest(url: url)
-         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
         
         
         let (data, response) = try await URLSession.shared.data(for: request)
-
+        
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             if let errorBody = String(data: data, encoding: .utf8) {
                 print("WahooService: Error fetching workouts: \(errorBody)")
             }
             throw WahooError.apiError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? -1)
         }
-
+        
         // Print HTTP status code
         if let httpResponse = response as? HTTPURLResponse {
             print("WahooService: HTTP status code:", httpResponse.statusCode)
         }
-
+        
         // Print raw JSON or data string
         if let jsonString = String(data: data, encoding: .utf8) {
             print("WahooService Raw Workouts JSON:", jsonString)
         } else {
             print("WahooService: No JSON could be decoded")
         }
-
+        
         do {
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -563,8 +563,8 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
             throw error
         }
     }
-
-
+    
+    
     // Fetch workout detail by ID
     func fetchWorkoutDetail(id: Int) async throws -> WahooWorkoutSummary {
         // Ensure your token logic matches your app's auth flow:
@@ -572,7 +572,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         guard let token = currentTokens?.accessToken else { throw WahooError.notAuthenticated }
         let url = URL(string: "\(apiBaseUrl)/v1/workouts/\(id)")!
         var request = URLRequest(url: url)
-
+        
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
@@ -585,7 +585,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(WahooWorkoutSummary.self, from: data)
     }
-
+    
     // (fetchWorkoutData) - Now uses .convertFromSnakeCase
     func fetchWorkoutData(id: Int) async throws -> WahooWorkoutData {
         try await refreshTokenIfNeededAsync()
@@ -650,7 +650,6 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         return parseResult.coordinates
     }
     
-    // (uploadRouteToWahoo)
     func uploadRouteToWahoo(fitData: Data, routeName: String) async throws {
         try await refreshTokenIfNeededAsync()
         guard let token = currentTokens?.accessToken else { throw WahooError.notAuthenticated }
@@ -659,63 +658,143 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
             throw WahooError.invalidURL
         }
         
+        // Sanitize the route name
+        let allowedChars = CharacterSet.alphanumerics.union(.whitespaces).union(.init(charactersIn: "-_"))
+        let sanitizedName = String(routeName.unicodeScalars.filter(allowedChars.contains))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "-.", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-._ "))
+            .prefix(50)
+        
+        // ✅ Wahoo API expects base64-encoded FIT data as a data URI
+        let base64FitData = fitData.base64EncodedString()
+        let dataURI = "data:application/vnd.fit;base64,\(base64FitData)"
+        
+        // Extract route metadata from FIT file
+        let parser = RouteParser()
+        let startCoordinate: CLLocationCoordinate2D
+        var routeDistance: Double = 0
+        var routeAscent: Double = 0
+        
+        if let result = try? parser.parseWithElevation(fitData: fitData) {
+            startCoordinate = result.coordinates.first ?? CLLocationCoordinate2D(latitude: 0, longitude: 0)
+            routeDistance = (result.elevationAnalysis?.elevationProfile.last?.distance ?? 0) / 1000.0 // km
+            routeAscent = result.elevationAnalysis?.totalGain ?? 0 // meters
+        } else {
+            startCoordinate = CLLocationCoordinate2D(latitude: 0, longitude: 0)
+        }
+        
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         
-        let boundary = "Boundary-\(UUID().uuidString)"
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        // ✅ Generate unique external ID for this route
+        let externalId = "rideweatherpro-\(UUID().uuidString)"
         
-        var body = Data()
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"name\"\r\n\r\n".data(using: .utf8)!)
-        body.append("\(routeName)\r\n".data(using: .utf8)!)
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        // ✅ Build form data with ALL required parameters
+        var components = URLComponents()
+        components.queryItems = [
+            // Required parameters
+            URLQueryItem(name: "route[name]", value: String(sanitizedName)),
+            URLQueryItem(name: "route[file]", value: dataURI),
+            URLQueryItem(name: "route[filename]", value: "\(sanitizedName.replacingOccurrences(of: " ", with: "_")).fit"),
+            URLQueryItem(name: "route[external_id]", value: externalId),
+            URLQueryItem(name: "route[workout_type_family_id]", value: "0"), // 0 = cycling
+            
+            // Optional but recommended parameters
+            URLQueryItem(name: "route[start_lat]", value: String(startCoordinate.latitude)),
+            URLQueryItem(name: "route[start_lng]", value: String(startCoordinate.longitude)),
+            URLQueryItem(name: "route[distance]", value: String(format: "%.2f", routeDistance)),
+            URLQueryItem(name: "route[ascent]", value: String(format: "%.0f", routeAscent)),
+            URLQueryItem(name: "route[provider_updated_at]", value: ISO8601DateFormatter().string(from: Date()))
+        ]
         
-        // ------------------- FIX 1: START -------------------
-        // The API parameter for the file is "route", not "file"
-        body.append("Content-Disposition: form-data; name=\"route\"; filename=\"\(routeName).fit\"\r\n".data(using: .utf8)!)
-        // -------------------- FIX 1: END --------------------
+        request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
         
-        body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
-        body.append(fitData)
-        body.append("\r\n".data(using: .utf8)!)
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        print("WahooService: Uploading route to \(url.absoluteString)")
+        print("WahooService: Route name: \(sanitizedName)")
+        print("WahooService: External ID: \(externalId)")
+        print("WahooService: File size: \(fitData.count) bytes")
+        print("WahooService: Base64 size: \(base64FitData.count) characters")
+        print("WahooService: Start coordinate: \(startCoordinate.latitude), \(startCoordinate.longitude)")
+        print("WahooService: Distance: \(String(format: "%.2f", routeDistance))km, Ascent: \(String(format: "%.0f", routeAscent))m")
         
-        // ------------------- FIX 2: START -------------------
-        // DO NOT set request.httpBody when using upload(for:from:).
-        // This was causing the console warning.
-        // request.httpBody = body // <-- REMOVE THIS LINE
-        // -------------------- FIX 2: END --------------------
-        
-        // The 'from: body' parameter handles the upload
-        let (data, response) = try await URLSession.shared.upload(for: request, from: body)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw WahooError.invalidResponse
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw WahooError.invalidResponse
+            }
+            
+            print("WahooService: Response status: \(httpResponse.statusCode)")
+            
+            if let responseBody = String(data: data, encoding: .utf8) {
+                print("WahooService: Response body: \(responseBody)")
+            }
+            
+            // ✅ FIX: Wahoo returns 200 (OK) for successful uploads, not 201
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let responseBody = String(data: data, encoding: .utf8) ?? "No response body"
+                print("WahooService: Upload failed. Status: \(httpResponse.statusCode)")
+                print("WahooService: Full response: \(responseBody)")
+                
+                // Try to parse error message
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    if let error = json["error"] as? String {
+                        throw WahooError.apiErrorWithMessage(statusCode: httpResponse.statusCode, message: error)
+                    } else if let errors = json["errors"] as? [[String: Any]] {
+                        let errorMessages = errors.compactMap { $0["message"] as? String }
+                        throw WahooError.apiErrorWithMessage(statusCode: httpResponse.statusCode, message: errorMessages.joined(separator: ", "))
+                    }
+                }
+                
+                throw WahooError.apiError(statusCode: httpResponse.statusCode)
+            }
+            
+            // Parse success response
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let routeId = json["id"] as? Int {
+                print("WahooService: ✅ Route uploaded successfully! Wahoo Route ID: \(routeId)")
+            } else {
+                print("WahooService: ✅ Route uploaded successfully!")
+            }
+            
+        } catch let error as WahooError {
+            throw error
+        } catch {
+            print("WahooService: Network error: \(error.localizedDescription)")
+            throw WahooError.networkError(error)
         }
-        guard httpResponse.statusCode == 201 else {
-            print("WahooService: Upload failed. Status: \(httpResponse.statusCode). Response: \(String(data: data, encoding: .utf8) ?? "N/A")")
-            throw WahooError.apiError(statusCode: httpResponse.statusCode)
-        }
-        print("WahooService: Route uploaded successfully!")
     }
-
-    // (Error enum)
+    
+    // MARK: - Error enum
     enum WahooError: LocalizedError {
         case notAuthenticated
         case invalidURL
         case invalidResponse
         case apiError(statusCode: Int)
+        case apiErrorWithMessage(statusCode: Int, message: String)
         case noRouteData
+        case networkError(Error)
         
         var errorDescription: String? {
             switch self {
-            case .notAuthenticated: return "Not authenticated with Wahoo."
-            case .invalidURL: return "Invalid API URL."
-            case .invalidResponse: return "Invalid response from Wahoo."
-            case .apiError(let code): return "Wahoo API error: \(code)."
-            case .noRouteData: return "No GPS route data available for this activity." 
+            case .notAuthenticated:
+                return "Not authenticated with Wahoo."
+            case .invalidURL:
+                return "Invalid API URL."
+            case .invalidResponse:
+                return "Invalid response from Wahoo."
+            case .apiError(let code):
+                return "Wahoo API error: \(code)."
+            case .apiErrorWithMessage(let code, let message):
+                return "Wahoo API error (\(code)): \(message)"
+            case .noRouteData:
+                return "No GPS route data available for this activity."
+            case .networkError(let error):
+                return "Network error: \(error.localizedDescription)"
             }
         }
     }

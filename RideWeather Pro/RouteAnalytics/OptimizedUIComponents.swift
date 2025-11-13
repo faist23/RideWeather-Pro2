@@ -1559,8 +1559,6 @@ struct UpdatedOptimizedExportTab: View {
     
     // MARK: - Export Methods
     
-    // Updated exportToGarmin() method for your view
-
     // Updated exportToGarmin() method - passes pacing plan for power targets
 
     private func exportToGarmin() async {
