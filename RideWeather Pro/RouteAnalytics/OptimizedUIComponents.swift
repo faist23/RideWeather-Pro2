@@ -1557,6 +1557,26 @@ struct UpdatedOptimizedExportTab: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
     
+    // Helper function to generate course name with date
+    private func generateCourseName() -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyMMdd"
+        let dateString = dateFormatter.string(from: Date())
+        
+        let baseName = viewModel.generateExportFilename(
+            baseName: viewModel.routeDisplayName,
+            suffix: "",
+            extension: ""
+        )
+        .replacingOccurrences(of: "_", with: " ")
+        .replacingOccurrences(of: "\n", with: " ")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        return "\(baseName)-paced \(dateString)"
+    }
+
+
+
     // MARK: - Export Methods
     
     // Updated exportToGarmin() method - passes pacing plan for power targets
@@ -1595,15 +1615,16 @@ struct UpdatedOptimizedExportTab: View {
         print("📱 UI: ✅ Prerequisites validated")
         print("📱 UI: Route points: \(viewModel.enhancedRoutePoints.count)")
         print("📱 UI: Pacing segments: \(pacingPlan.segments.count)")
-        
-        let courseName = viewModel.generateExportFilename(
+
+        let courseName = generateCourseName()
+/*        let courseName = viewModel.generateExportFilename(
             baseName: viewModel.routeDisplayName,
             suffix: "",
             extension: ""
         )
             .replacingOccurrences(of: "_", with: " ")
             .replacingOccurrences(of: "\n", with: " ")
-        
+ */
         print("📱 UI: Course name: \(courseName)")
         
         do {
@@ -1635,8 +1656,9 @@ struct UpdatedOptimizedExportTab: View {
         }
     }
     
+    // MARK: - Updated exportToWahoo() in OptimizedUIComponents.swift
     private func exportToWahoo() async {
-        print("📱 UI: exportToWahoo() called") // Added logging
+        print("📱 UI: exportToWahoo() called")
         await MainActor.run {
             exportingToWahoo = true
             exportError = nil
@@ -1644,8 +1666,6 @@ struct UpdatedOptimizedExportTab: View {
         
         try? await Task.sleep(nanoseconds: 50_000_000)
         
-        // ------------------- FIX 1: START -------------------
-        // Build enhanced points if they don't exist.
         if viewModel.enhancedRoutePoints.isEmpty {
             print("📱 UI: ❌ No route points")
             await MainActor.run {
@@ -1653,7 +1673,6 @@ struct UpdatedOptimizedExportTab: View {
             }
             print("✅ Built \(viewModel.enhancedRoutePoints.count) enhanced route points")
         }
-        // -------------------- FIX 1: END --------------------
         
         guard let controller = viewModel.advancedController,
               let pacingPlan = viewModel.finalPacingPlan,
@@ -1672,15 +1691,7 @@ struct UpdatedOptimizedExportTab: View {
         print("📱 UI: Route points: \(viewModel.enhancedRoutePoints.count)")
         
         do {
-            // 1. Generate the FIT data
-            // Re-sanitize the course name to remove newlines
-            let courseName = viewModel.generateExportFilename(
-                baseName: viewModel.routeDisplayName,
-                suffix: "",
-                extension: ""
-            )
-                .replacingOccurrences(of: "_", with: " ")
-                .replacingOccurrences(of: "\n", with: " ") // Sanitize newline
+            let courseName = generateCourseName()
             
             print("📱 UI: Course name: \(courseName)")
             print("📱 UI: Generating FIT data...")
@@ -1696,15 +1707,17 @@ struct UpdatedOptimizedExportTab: View {
             }
             
             print("📱 UI: ✅ FIT data generated: \(data.count) bytes")
-            print("📱 UI: Calling wahooService.uploadRouteToWahoo()...")
+            print("📱 UI: Calling wahooService.uploadPlanToWahoo()...")
             
-            // 2. Call the WahooService to upload
-            try await wahooService.uploadRouteToWahoo(fitData: data, routeName: courseName)
+            // Use the new plan upload method
+            try await wahooService.uploadPlanToWahoo(
+                fitData: data,
+                planName: courseName,
+                pacingPlan: pacingPlan
+            )
             
-            // 3. Show success
             await MainActor.run {
                 exportingToWahoo = false
-                // Add a temporary success message here
             }
             
         } catch {
@@ -1715,7 +1728,7 @@ struct UpdatedOptimizedExportTab: View {
             }
         }
     }
-    
+
     private func exportFitFile() async {
         await MainActor.run {
             exportingFIT = true
