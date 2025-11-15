@@ -10,27 +10,92 @@ struct SavedPlansView: View {
     @StateObject private var viewModel = SavedPlansViewModel()
     @Environment(\.dismiss) private var dismiss
     
+    // --- MANUALLY CONTROLLED STATE ---
+    @State private var isEditing = false // We will control this ourselves
+    @State private var selectedPlanIDs = Set<UUID>()
+    @State private var showingDeleteConfirmation = false
+    
     var body: some View {
         NavigationView {
             Group {
                 if viewModel.plans.isEmpty {
                     emptyState
                 } else {
-                    plansList
+                    plansList // This is the List
                 }
             }
             .navigationTitle("Saved Pacing Plans")
             .navigationBarTitleDisplayMode(.inline)
+            // --- UPDATED TOOLBAR ---
             .toolbar {
+                // 1. Top-left "Done" button (to dismiss the sheet)
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Done") {
                         dismiss()
                     }
                 }
+                
+                // 2. Top-right "Select" / "Checkmark" button (to control edit mode)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if !viewModel.plans.isEmpty {
+                        // Our custom button to toggle edit state
+                        Button {
+                            withAnimation {
+                                isEditing.toggle()
+                            }
+                        } label: {
+                            if isEditing {
+                                // --- THIS IS THE CHANGE ---
+                                Image(systemName: "checkmark")
+                                    .fontWeight(.bold)
+                                // --- END CHANGE ---
+                            } else {
+                                Text("Select")
+                            }
+                        }
+                    }
+                }
+                
+                // 3. Bottom "Trash" button (visible only in edit mode)
+                ToolbarItem(placement: .bottomBar) {
+                    if isEditing {
+                        HStack {
+                            Spacer()
+                            Button(role: .destructive) {
+                                if !selectedPlanIDs.isEmpty {
+                                    showingDeleteConfirmation = true
+                                }
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .disabled(selectedPlanIDs.isEmpty)
+                            Spacer()
+                        }
+                    }
+                }
+            }
+            // --- END UPDATED TOOLBAR ---
+            .alert("Delete \(selectedPlanIDs.count) Plan(s)?", isPresented: $showingDeleteConfirmation) {
+                Button("Delete", role: .destructive) {
+                    withAnimation {
+                        viewModel.deletePlans(ids: selectedPlanIDs)
+                        selectedPlanIDs.removeAll()
+                        isEditing = false // <-- Exit edit mode after delete
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Are you sure you want to permanently delete the selected plans?")
             }
         }
         .onAppear {
             viewModel.loadPlans()
+        }
+        // Clear selection when we manually toggle editing off
+        .onChange(of: isEditing) { _, newValue in
+            if newValue == false {
+                selectedPlanIDs.removeAll()
+            }
         }
     }
     
@@ -50,16 +115,23 @@ struct SavedPlansView: View {
     }
     
     private var plansList: some View {
-        List {
+        // The List will now obey the .environment(\.editMode, ...) modifier
+        List(selection: $selectedPlanIDs) {
             ForEach(viewModel.plans) { plan in
                 SavedPlanRow(plan: plan)
+                    .tag(plan.id)
             }
             .onDelete { indexSet in
                 viewModel.deletePlans(at: indexSet)
             }
         }
+        .environment(\.editMode, .constant(isEditing ? .active : .inactive))
     }
 }
+
+//
+// NO CHANGES TO SavedPlanRow or SavedPlansViewModel
+//
 
 struct SavedPlanRow: View {
     let plan: StoredPacingPlan
@@ -111,10 +183,21 @@ class SavedPlansViewModel: ObservableObject {
         plans = controller.loadSavedPlans()
     }
     
+    // This is for swipe-to-delete
     func deletePlans(at offsets: IndexSet) {
-        for index in offsets {
-            controller.deletePlan(plans[index])
+        let plansToDelete = offsets.map { plans[$0] }
+        for plan in plansToDelete {
+            controller.deletePlan(plan)
         }
-        loadPlans()
+        loadPlans() // Refresh the list
+    }
+    
+    // This is for multi-delete
+    func deletePlans(ids: Set<UUID>) {
+        let plansToDelete = plans.filter { ids.contains($0.id) }
+        for plan in plansToDelete {
+            controller.deletePlan(plan)
+        }
+        loadPlans() // Refresh the list
     }
 }

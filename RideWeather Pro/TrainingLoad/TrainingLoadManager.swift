@@ -3,6 +3,7 @@
 //  RideWeather Pro
 //
 //  Manager for calculating and persisting training load metrics
+//  UPDATED: Now uses file-based storage instead of UserDefaults
 //
 
 import Foundation
@@ -10,8 +11,7 @@ import Foundation
 class TrainingLoadManager {
     static let shared = TrainingLoadManager()
     
-    private let userDefaults = UserDefaults.standard
-    private let storageKey = "trainingLoadData"
+    private let storage = TrainingLoadStorage.shared  // ✅ Changed from UserDefaults
     private let emaATLDays = 7
     private let emaCTLDays = 42
     
@@ -123,12 +123,12 @@ class TrainingLoadManager {
         
         var insights: [TrainingLoadInsight] = []
         
-        // --- 1. NEW: HEALTHKIT-BASED INSIGHTS ---
+        // --- 1. HEALTHKIT-BASED INSIGHTS ---
         if let readiness = readiness {
             
             // Check for Readiness Mismatch (High TSB, but poor metrics)
-            let hrvIsLow = (readiness.latestHRV ?? 50) < ((readiness.averageHRV ?? 50) * 0.85) // 15% below avg
-            let rhrIsHigh = (readiness.latestRHR ?? 60) > ((readiness.averageRHR ?? 60) + 4) // 4bpm+ above avg
+            let hrvIsLow = (readiness.latestHRV ?? 50) < ((readiness.averageHRV ?? 50) * 0.85)
+            let rhrIsHigh = (readiness.latestRHR ?? 60) > ((readiness.averageRHR ?? 60) + 4)
             
             if summary.currentTSB > 5 && (hrvIsLow || rhrIsHigh) {
                 var reason = ""
@@ -163,9 +163,9 @@ class TrainingLoadManager {
                 ))
             }
             
-            // Check for "Inadequate Recovery" (Rising ATL, poor sleep)
-            let isBuildingFatigue = summary.currentATL > (summary.currentCTL * 0.9) // ATL is high relative to CTL
-            let shortSleep = (readiness.sleepDuration ?? 8*3600) < (6 * 3600) // Less than 6 hours
+            // Check for "Inadequate Recovery"
+            let isBuildingFatigue = summary.currentATL > (summary.currentCTL * 0.9)
+            let shortSleep = (readiness.sleepDuration ?? 8*3600) < (6 * 3600)
             
             if isBuildingFatigue && shortSleep {
                 insights.append(TrainingLoadInsight(
@@ -180,7 +180,6 @@ class TrainingLoadManager {
         
         // --- 2. EXISTING TSB-BASED INSIGHTS ---
         
-        // Form status insight (only add if we didn't add a critical one)
         if !insights.contains(where: { $0.priority == .critical }) {
             switch summary.formStatus {
             case .veryFatigued:
@@ -202,7 +201,6 @@ class TrainingLoadManager {
                 ))
                 
             case .fresh, .veryFresh:
-                // Only add if we don't already have a "Green Light"
                 if !insights.contains(where: { $0.priority == .success }) {
                     insights.append(TrainingLoadInsight(
                         priority: .success,
@@ -259,8 +257,8 @@ class TrainingLoadManager {
         }
         
         // Weekly TSS targets
-        let targetWeeklyTSS = summary.currentCTL * 0.7  // Rough target
-        if summary.weeklyTSS < targetWeeklyTSS * 0.5 && summary.currentCTL > 10 { // Only show if user has some fitness
+        let targetWeeklyTSS = summary.currentCTL * 0.7
+        if summary.weeklyTSS < targetWeeklyTSS * 0.5 && summary.currentCTL > 10 {
             insights.append(TrainingLoadInsight(
                 priority: .info,
                 title: "Low Training Volume",
@@ -278,7 +276,7 @@ class TrainingLoadManager {
         }
     }
     
-    /// Deletes a ride from training load (call when deleting ride analysis)
+    /// Deletes a ride from training load
     func deleteRide(analysisId: UUID, tss: Double, date: Date) {
         let calendar = Calendar.current
         let rideDate = calendar.startOfDay(for: date)
@@ -291,12 +289,10 @@ class TrainingLoadManager {
             dailyLoads[existingIndex].tss = max(0, dailyLoads[existingIndex].tss - tss)
             dailyLoads[existingIndex].rideCount = max(0, dailyLoads[existingIndex].rideCount - 1)
             
-            // Remove day if no rides left
             if dailyLoads[existingIndex].rideCount == 0 {
                 dailyLoads.remove(at: existingIndex)
             }
             
-            // Recalculate metrics
             let updatedLoads = recalculateMetrics(for: dailyLoads)
             saveDailyLoads(updatedLoads)
             
@@ -306,7 +302,7 @@ class TrainingLoadManager {
     
     /// Clears all training load data
     func clearAll() {
-        userDefaults.removeObject(forKey: storageKey)
+        storage.clearAll()  // ✅ Changed from UserDefaults
         print("🗑️ Training Load: All data cleared")
     }
     
@@ -332,20 +328,19 @@ class TrainingLoadManager {
         return csv
     }
     
+    /// Returns the current storage size
+    func getStorageInfo() -> String {
+        return storage.getStorageSizeFormatted()
+    }
+    
     // MARK: - Private Methods
     
     func loadAllDailyLoads() -> [DailyTrainingLoad] {
-        guard let data = userDefaults.data(forKey: storageKey),
-              let loads = try? JSONDecoder().decode([DailyTrainingLoad].self, from: data) else {
-            return []
-        }
-        return loads
+        return storage.loadAllDailyLoads()  // ✅ Changed from UserDefaults
     }
     
     func saveDailyLoads(_ loads: [DailyTrainingLoad]) {
-        if let encoded = try? JSONEncoder().encode(loads) {
-            userDefaults.set(encoded, forKey: storageKey)
-        }
+        storage.saveDailyLoads(loads)  // ✅ Changed from UserDefaults
     }
     
     func recalculateMetrics(for loads: [DailyTrainingLoad]) -> [DailyTrainingLoad] {
@@ -356,21 +351,18 @@ class TrainingLoadManager {
         for i in 0..<updatedLoads.count {
             let todayTSS = updatedLoads[i].tss
             
-            // Calculate ATL (7-day exponential moving average)
             let atl = calculateEMA(
                 previousValue: previousATL,
                 newValue: todayTSS,
                 days: emaATLDays
             )
             
-            // Calculate CTL (42-day exponential moving average)
             let ctl = calculateEMA(
                 previousValue: previousCTL,
                 newValue: todayTSS,
                 days: emaCTLDays
             )
             
-            // Calculate TSB (Training Stress Balance)
             let tsb = ctl - atl
             
             updatedLoads[i].atl = atl
@@ -390,17 +382,14 @@ class TrainingLoadManager {
     }
     
     private func generateRecommendation(atl: Double, ctl: Double, tsb: Double, rampRate: Double) -> String {
-        // Very fatigued
         if tsb < -30 {
             return "Take 2-3 rest days. Your fatigue is very high and needs immediate recovery."
         }
         
-        // Fatigued
         if tsb < -10 {
             return "Schedule an easy day or rest day soon. You're building significant fatigue."
         }
         
-        // Very fresh
         if tsb > 15 {
             if rampRate < -5 {
                 return "You're fresh but detraining. Consider increasing training volume gradually."
@@ -408,27 +397,22 @@ class TrainingLoadManager {
             return "Perfect time for a hard workout or race. You're well-recovered and ready."
         }
         
-        // Fresh
         if tsb > 5 {
             return "Good recovery status. You can handle high-intensity training today."
         }
         
-        // Building too fast
         if rampRate > 8 {
             return "Slow down your build. Increase training load by no more than 5-8 TSS/week."
         }
         
-        // Building safely
         if rampRate > 3 && rampRate <= 8 {
             return "Excellent! You're building fitness at a sustainable rate."
         }
         
-        // Maintaining
         if abs(rampRate) <= 3 {
             return "Maintaining current fitness level. Increase volume gradually if you want to improve."
         }
         
-        // Default
         return "Continue with balanced training. Mix hard and easy days appropriately."
     }
     
@@ -446,28 +430,26 @@ class TrainingLoadManager {
         var currentDate = firstDate
         var filledLoads: [DailyTrainingLoad] = []
         
-        // Go through each day from first activity to today
         while currentDate <= today {
             if let existing = sortedLoads.first(where: { calendar.isDate($0.date, inSameDayAs: currentDate) }) {
                 filledLoads.append(existing)
             } else {
-                // Create zero TSS day (important for CTL/ATL decay)
                 filledLoads.append(DailyTrainingLoad(date: currentDate, tss: 0))
             }
             currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
         }
         
-        // Recalculate ALL metrics with filled data
         let recalculated = recalculateMetrics(for: filledLoads)
         saveDailyLoads(recalculated)
         
         print("✅ Training Load: Filled to \(recalculated.count) days (\(firstDate.formatted(date: .abbreviated, time: .omitted)) to today)")
     }
-    // Add this method to TrainingLoadManager class
+    
     func debugPrintLoadData() {
         let loads = loadAllDailyLoads()
         print("\n===== TRAINING LOAD DEBUG =====")
         print("Total days with data: \(loads.count)")
+        print("Storage size: \(getStorageInfo())")
         
         if loads.isEmpty {
             print("No data found!")
@@ -477,19 +459,16 @@ class TrainingLoadManager {
         let sorted = loads.sorted { $0.date < $1.date }
         print("Date range: \(sorted.first!.date.formatted(date: .abbreviated, time: .omitted)) to \(sorted.last!.date.formatted(date: .abbreviated, time: .omitted))")
         
-        // Show first 10 days
         print("\nFirst 10 days:")
         for (index, load) in sorted.prefix(10).enumerated() {
             print("\(index + 1). \(load.date.formatted(date: .abbreviated, time: .omitted)): TSS=\(String(format: "%.1f", load.tss)), CTL=\(load.ctl.map { String(format: "%.1f", $0) } ?? "nil"), ATL=\(load.atl.map { String(format: "%.1f", $0) } ?? "nil"), TSB=\(load.tsb.map { String(format: "%.1f", $0) } ?? "nil")")
         }
         
-        // Show last 10 days
         print("\nLast 10 days:")
         for (index, load) in sorted.suffix(10).enumerated() {
             print("\(index + 1). \(load.date.formatted(date: .abbreviated, time: .omitted)): TSS=\(String(format: "%.1f", load.tss)), CTL=\(load.ctl.map { String(format: "%.1f", $0) } ?? "nil"), ATL=\(load.atl.map { String(format: "%.1f", $0) } ?? "nil"), TSB=\(load.tsb.map { String(format: "%.1f", $0) } ?? "nil")")
         }
         
-        // Check for gaps
         var gapCount = 0
         for i in 0..<(sorted.count - 1) {
             let dayDiff = Calendar.current.dateComponents([.day], from: sorted[i].date, to: sorted[i + 1].date).day ?? 0
@@ -502,7 +481,6 @@ class TrainingLoadManager {
         }
         print("\nTotal gaps found: \(gapCount)")
         
-        // Check for nil metrics
         let nilCTL = sorted.filter { $0.ctl == nil }.count
         let nilATL = sorted.filter { $0.atl == nil }.count
         print("\nDays with nil CTL: \(nilCTL)")
@@ -511,16 +489,12 @@ class TrainingLoadManager {
         print("===============================\n")
     }
 
-    /// Generates projected training load data for a number of days into the future.
-    /// This assumes a TSS of 0 for each future day to model recovery.
     func getProjectedLoads(for days: Int) -> [DailyTrainingLoad] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         
-        // Find the latest historical data point to start from
         let allLoads = loadAllDailyLoads()
         guard let latestLoad = allLoads.sorted(by: { $0.date < $1.date }).last(where: { !$0.isProjected }) else {
-            // No historical data, can't project
             return []
         }
         
@@ -531,9 +505,8 @@ class TrainingLoadManager {
         for i in 1...days {
             guard let futureDate = calendar.date(byAdding: .day, value: i, to: today) else { continue }
             
-            let todayTSS = 0.0 // The assumption for future projection
+            let todayTSS = 0.0
             
-            // Calculate future values based on 0 TSS
             let atl = calculateEMA(
                 previousValue: previousATL,
                 newValue: todayTSS,
@@ -557,12 +530,11 @@ class TrainingLoadManager {
                 rideCount: 0,
                 totalDistance: 0,
                 totalDuration: 0,
-                isProjected: true // <-- Mark as projected
+                isProjected: true
             )
             
             projectedLoads.append(projectedLoad)
             
-            // Set up for the next day's calculation
             previousATL = atl
             previousCTL = ctl
         }

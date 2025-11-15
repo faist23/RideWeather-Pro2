@@ -511,12 +511,18 @@ struct SettingsView: View {
                         Label("View Training Load", systemImage: "chart.line.uptrend.xyaxis")
                     }
                     
+                    // Storage info
+                    HStack {
+                        Text("Storage Used")
+                        Spacer()
+                        Text(TrainingLoadManager.shared.getStorageInfo())
+                            .foregroundStyle(.secondary)
+                    }
+                    
                     Button(role: .destructive) {
                         TrainingLoadManager.shared.clearAll()
                         // Clear sync date from UserDefaults
                         UserDefaults.standard.removeObject(forKey: "lastTrainingLoadSync")
-                        // Force reload sync date (should be nil now)
-                        // Note: We can't access syncManager here, but it will reload on next view
                         
                         print("🗑️ Cleared all training load data and sync date")
                     } label: {

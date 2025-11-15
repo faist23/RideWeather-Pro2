@@ -36,8 +36,55 @@ struct WahooTokenResponse: Decodable {
 }
 
 struct WahooUser: Decodable {
-    let firstName: String?
-    let lastName: String?
+    let id: Int?
+    let firstName: String?  // Maps from "first"
+    let lastName: String?   // Maps from "last"
+    let email: String?
+    let height: String?     // API returns string like "1.7526"
+    let weight: String?     // API returns string like "69.3"
+    let birth: String?
+    let gender: Int?        // API returns 0 or 1
+    let createdAt: String?
+    let updatedAt: String?
+    
+    // CodingKeys to map API field names to Swift property names
+    enum CodingKeys: String, CodingKey {
+        case id
+        case firstName = "first"      // "first" → firstName
+        case lastName = "last"        // "last" → lastName
+        case email
+        case height
+        case weight
+        case birth
+        case gender
+        case createdAt = "created_at" // snake_case → camelCase
+        case updatedAt = "updated_at" // snake_case → camelCase
+    }
+    
+    // Computed property for full name
+    var fullName: String {
+        let first = firstName ?? ""
+        let last = lastName ?? ""
+        let combined = "\(first) \(last)".trimmingCharacters(in: .whitespaces)
+        return combined.isEmpty ? "Wahoo User" : combined
+    }
+    
+    // Computed property for first name only
+    var displayFirstName: String {
+        return firstName ?? "Wahoo User"
+    }
+    
+    // Helper to get weight as Double if needed
+    var weightKg: Double? {
+        guard let weight = weight else { return nil }
+        return Double(weight)
+    }
+    
+    // Helper to get height as Double if needed
+    var heightMeters: Double? {
+        guard let height = height else { return nil }
+        return Double(height)
+    }
 }
 
 // MARK: - Workout File struct (inside workout_summary)
@@ -476,7 +523,8 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
     
     // MARK: - API Methods
     
-    // --- FIX: Add .keyDecodingStrategy = .convertFromSnakeCase ---
+    // Replace the fetchUserName() function in WahooService.swift with this:
+
     func fetchUserName() async {
         try? await refreshTokenIfNeededAsync()
         guard let token = currentTokens?.accessToken else { return }
@@ -487,24 +535,57 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            
+            // Debug logging
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("WahooService: User API response: \(responseString)")
+            }
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("WahooService: Invalid response type")
+                self.athleteName = "Wahoo User"
+                saveAthleteNameToKeychain("Wahoo User")
+                return
+            }
+            
+            print("WahooService: User API status code: \(httpResponse.statusCode)")
+            
+            guard httpResponse.statusCode == 200 else {
+                print("WahooService: Could not fetch user name (status: \(httpResponse.statusCode))")
+                self.athleteName = "Wahoo User"
+                saveAthleteNameToKeychain("Wahoo User")
                 return
             }
             
             let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase // <-- FIX
-            let user = try decoder.decode(WahooUser.self, from: data)
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
             
-            let firstName = user.firstName ?? ""
-            let lastName = user.lastName ?? ""
-            let name = "\(firstName) \(lastName)".trimmingCharacters(in: .whitespaces)
-            let finalName = name.isEmpty ? "Wahoo User" : name
-            
-            self.athleteName = finalName
-            saveAthleteNameToKeychain(finalName)
+            do {
+                let user = try decoder.decode(WahooUser.self, from: data)
+                
+                let firstName = user.firstName ?? "Wahoo User"
+                let lastName = user.lastName ?? ""
+                let fullName = "\(firstName) \(lastName)".trimmingCharacters(in: .whitespaces)
+                let finalName = fullName.isEmpty ? "Wahoo User" : fullName
+                
+                self.athleteName = firstName
+                saveAthleteNameToKeychain(firstName)
+
+                print("WahooService: User authenticated as \(finalName)")
+                
+            } catch {
+                print("WahooService: Could not decode user data: \(error)")
+                print("WahooService: Decoding error details: \(error.localizedDescription)")
+                
+                // Fallback to generic name
+                self.athleteName = "Wahoo User"
+                saveAthleteNameToKeychain("Wahoo User")
+            }
             
         } catch {
-            print("WahooService: Could not fetch user name: \(error.localizedDescription)")
+            print("WahooService: Network error fetching user name: \(error.localizedDescription)")
+            self.athleteName = "Wahoo User"
+            saveAthleteNameToKeychain("Wahoo User")
         }
     }
     

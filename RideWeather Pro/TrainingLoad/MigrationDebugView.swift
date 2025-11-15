@@ -175,9 +175,9 @@ struct MigrationDebugView: View {
     }
 }
 
-// MARK: - Make fileURL accessible for debug view
+// MARK: - Helper to access fileURL for debug view
 extension TrainingLoadStorage {
-    var fileURL: URL {
+    func getFileURL() -> URL {
         let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         return documentsDirectory.appendingPathComponent("trainingLoadData.json")
     }

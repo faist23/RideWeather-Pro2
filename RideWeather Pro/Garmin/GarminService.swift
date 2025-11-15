@@ -289,28 +289,52 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     // MARK: - API Methods (ONLY UPLOAD - Import requires backend)
     
     func fetchUserName() async {
+        print("GarminService: fetchUserName() called")
         try? await refreshTokenIfNeededAsync()
-        guard let token = currentTokens?.accessToken else { return }
+        guard let token = currentTokens?.accessToken else {
+            print("GarminService: No access token available")
+            return
+        }
         
-        // Using wellness API as a proxy for user authentication
-        guard let url = URL(string: "\(apiBaseUrl)/wellness-api/rest/user/permissions") else { return }
+        // Garmin's official OAuth API doesn't expose user profile names
+        // We'll try the wellness API user ID endpoint and fall back to a generic name
+        guard let url = URL(string: "https://apis.garmin.com/wellness-api/rest/user/id") else {
+            self.athleteName = "Garmin User"
+            saveAthleteNameToKeychain("Garmin User")
+            return
+        }
+        
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-                print("GarminService: Could not fetch user permissions")
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("GarminService: Invalid response type")
+                self.athleteName = "Garmin User"
+                saveAthleteNameToKeychain("Garmin User")
                 return
             }
             
-            let name = "Garmin User"
-            self.athleteName = name
-            saveAthleteNameToKeychain(name)
-            print("GarminService: User authenticated successfully")
+            print("GarminService: User ID endpoint status: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode == 200 {
+                // Successfully authenticated, but API doesn't provide name
+                // Use a generic but authenticated name
+                self.athleteName = "Garmin User"
+                saveAthleteNameToKeychain("Garmin User")
+                print("GarminService: ✅ User authenticated (Garmin API doesn't expose user names)")
+            } else {
+                print("GarminService: Could not verify user (status: \(httpResponse.statusCode))")
+                self.athleteName = "Garmin User"
+                saveAthleteNameToKeychain("Garmin User")
+            }
             
         } catch {
-            print("GarminService: Could not fetch user permissions: \(error.localizedDescription)")
+            print("GarminService: Error verifying user: \(error.localizedDescription)")
+            self.athleteName = "Garmin User"
+            saveAthleteNameToKeychain("Garmin User")
         }
     }
     
