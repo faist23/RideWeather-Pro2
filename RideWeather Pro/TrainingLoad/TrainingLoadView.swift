@@ -23,8 +23,259 @@ struct TrainingLoadView: View {
 
     @State private var showingAIDebug = false
 
-    
+  
     var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    
+                    if let summary = viewModel.summary {
+                        // Sync Status Banner (if applicable)
+                        if stravaService.isAuthenticated {
+                            SyncStatusBanner(
+                                syncManager: syncManager,
+                                onSync: {
+                                    Task {
+                                        let startDate = viewModel.summary == nil
+                                        ? Calendar.current.date(byAdding: .day, value: -365, to: Date())
+                                        : nil
+                                        
+                                        await syncManager.syncFromStrava(
+                                            stravaService: stravaService,
+                                            userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                                            userLTHR: nil,
+                                            startDate: startDate
+                                        )
+                                        viewModel.refresh(readiness: healthManager.readiness)
+                                    }
+                                }
+                            )
+                        }
+                        
+                        // Current Status Card
+                        CurrentFormCard(summary: summary)
+                        
+                        // Daily Readiness Card
+                        if healthManager.isAuthorized && (viewModel.readiness?.latestHRV != nil || viewModel.readiness?.latestRHR != nil || viewModel.readiness?.sleepDuration != nil || viewModel.readiness?.averageHRV != nil) {
+                            DailyReadinessCard(readiness: viewModel.readiness!)
+                                .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
+                        }
+                        
+                        // AI Insights
+                        if aiInsightsManager.isLoading {
+                            AIInsightLoadingCard()
+                                .transition(.opacity)
+                        } else if let aiInsight = aiInsightsManager.currentInsight {
+                            AIInsightCard(insight: aiInsight)
+                                .transition(.asymmetric(
+                                    insertion: .opacity.combined(with: .move(edge: .top)),
+                                    removal: .opacity
+                                ))
+                        }
+                        
+                        // Full History Sync Button (if data is limited)
+                        if stravaService.isAuthenticated && viewModel.totalDaysInStorage < 200 {
+                            Button {
+                                Task {
+                                    let startDate = Calendar.current.date(byAdding: .day, value: -365, to: Date())
+                                    await syncManager.syncFromStrava(
+                                        stravaService: stravaService,
+                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                                        userLTHR: nil,
+                                        startDate: startDate
+                                    )
+                                    viewModel.refresh(readiness: healthManager.readiness)
+                                }
+                            } label: {
+                                HStack {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                    Text("Sync Full History (Last Year)")
+                                }
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(
+                                    LinearGradient(
+                                        colors: [.orange, .red],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .cornerRadius(12)
+                            }
+                            .disabled(syncManager.isSyncing)
+                            
+                            Text("You have \(viewModel.totalDaysInStorage) days of data. Sync more to see long-term trends.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        
+                        // Training Load Chart
+                        TrainingLoadChart(
+                            dailyLoads: viewModel.dailyLoads,
+                            period: selectedPeriod
+                        )
+                        
+                        // Period Selector
+                        periodSelector
+                        
+                        // Key Metrics
+                        MetricsGrid(summary: summary)
+                        
+                        // Insights
+                        TrainingLoadInsightsSection(insights: viewModel.insights)
+                        
+                    } else {
+                        // Show empty state
+                        if !healthManager.isAuthorized && !stravaService.isAuthenticated {
+                            emptyStateView
+                        } else if healthManager.isAuthorized && !stravaService.isAuthenticated {
+                            stravaEmptyStateView
+                        } else {
+                            emptyStateView
+                        }
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Fitness")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                // LEADING ITEM GROUP - Sync Menu
+                ToolbarItemGroup(placement: .navigationBarLeading) {
+                    if stravaService.isAuthenticated && !syncManager.isSyncing {
+                        Menu {
+                            Button {
+                                Task {
+                                    let startDate = Calendar.current.date(byAdding: .day, value: -30, to: Date())
+                                    await syncManager.syncFromStrava(
+                                        stravaService: stravaService,
+                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                                        userLTHR: nil,
+                                        startDate: startDate
+                                    )
+                                    viewModel.refresh(readiness: healthManager.readiness)
+                                }
+                            } label: {
+                                Label("Last 30 Days", systemImage: "calendar")
+                            }
+                            
+                            Button {
+                                Task {
+                                    let startDate = Calendar.current.date(byAdding: .day, value: -90, to: Date())
+                                    await syncManager.syncFromStrava(
+                                        stravaService: stravaService,
+                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                                        userLTHR: nil,
+                                        startDate: startDate
+                                    )
+                                    viewModel.refresh(readiness: healthManager.readiness)
+                                }
+                            } label: {
+                                Label("Last 90 Days", systemImage: "calendar")
+                            }
+                            
+                            Button {
+                                Task {
+                                    let startDate = Calendar.current.date(byAdding: .day, value: -365, to: Date())
+                                    await syncManager.syncFromStrava(
+                                        stravaService: stravaService,
+                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                                        userLTHR: nil,
+                                        startDate: startDate
+                                    )
+                                    viewModel.refresh(readiness: healthManager.readiness)
+                                }
+                            } label: {
+                                Label("Last Year (365 Days)", systemImage: "calendar.badge.clock")
+                            }
+                            
+                            Divider()
+                            
+                            Button {
+                                Task {
+                                    await syncManager.syncFromStrava(
+                                        stravaService: stravaService,
+                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                                        userLTHR: nil,
+                                        startDate: nil
+                                    )
+                                    viewModel.refresh(readiness: healthManager.readiness)
+                                }
+                            } label: {
+                                Label("Incremental Sync", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                        } label: {
+                            Label("Sync", systemImage: syncManager.needsSync ? "exclamationmark.arrow.triangle.2.circlepath" : "arrow.triangle.2.circlepath")
+                                .foregroundColor(syncManager.needsSync ? .orange : .blue)
+                        }
+                    } else {
+                        Color.clear.frame(width: 0)
+                    }
+                }
+                
+                // TRAILING ITEM GROUP
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button {
+                        showingExplanation = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                }
+            }
+            .overlay {
+                if syncManager.isSyncing {
+                    syncingOverlay
+                }
+            }
+            .animatedBackground(
+                gradient: .rideAnalysisBackground,
+                showDecoration: true,
+                decorationColor: .white,
+                decorationIntensity: 0.06
+            )
+            .sheet(isPresented: $showingExplanation) {
+                TrainingLoadExplanationView()
+            }
+            .sheet(isPresented: $showingAIDebug) {
+                AIInsightsDebugView(manager: aiInsightsManager)
+            }
+            .onAppear {
+                syncManager.loadSyncDate()
+                viewModel.refresh(readiness: healthManager.readiness)
+                viewModel.loadPeriod(selectedPeriod)
+                
+                Task {
+                    if syncManager.needsSync && stravaService.isAuthenticated {
+                        await syncManager.syncFromStrava(
+                            stravaService: stravaService,
+                            userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                            userLTHR: nil,
+                            startDate: nil
+                        )
+                        viewModel.refresh(readiness: healthManager.readiness)
+                        viewModel.loadPeriod(selectedPeriod)
+                    }
+                    
+                    await aiInsightsManager.analyzeIfNeeded(
+                        summary: viewModel.summary,
+                        readiness: healthManager.readiness,
+                        recentLoads: viewModel.dailyLoads
+                    )
+                }
+            }
+            .onChange(of: selectedPeriod) { oldValue, newValue in
+                viewModel.loadPeriod(newValue)
+            }
+            .onChange(of: healthManager.readiness) {
+                viewModel.refresh(readiness: healthManager.readiness)
+            }
+        }
+    }
+
+/*    var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
@@ -258,7 +509,7 @@ struct TrainingLoadView: View {
                 viewModel.refresh(readiness: healthManager.readiness)
             }
         }
-    }
+    }*/
     
     private var syncingOverlay: some View {
         ZStack {
@@ -999,6 +1250,7 @@ class TrainingLoadViewModel: ObservableObject {
     @Published var dailyLoads: [DailyTrainingLoad] = []
     @Published var insights: [TrainingLoadInsight] = []
     @Published var readiness: PhysiologicalReadiness?
+    @Published var totalDaysInStorage: Int = 0
     
     private let manager = TrainingLoadManager.shared
     private var currentPeriodDays: Int = 0
@@ -1008,6 +1260,7 @@ class TrainingLoadViewModel: ObservableObject {
         summary = manager.getCurrentSummary()
         // Pass the latest readiness data when generating insights
         insights = manager.getInsights(readiness: readiness)
+        totalDaysInStorage = manager.loadAllDailyLoads().count
     }
     
     func loadPeriod(_ period: TrainingLoadPeriod) {
