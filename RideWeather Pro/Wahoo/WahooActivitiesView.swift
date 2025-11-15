@@ -40,7 +40,7 @@ struct WahooActivitiesView: View {
                             .foregroundColor(.secondary)
                         Text("No Activities Found")
                             .font(.headline)
-                        Text("Your recent Wahoo biking rides will appear here")
+                        Text("Your recent Wahoo cycling rides will appear here")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }

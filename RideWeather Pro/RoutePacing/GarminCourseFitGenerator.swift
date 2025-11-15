@@ -34,11 +34,12 @@ struct GarminCourseFitGenerator {
     
     /// Generates a Garmin Course FIT file with power targets embedded in course points
     func generateCourseFIT(
-        routePoints: [EnhancedRoutePoint],
-        pacingPlan: PacingPlan,
-        courseName: String,
-        settings: AppSettings
-    ) throws -> Data {
+            routePoints: [EnhancedRoutePoint],
+            pacingPlan: PacingPlan,
+            courseName: String,
+            settings: AppSettings,
+            includeRecordMessages: Bool = true // <-- ADD THIS PARAMETER
+        ) throws -> Data {
         
         guard !routePoints.isEmpty else {
             throw CourseExportError.noRoutePoints
@@ -60,29 +61,31 @@ struct GarminCourseFitGenerator {
         // 2. Write Course Message (metadata)
         try writeCourseMessage(encoder: encoder, courseName: courseName, pacingPlan: pacingPlan)
         
-        // 3. Write Lap Message (single lap for the entire course)
-        try writeLapMessage(encoder: encoder, routePoints: routePoints, pacingPlan: pacingPlan)
-        
-        // 4. Write Course Points with Power Targets
-        try writeCoursePointsWithPower(
-            encoder: encoder,
-            routePoints: routePoints,
-            pacingPlan: pacingPlan
-        )
-        
-        // 5. Write Record Messages (GPS track with power at each point)
-        try writeRecordMessages(
-            encoder: encoder,
-            routePoints: routePoints,
-            pacingPlan: pacingPlan
-        )
-        
-        // 6. Finalize and return data
-        let fitData = encoder.close()
-        print("✅ Course FIT file generated: \(fitData.count) bytes")
-        
-        return fitData
-    }
+            // 3. Write Lap Message (single lap for the entire course)
+            try writeLapMessage(encoder: encoder, routePoints: routePoints, pacingPlan: pacingPlan)
+            
+            // 4. Write Course Points with Power Targets
+            try writeCoursePointsWithPower(
+                encoder: encoder,
+                routePoints: routePoints,
+                pacingPlan: pacingPlan
+            )
+            
+            // 5. Write Record Messages (GPS track with power at each point)
+            if includeRecordMessages { // <-- ADD THIS IF-STATEMENT
+                try writeRecordMessages(
+                    encoder: encoder,
+                    routePoints: routePoints,
+                    pacingPlan: pacingPlan
+                )
+            }
+            
+            // 6. Finalize and return data
+            let fitData = encoder.close()
+            print("✅ Course FIT file generated: \(fitData.count) bytes")
+            
+            return fitData
+        }
     
     // MARK: - Message Writers
     

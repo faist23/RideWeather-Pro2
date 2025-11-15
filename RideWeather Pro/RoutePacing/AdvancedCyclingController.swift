@@ -327,7 +327,8 @@ extension AdvancedCyclingController {
     func generateGarminCourseFIT(
         pacingPlan: PacingPlan,
         routePoints: [EnhancedRoutePoint],
-        courseName: String? = nil
+        courseName: String? = nil,
+        includeRecordMessages: Bool = true // <-- ADD THIS
     ) throws -> Data? {
                 
         let generator = GarminCourseFitGenerator()
@@ -337,7 +338,8 @@ extension AdvancedCyclingController {
             routePoints: routePoints,
             pacingPlan: pacingPlan,
             courseName: name,
-            settings: settings
+            settings: settings,
+            includeRecordMessages: includeRecordMessages // <-- PASS IT THROUGH
         )
         
         return fitData

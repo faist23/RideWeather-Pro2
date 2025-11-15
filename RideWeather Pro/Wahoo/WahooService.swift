@@ -651,123 +651,140 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
     }
     
     func uploadRouteToWahoo(fitData: Data, routeName: String) async throws {
-        try await refreshTokenIfNeededAsync()
-        guard let token = currentTokens?.accessToken else { throw WahooError.notAuthenticated }
-        
-        guard let url = URL(string: "\(apiBaseUrl)/v1/routes") else {
-            throw WahooError.invalidURL
-        }
-        
-        // Sanitize the route name
-        let allowedChars = CharacterSet.alphanumerics.union(.whitespaces).union(.init(charactersIn: "-_"))
-        let sanitizedName = String(routeName.unicodeScalars.filter(allowedChars.contains))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "-.", with: "")
-            .trimmingCharacters(in: CharacterSet(charactersIn: "-._ "))
-            .prefix(50)
-        
-        // ✅ Wahoo API expects base64-encoded FIT data as a data URI
-        let base64FitData = fitData.base64EncodedString()
-        let dataURI = "data:application/vnd.fit;base64,\(base64FitData)"
-        
-        // Extract route metadata from FIT file
-        let parser = RouteParser()
-        let startCoordinate: CLLocationCoordinate2D
-        var routeDistance: Double = 0
-        var routeAscent: Double = 0
-        
-        if let result = try? parser.parseWithElevation(fitData: fitData) {
-            startCoordinate = result.coordinates.first ?? CLLocationCoordinate2D(latitude: 0, longitude: 0)
-            routeDistance = (result.elevationAnalysis?.elevationProfile.last?.distance ?? 0) / 1000.0 // km
-            routeAscent = result.elevationAnalysis?.totalGain ?? 0 // meters
-        } else {
-            startCoordinate = CLLocationCoordinate2D(latitude: 0, longitude: 0)
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        
-        // ✅ Generate unique external ID for this route
-        let externalId = "rideweatherpro-\(UUID().uuidString)"
-        
-        // ✅ Build form data with ALL required parameters
-        var components = URLComponents()
-        components.queryItems = [
-            // Required parameters
-            URLQueryItem(name: "route[name]", value: String(sanitizedName)),
-            URLQueryItem(name: "route[file]", value: dataURI),
-            URLQueryItem(name: "route[filename]", value: "\(sanitizedName.replacingOccurrences(of: " ", with: "_")).fit"),
-            URLQueryItem(name: "route[external_id]", value: externalId),
-            URLQueryItem(name: "route[workout_type_family_id]", value: "0"), // 0 = cycling
+            try await refreshTokenIfNeededAsync()
+            guard let token = currentTokens?.accessToken else { throw WahooError.notAuthenticated }
             
-            // Optional but recommended parameters
-            URLQueryItem(name: "route[start_lat]", value: String(startCoordinate.latitude)),
-            URLQueryItem(name: "route[start_lng]", value: String(startCoordinate.longitude)),
-            URLQueryItem(name: "route[distance]", value: String(format: "%.2f", routeDistance)),
-            URLQueryItem(name: "route[ascent]", value: String(format: "%.0f", routeAscent)),
-            URLQueryItem(name: "route[provider_updated_at]", value: ISO8601DateFormatter().string(from: Date()))
-        ]
-        
-        request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
-        
-        print("WahooService: Uploading route to \(url.absoluteString)")
-        print("WahooService: Route name: \(sanitizedName)")
-        print("WahooService: External ID: \(externalId)")
-        print("WahooService: File size: \(fitData.count) bytes")
-        print("WahooService: Base64 size: \(base64FitData.count) characters")
-        print("WahooService: Start coordinate: \(startCoordinate.latitude), \(startCoordinate.longitude)")
-        print("WahooService: Distance: \(String(format: "%.2f", routeDistance))km, Ascent: \(String(format: "%.0f", routeAscent))m")
-        
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw WahooError.invalidResponse
+            guard let url = URL(string: "\(apiBaseUrl)/v1/routes") else {
+                throw WahooError.invalidURL
             }
             
-            print("WahooService: Response status: \(httpResponse.statusCode)")
+            // --- ALL OF THIS IS NEW ---
             
-            if let responseBody = String(data: data, encoding: .utf8) {
-                print("WahooService: Response body: \(responseBody)")
+            // 1. Create a unique boundary for the multipart request
+            let boundary = "Boundary-\(UUID().uuidString)"
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            // 2. Set the Content-Type to multipart/form-data
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            
+            // 3. Manually build the multipart body
+            var body = Data()
+            
+            // Helper to append form data fields
+            let boundaryPrefix = "--\(boundary)\r\n"
+            
+            func appendFormField(named name: String, value: String) {
+                body.append(boundaryPrefix.data(using: .utf8)!)
+                body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+                body.append("\(value)\r\n".data(using: .utf8)!)
             }
             
-            // ✅ FIX: Wahoo returns 200 (OK) for successful uploads, not 201
-            guard (200...299).contains(httpResponse.statusCode) else {
-                let responseBody = String(data: data, encoding: .utf8) ?? "No response body"
-                print("WahooService: Upload failed. Status: \(httpResponse.statusCode)")
-                print("WahooService: Full response: \(responseBody)")
+            // --- END HELPER ---
+            
+            // Sanitize the route name (same as before)
+            let allowedChars = CharacterSet.alphanumerics.union(.whitespaces).union(.init(charactersIn: "-_"))
+            let sanitizedName = String(routeName.unicodeScalars.filter(allowedChars.contains))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "-.", with: "")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "-._ "))
+                .prefix(50)
+            
+            // Extract route metadata from FIT file (same as before)
+            let parser = RouteParser()
+            let startCoordinate: CLLocationCoordinate2D
+            var routeDistance: Double = 0
+            var routeAscent: Double = 0
+            
+            if let result = try? parser.parseWithElevation(fitData: fitData) {
+                startCoordinate = result.coordinates.first ?? CLLocationCoordinate2D(latitude: 0, longitude: 0)
+                routeDistance = (result.elevationAnalysis?.elevationProfile.last?.distance ?? 0) / 1000.0 // km
+                routeAscent = result.elevationAnalysis?.totalGain ?? 0 // meters
+            } else {
+                startCoordinate = CLLocationCoordinate2D(latitude: 0, longitude: 0)
+            }
+            
+            let externalId = "rideweatherpro-\(UUID().uuidString)"
+            let filename = "\(sanitizedName.replacingOccurrences(of: " ", with: "_")).fit"
+            
+            // 4. Append all the text parameters using the helper
+            appendFormField(named: "route[name]", value: String(sanitizedName))
+            appendFormField(named: "route[external_id]", value: externalId)
+            appendFormField(named: "route[workout_type_family_id]", value: "0") // 0 = cycling
+            appendFormField(named: "route[start_lat]", value: String(startCoordinate.latitude))
+            appendFormField(named: "route[start_lng]", value: String(startCoordinate.longitude))
+            appendFormField(named: "route[distance]", value: String(format: "%.2f", routeDistance))
+            appendFormField(named: "route[ascent]", value: String(format: "%.0f", routeAscent))
+            appendFormField(named: "route[provider_updated_at]", value: ISO8601DateFormatter().string(from: Date()))
+            
+            // 5. Append the file data. This is different from a text field.
+            body.append(boundaryPrefix.data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"route[file]\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+            body.append("Content-Type: application/vnd.fit\r\n\r\n".data(using: .utf8)!)
+            body.append(fitData) // <-- Append the RAW file data, NOT a data URI
+            body.append("\r\n".data(using: .utf8)!)
+            
+            // 6. Append the final boundary
+            body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+            
+            // 7. Set the built body as the request's httpBody
+            request.httpBody = body
+            
+            // --- ALL OF THIS LOGGING IS THE SAME ---
+            print("WahooService: Uploading route to \(url.absoluteString) via multipart/form-data")
+            print("WahooService: Route name: \(sanitizedName)")
+            print("WahooService: External ID: \(externalId)")
+            print("WahooService: File size: \(fitData.count) bytes")
+            print("WahooService: Start coordinate: \(startCoordinate.latitude), \(startCoordinate.longitude)")
+            print("WahooService: Distance: \(String(format: "%.2f", routeDistance))km, Ascent: \(String(format: "%.0f", routeAscent))m")
+            
+            // --- THE REST OF THE FUNCTION IS THE SAME ---
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
                 
-                // Try to parse error message
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    if let error = json["error"] as? String {
-                        throw WahooError.apiErrorWithMessage(statusCode: httpResponse.statusCode, message: error)
-                    } else if let errors = json["errors"] as? [[String: Any]] {
-                        let errorMessages = errors.compactMap { $0["message"] as? String }
-                        throw WahooError.apiErrorWithMessage(statusCode: httpResponse.statusCode, message: errorMessages.joined(separator: ", "))
-                    }
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw WahooError.invalidResponse
                 }
                 
-                throw WahooError.apiError(statusCode: httpResponse.statusCode)
+                print("WahooService: Response status: \(httpResponse.statusCode)")
+                
+                if let responseBody = String(data: data, encoding: .utf8) {
+                    print("WahooService: Response body: \(responseBody)")
+                }
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let responseBody = String(data: data, encoding: .utf8) ?? "No response body"
+                    print("WahooService: Upload failed. Status: \(httpResponse.statusCode)")
+                    print("WahooService: Full response: \(responseBody)")
+                    
+                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        if let error = json["error"] as? String {
+                            throw WahooError.apiErrorWithMessage(statusCode: httpResponse.statusCode, message: error)
+                        } else if let errors = json["errors"] as? [[String: Any]] {
+                            let errorMessages = errors.compactMap { $0["message"] as? String }
+                            throw WahooError.apiErrorWithMessage(statusCode: httpResponse.statusCode, message: errorMessages.joined(separator: ", "))
+                        }
+                    }
+                    
+                    throw WahooError.apiError(statusCode: httpResponse.statusCode)
+                }
+                
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let routeId = json["id"] as? Int {
+                    print("WahooService: ✅ Route uploaded successfully! Wahoo Route ID: \(routeId)")
+                } else {
+                    print("WahooService: ✅ Route uploaded successfully!")
+                }
+                
+            } catch let error as WahooError {
+                throw error
+            } catch {
+                print("WahooService: Network error: \(error.localizedDescription)")
+                throw WahooError.networkError(error)
             }
-            
-            // Parse success response
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let routeId = json["id"] as? Int {
-                print("WahooService: ✅ Route uploaded successfully! Wahoo Route ID: \(routeId)")
-            } else {
-                print("WahooService: ✅ Route uploaded successfully!")
-            }
-            
-        } catch let error as WahooError {
-            throw error
-        } catch {
-            print("WahooService: Network error: \(error.localizedDescription)")
-            throw WahooError.networkError(error)
         }
-    }
     
     // MARK: Update Wahoo Upload to Create Plan
 
@@ -841,25 +858,9 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
                 URLQueryItem(name: "plan[description]", value: "Power-based pacing plan from RideWeatherPro")
             ]
             
-            // Build workout steps
-            for (index, segment) in pacingPlan.segments.enumerated() {
-                let distanceMeters = segment.originalSegment.distanceMeters
-                let targetPower = Int(segment.targetPower)
-                
-                // Add each key for the step in the array
-                queryItems.append(URLQueryItem(name: "plan[workout_steps][][step_order]", value: String(index + 1)))
-                queryItems.append(URLQueryItem(name: "plan[workout_steps][][type]", value: "bike_power"))
-                queryItems.append(URLQueryItem(name: "plan[workout_steps][][description]", value: "Segment \(index + 1)"))
-                queryItems.append(URLQueryItem(name: "plan[workout_steps][][duration_type]", value: "distance"))
-                queryItems.append(URLQueryItem(name: "plan[workout_steps][][duration_value]", value: String(Int(distanceMeters))))
-                queryItems.append(URLQueryItem(name: "plan[workout_steps][][target_type]", value: "power"))
-                queryItems.append(URLQueryItem(name: "plan[workout_steps][][target_value_low]", value: String(max(1, targetPower - 10))))
-                queryItems.append(URLQueryItem(name: "plan[workout_steps][][target_value_high]", value: String(targetPower + 10)))
-            }
             
             components.queryItems = queryItems
             planRequest.httpBody = components.percentEncodedQuery?.data(using: .utf8)
-            // --- END OF FIX ---
             
             print("WahooService: Creating plan with route and \(pacingPlan.segments.count) power segments via x-www-form-urlencoded...")
             

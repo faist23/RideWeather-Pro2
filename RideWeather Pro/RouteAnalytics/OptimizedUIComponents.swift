@@ -1709,12 +1709,11 @@ struct UpdatedOptimizedExportTab: View {
             print("📱 UI: ✅ FIT data generated: \(data.count) bytes")
             print("📱 UI: Calling wahooService.uploadPlanToWahoo()...")
             
-            // Use the new plan upload method
-            try await wahooService.uploadPlanToWahoo(
-                fitData: data,
-                planName: courseName,
-                pacingPlan: pacingPlan
-            )
+            // Use the route upload method. The FIT file already contains the power plan.
+                        try await wahooService.uploadRouteToWahoo(
+                            fitData: data,
+                            routeName: courseName
+                        )
             
             await MainActor.run {
                 exportingToWahoo = false
