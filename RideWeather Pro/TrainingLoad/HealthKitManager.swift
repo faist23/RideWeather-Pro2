@@ -195,7 +195,7 @@ class HealthKitManager: ObservableObject {
         }
     }
     
-    /// **FIXED:** Fetches total "asleep" time by summing stages, with a fallback.
+    /// **FIXED:** Fetches total "asleep" time from last night by summing stages, with a fallback.
     private func fetchLastNightSleep() async -> TimeInterval? {
         guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return nil }
         
@@ -203,7 +203,6 @@ class HealthKitManager: ObservableObject {
         let stageSum = await getSleepStagesDuration()
         
         if stageSum > 0 {
-//            print("HealthKit: Found sleep stages (Core, Deep, REM). Total: \(stageSum / 3600) hrs")
             return stageSum
         }
         
@@ -212,14 +211,31 @@ class HealthKitManager: ObservableObject {
         return await getAsleepUnspecifiedDuration()
     }
     
-    /// Helper to get the sum of Core, Deep, and REM sleep.
+    /// Helper to get the sum of Core, Deep, and REM sleep from LAST NIGHT.
     private func getSleepStagesDuration() async -> TimeInterval {
         guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return 0 }
         
         let calendar = Calendar.current
-        let endDate = Date()
-        guard let startDate = calendar.date(byAdding: .hour, value: -18, to: endDate) else { return 0 }
         
+        // Get a wider window: from 12 PM yesterday through 2 PM today
+        // This captures any sleep session that occurred "last night"
+        let now = Date()
+
+        // If it's before 6 AM, we want yesterday's sleep
+        // If it's after 6 AM, we want last night's sleep (which may have ended this morning)
+        let cutoffHour = 6
+        let currentHour = calendar.component(.hour, from: now)
+        
+        let daysBack = currentHour < cutoffHour ? 2 : 1
+        
+        // Query from noon X days ago to noon X-1 days ago
+        let endNoon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: now)!
+        let startNoon = calendar.date(byAdding: .day, value: -daysBack, to: endNoon)!
+        let queryEndNoon = calendar.date(byAdding: .day, value: -(daysBack - 1), to: endNoon)!
+        
+        let startDate = startNoon
+        let endDate = queryEndNoon
+
         // 1. Find all *stage* sleep states
         let stagePredicates = [
             HKCategoryValueSleepAnalysis.asleepCore,
@@ -241,23 +257,32 @@ class HealthKitManager: ObservableObject {
                     return
                 }
                 
+                // Debug: Print what we found
+                print("HealthKit: Found \(sleepSamples.count) sleep stage samples")
+                for sample in sleepSamples.prefix(5) {
+                    let duration = sample.endDate.timeIntervalSince(sample.startDate) / 3600
+                    print("  Sample: \(sample.startDate) to \(sample.endDate) (\(String(format: "%.2f", duration))h)")
+                }
+                
                 let totalSleep = sleepSamples.reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+                print("HealthKit: Total sleep from stages: \(String(format: "%.2f", totalSleep / 3600))h")
                 continuation.resume(returning: totalSleep)
             }
             healthStore.execute(query)
         }
     }
     
-    /// Helper to get the sum of "asleepUnspecified" (for devices that don't provide stages).
+    /// Helper to get the sum of "asleepUnspecified" from LAST NIGHT (for devices that don't provide stages).
     private func getAsleepUnspecifiedDuration() async -> TimeInterval? {
         guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return nil }
         
         let calendar = Calendar.current
-        let endDate = Date()
-        guard let startDate = calendar.date(byAdding: .hour, value: -18, to: endDate) else { return nil }
+        let now = Date()
+        let todayNoon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: now)!
+        let yesterdayNoon = calendar.date(byAdding: .day, value: -1, to: todayNoon)!
         
         let predicate = HKQuery.predicateForCategorySamples(with: .equalTo, value: HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue)
-        let timePredicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        let timePredicate = HKQuery.predicateForSamples(withStart: yesterdayNoon, end: todayNoon, options: .strictStartDate)
         let combinedPredicate = NSCompoundPredicate(andPredicateWithSubpredicates: [predicate, timePredicate])
         
         return await withCheckedContinuation { continuation in
@@ -266,9 +291,12 @@ class HealthKitManager: ObservableObject {
                 guard let sleepSamples = samples as? [HKCategorySample], error == nil else {
                     continuation.resume(returning: nil)
                     return
-                }                
+                }
+                
+                print("HealthKit: Found \(sleepSamples.count) asleepUnspecified samples")
                 
                 let totalSleep = sleepSamples.reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+                print("HealthKit: Total sleep from asleepUnspecified: \(String(format: "%.2f", totalSleep / 3600))h")
                 continuation.resume(returning: totalSleep > 0 ? totalSleep : nil)
             }
             healthStore.execute(query)

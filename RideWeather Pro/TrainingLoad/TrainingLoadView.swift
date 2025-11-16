@@ -960,6 +960,21 @@ struct TrainingLoadChart: View {
                 .chartXAxis {
                     let today = Calendar.current.startOfDay(for: Date())
                     
+                    // Automatic grid lines and labels (all of them)
+                    AxisMarks(preset: .automatic, values: .automatic(desiredCount: 5)) { value in
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(.white.opacity(0.2))
+                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
+                    
+                    // Just a visual "Today" marker line - no label
+                    AxisMarks(values: [today]) {
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 2)).foregroundStyle(.white.opacity(0.9))
+                    }
+                }
+/*                .chartXAxis {
+                    let today = Calendar.current.startOfDay(for: Date())
+                    
                     // Automatic grid lines and labels
                     AxisMarks(preset: .automatic, values: .automatic(desiredCount: 5)) { value in
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(.white.opacity(0.2))
@@ -985,7 +1000,7 @@ struct TrainingLoadChart: View {
                             .foregroundStyle(.white)
                             .offset(y: 3)
                     }
-                }
+                }*/
                 
                 // Custom legend
                 HStack(spacing: 20) {
