@@ -16,14 +16,14 @@ struct TrainingLoadView: View {
     @EnvironmentObject private var stravaService: StravaService
     @EnvironmentObject private var weatherViewModel: WeatherViewModel
     @EnvironmentObject private var healthManager: HealthKitManager
-
+    
     @State private var selectedPeriod: TrainingLoadPeriod = .month
     @State private var showingExplanation = false
     @StateObject private var aiInsightsManager = AIInsightsManager()
-
+    
     @State private var showingAIDebug = false
-
-  
+    
+    
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -274,242 +274,242 @@ struct TrainingLoadView: View {
             }
         }
     }
-
-/*    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    
-                    // --- REMOVED ConnectHealthCard ---
-                    
-                    if let summary = viewModel.summary {
-                        // Sync Status Banner (if applicable)
-                        if stravaService.isAuthenticated {
-                            SyncStatusBanner(
-                                syncManager: syncManager,
-                                onSync: {
-                                    Task {
-                                        let startDate = viewModel.summary == nil
-                                        ? Calendar.current.date(byAdding: .day, value: -365, to: Date())
-                                        : nil
-                                        
-                                        await syncManager.syncFromStrava(
-                                            stravaService: stravaService,
-                                            userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                                            userLTHR: nil,
-                                            startDate: startDate
-                                        )
-                                        viewModel.refresh(readiness: healthManager.readiness) // <-- Pass readiness
-                                    }
-                                }
-                            )
-                        }
-                        
-                        // Current Status Card
-                        CurrentFormCard(summary: summary)
-                        
-                        // --- ADD DailyReadinessCard ---
-                        if healthManager.isAuthorized && (viewModel.readiness?.latestHRV != nil || viewModel.readiness?.latestRHR != nil || viewModel.readiness?.sleepDuration != nil || viewModel.readiness?.averageHRV != nil) {
-                            DailyReadinessCard(readiness: viewModel.readiness!)
-                                .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
-                        }
-                        // ---
- 
-                        // AI Insights (NEW)
-                        if aiInsightsManager.isLoading {
-                            AIInsightLoadingCard()
-                                .transition(.opacity)
-                        } else if let aiInsight = aiInsightsManager.currentInsight {
-                            AIInsightCard(insight: aiInsight)
-                                .transition(.asymmetric(
-                                    insertion: .opacity.combined(with: .move(edge: .top)),
-                                    removal: .opacity
-                                ))
-                        }
-                        
-/*                        // Add this somewhere visible in your TrainingLoadView body
-                        // (I'd put it right after the DailyReadinessCard or AI insight cards)
-
-                        // TEMPORARY TEST BUTTON - Remove once you're satisfied
-                        if viewModel.summary != nil {
-                            Button {
-                                Task {
-                                    await aiInsightsManager.forceAnalyze(
-                                        summary: viewModel.summary,
-                                        readiness: healthManager.readiness,
-                                        recentLoads: viewModel.dailyLoads
-                                    )
-                                }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "sparkles")
-                                    Text("Generate AI Insight")
-                                }
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(
-                                    LinearGradient(
-                                        colors: [.purple, .blue],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .cornerRadius(12)
-                            }
-                            .disabled(aiInsightsManager.isLoading)
-                            .opacity(aiInsightsManager.isLoading ? 0.6 : 1.0)
-                        }
-                        //------------------------romove if satisfied with ai output
- */
-                        // Training Load Chart
-                        TrainingLoadChart(
-                            dailyLoads: viewModel.dailyLoads,
-                            period: selectedPeriod
-                        )
-                        
-                        // Period Selector
-                        periodSelector
-                        
-                        // Key Metrics
-                        MetricsGrid(summary: summary)
-                        
-                        // Insights
-                        TrainingLoadInsightsSection(insights: viewModel.insights)
-                        
-                    } else {
-                        // Show empty state *unless* health is connected but Strava isn't
-                        if !healthManager.isAuthorized && !stravaService.isAuthenticated {
-                            emptyStateView
-                        } else if healthManager.isAuthorized && !stravaService.isAuthenticated {
-                            // Special empty state if only Health is connected
-                            stravaEmptyStateView
-                        } else {
-                            emptyStateView // Default empty state
-                        }
-                    }
-                }
-/*                // Add this in the VStack after your other cards (around line 100)
-                Button("🧪 Force AI Analysis") {
-                    Task {
-                        await aiInsightsManager.forceAnalyze(
-                            summary: viewModel.summary,
-                            readiness: healthManager.readiness,
-                            recentLoads: viewModel.dailyLoads
-                        )
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.purple)
- */
-                .padding()
-            }
-            .navigationTitle("Fitness")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                // --- LEADING ITEM GROUP ---
-                ToolbarItemGroup(placement: .navigationBarLeading) {
-                    if stravaService.isAuthenticated && !syncManager.isSyncing {
-                        Button {
-                            Task {
-                                let startDate = viewModel.summary == nil
-                                ? Calendar.current.date(byAdding: .day, value: -90, to: Date())
-                                : nil
-                                
-                                await syncManager.syncFromStrava(
-                                    stravaService: stravaService,
-                                    userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                                    userLTHR: nil,
-                                    startDate: startDate
-                                )
-                                viewModel.refresh(readiness: healthManager.readiness)
-                            }
-                        } label: {
-                            Label("Sync", systemImage: syncManager.needsSync ? "exclamationmark.arrow.triangle.2.circlepath" : "arrow.triangle.2.circlepath")
-                                .foregroundColor(syncManager.needsSync ? .orange : .blue)
-                        }
-                    } else {
-                        // This is good practice for layout stability
-                        Color.clear.frame(width: 0)
-                    }
-                }
-                
-                // --- TRAILING ITEM GROUP ---
-                // Even with one button, this is a more stable structure
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button {
-                        showingExplanation = true
-                    } label: {
-                        Image(systemName: "info.circle")
-                    }
-                    
-                    // If you want to add your debug button back,
-                    // you can safely add it *right here*.
-                    
-                    // Button {
-                    //    showingAIDebug = true
-                    // } label: {
-                    //    Image(systemName: "dollarsign.circle")
-                    // }
-                }
-            }
-            .overlay {
-                if syncManager.isSyncing {
-                    syncingOverlay
-                }
-            }
-            .animatedBackground(
-                gradient: .rideAnalysisBackground,
-                showDecoration: true,
-                decorationColor: .white,
-                decorationIntensity: 0.06
-            )
-            .sheet(isPresented: $showingExplanation) {
-                TrainingLoadExplanationView()
-            }
-            .sheet(isPresented: $showingAIDebug) {
-                AIInsightsDebugView(manager: aiInsightsManager)
-            }
-            .onAppear {
-                // The data is already being fetched by MainView.
-                // We just need to load it into the view.
-                syncManager.loadSyncDate()
-                viewModel.refresh(readiness: healthManager.readiness)
-                viewModel.loadPeriod(selectedPeriod)
-                
-                // We can still trigger the AI analysis and a Strava sync here
-                Task {
-                    // 1. Run Strava sync if needed
-                    if syncManager.needsSync && stravaService.isAuthenticated {
-                        await syncManager.syncFromStrava(
-                            stravaService: stravaService,
-                            userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                            userLTHR: nil,
-                            startDate: nil
-                        )
-                        // 2. Refresh all data after sync
-                        viewModel.refresh(readiness: healthManager.readiness)
-                        viewModel.loadPeriod(selectedPeriod)
-                    }
-                    
-                    // 3. Trigger AI analysis
-                    await aiInsightsManager.analyzeIfNeeded(
-                        summary: viewModel.summary,
-                        readiness: healthManager.readiness,
-                        recentLoads: viewModel.dailyLoads
-                    )
-                }
-            }
-            .onChange(of: selectedPeriod) { oldValue, newValue in
-                viewModel.loadPeriod(newValue)
-            }
-            // Refresh insights when health data changes ---
-            .onChange(of: healthManager.readiness) {
-                viewModel.refresh(readiness: healthManager.readiness)
-            }
-        }
-    }*/
+    
+    /*    var body: some View {
+     NavigationStack {
+     ScrollView {
+     VStack(spacing: 20) {
+     
+     // --- REMOVED ConnectHealthCard ---
+     
+     if let summary = viewModel.summary {
+     // Sync Status Banner (if applicable)
+     if stravaService.isAuthenticated {
+     SyncStatusBanner(
+     syncManager: syncManager,
+     onSync: {
+     Task {
+     let startDate = viewModel.summary == nil
+     ? Calendar.current.date(byAdding: .day, value: -365, to: Date())
+     : nil
+     
+     await syncManager.syncFromStrava(
+     stravaService: stravaService,
+     userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+     userLTHR: nil,
+     startDate: startDate
+     )
+     viewModel.refresh(readiness: healthManager.readiness) // <-- Pass readiness
+     }
+     }
+     )
+     }
+     
+     // Current Status Card
+     CurrentFormCard(summary: summary)
+     
+     // --- ADD DailyReadinessCard ---
+     if healthManager.isAuthorized && (viewModel.readiness?.latestHRV != nil || viewModel.readiness?.latestRHR != nil || viewModel.readiness?.sleepDuration != nil || viewModel.readiness?.averageHRV != nil) {
+     DailyReadinessCard(readiness: viewModel.readiness!)
+     .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
+     }
+     // ---
+     
+     // AI Insights (NEW)
+     if aiInsightsManager.isLoading {
+     AIInsightLoadingCard()
+     .transition(.opacity)
+     } else if let aiInsight = aiInsightsManager.currentInsight {
+     AIInsightCard(insight: aiInsight)
+     .transition(.asymmetric(
+     insertion: .opacity.combined(with: .move(edge: .top)),
+     removal: .opacity
+     ))
+     }
+     
+     /*                        // Add this somewhere visible in your TrainingLoadView body
+      // (I'd put it right after the DailyReadinessCard or AI insight cards)
+      
+      // TEMPORARY TEST BUTTON - Remove once you're satisfied
+      if viewModel.summary != nil {
+      Button {
+      Task {
+      await aiInsightsManager.forceAnalyze(
+      summary: viewModel.summary,
+      readiness: healthManager.readiness,
+      recentLoads: viewModel.dailyLoads
+      )
+      }
+      } label: {
+      HStack {
+      Image(systemName: "sparkles")
+      Text("Generate AI Insight")
+      }
+      .font(.headline)
+      .foregroundColor(.white)
+      .frame(maxWidth: .infinity)
+      .padding()
+      .background(
+      LinearGradient(
+      colors: [.purple, .blue],
+      startPoint: .leading,
+      endPoint: .trailing
+      )
+      )
+      .cornerRadius(12)
+      }
+      .disabled(aiInsightsManager.isLoading)
+      .opacity(aiInsightsManager.isLoading ? 0.6 : 1.0)
+      }
+      //------------------------romove if satisfied with ai output
+      */
+     // Training Load Chart
+     TrainingLoadChart(
+     dailyLoads: viewModel.dailyLoads,
+     period: selectedPeriod
+     )
+     
+     // Period Selector
+     periodSelector
+     
+     // Key Metrics
+     MetricsGrid(summary: summary)
+     
+     // Insights
+     TrainingLoadInsightsSection(insights: viewModel.insights)
+     
+     } else {
+     // Show empty state *unless* health is connected but Strava isn't
+     if !healthManager.isAuthorized && !stravaService.isAuthenticated {
+     emptyStateView
+     } else if healthManager.isAuthorized && !stravaService.isAuthenticated {
+     // Special empty state if only Health is connected
+     stravaEmptyStateView
+     } else {
+     emptyStateView // Default empty state
+     }
+     }
+     }
+     /*                // Add this in the VStack after your other cards (around line 100)
+      Button("🧪 Force AI Analysis") {
+      Task {
+      await aiInsightsManager.forceAnalyze(
+      summary: viewModel.summary,
+      readiness: healthManager.readiness,
+      recentLoads: viewModel.dailyLoads
+      )
+      }
+      }
+      .buttonStyle(.borderedProminent)
+      .tint(.purple)
+      */
+     .padding()
+     }
+     .navigationTitle("Fitness")
+     .navigationBarTitleDisplayMode(.inline)
+     .toolbar {
+     // --- LEADING ITEM GROUP ---
+     ToolbarItemGroup(placement: .navigationBarLeading) {
+     if stravaService.isAuthenticated && !syncManager.isSyncing {
+     Button {
+     Task {
+     let startDate = viewModel.summary == nil
+     ? Calendar.current.date(byAdding: .day, value: -90, to: Date())
+     : nil
+     
+     await syncManager.syncFromStrava(
+     stravaService: stravaService,
+     userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+     userLTHR: nil,
+     startDate: startDate
+     )
+     viewModel.refresh(readiness: healthManager.readiness)
+     }
+     } label: {
+     Label("Sync", systemImage: syncManager.needsSync ? "exclamationmark.arrow.triangle.2.circlepath" : "arrow.triangle.2.circlepath")
+     .foregroundColor(syncManager.needsSync ? .orange : .blue)
+     }
+     } else {
+     // This is good practice for layout stability
+     Color.clear.frame(width: 0)
+     }
+     }
+     
+     // --- TRAILING ITEM GROUP ---
+     // Even with one button, this is a more stable structure
+     ToolbarItemGroup(placement: .navigationBarTrailing) {
+     Button {
+     showingExplanation = true
+     } label: {
+     Image(systemName: "info.circle")
+     }
+     
+     // If you want to add your debug button back,
+     // you can safely add it *right here*.
+     
+     // Button {
+     //    showingAIDebug = true
+     // } label: {
+     //    Image(systemName: "dollarsign.circle")
+     // }
+     }
+     }
+     .overlay {
+     if syncManager.isSyncing {
+     syncingOverlay
+     }
+     }
+     .animatedBackground(
+     gradient: .rideAnalysisBackground,
+     showDecoration: true,
+     decorationColor: .white,
+     decorationIntensity: 0.06
+     )
+     .sheet(isPresented: $showingExplanation) {
+     TrainingLoadExplanationView()
+     }
+     .sheet(isPresented: $showingAIDebug) {
+     AIInsightsDebugView(manager: aiInsightsManager)
+     }
+     .onAppear {
+     // The data is already being fetched by MainView.
+     // We just need to load it into the view.
+     syncManager.loadSyncDate()
+     viewModel.refresh(readiness: healthManager.readiness)
+     viewModel.loadPeriod(selectedPeriod)
+     
+     // We can still trigger the AI analysis and a Strava sync here
+     Task {
+     // 1. Run Strava sync if needed
+     if syncManager.needsSync && stravaService.isAuthenticated {
+     await syncManager.syncFromStrava(
+     stravaService: stravaService,
+     userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+     userLTHR: nil,
+     startDate: nil
+     )
+     // 2. Refresh all data after sync
+     viewModel.refresh(readiness: healthManager.readiness)
+     viewModel.loadPeriod(selectedPeriod)
+     }
+     
+     // 3. Trigger AI analysis
+     await aiInsightsManager.analyzeIfNeeded(
+     summary: viewModel.summary,
+     readiness: healthManager.readiness,
+     recentLoads: viewModel.dailyLoads
+     )
+     }
+     }
+     .onChange(of: selectedPeriod) { oldValue, newValue in
+     viewModel.loadPeriod(newValue)
+     }
+     // Refresh insights when health data changes ---
+     .onChange(of: healthManager.readiness) {
+     viewModel.refresh(readiness: healthManager.readiness)
+     }
+     }
+     }*/
     
     private var syncingOverlay: some View {
         ZStack {
@@ -683,52 +683,52 @@ struct TrainingLoadView: View {
 }
 
 /*// --- ADD THIS NEW VIEW ---
-struct ConnectHealthCard: View {
-    var onConnect: () -> Void
-    var healthError: String?
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Image(systemName: "heart.fill")
-                    .font(.title2)
-                    .foregroundColor(.red)
-                
-                VStack(alignment: .leading) {
-                    Text("Connect to Apple Health")
-                        .font(.headline.weight(.semibold))
-                    Text("Get smarter readiness insights.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            
-            Text("Allow access to HRV, Resting Heart Rate, and Sleep to get personalized recovery advice alongside your training load.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            
-            Button {
-                onConnect()
-            } label: {
-                Text("Connect Apple Health")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            
-            if let error = healthError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
-    }
-}*/
+ struct ConnectHealthCard: View {
+ var onConnect: () -> Void
+ var healthError: String?
+ 
+ var body: some View {
+ VStack(alignment: .leading, spacing: 12) {
+ HStack(spacing: 12) {
+ Image(systemName: "heart.fill")
+ .font(.title2)
+ .foregroundColor(.red)
+ 
+ VStack(alignment: .leading) {
+ Text("Connect to Apple Health")
+ .font(.headline.weight(.semibold))
+ Text("Get smarter readiness insights.")
+ .font(.subheadline)
+ .foregroundStyle(.secondary)
+ }
+ }
+ 
+ Text("Allow access to HRV, Resting Heart Rate, and Sleep to get personalized recovery advice alongside your training load.")
+ .font(.caption)
+ .foregroundStyle(.secondary)
+ 
+ Button {
+ onConnect()
+ } label: {
+ Text("Connect Apple Health")
+ .font(.subheadline.weight(.semibold))
+ .frame(maxWidth: .infinity)
+ }
+ .buttonStyle(.borderedProminent)
+ .tint(.red)
+ 
+ if let error = healthError {
+ Text(error)
+ .font(.caption)
+ .foregroundStyle(.red)
+ }
+ }
+ .padding()
+ .background(Color(.systemBackground))
+ .cornerRadius(16)
+ .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+ }
+ }*/
 
 // MARK: - Current Form Card
 

@@ -8,7 +8,7 @@
 
 import SwiftUI
 
-struct MigrationDebugView: View {
+/*struct MigrationDebugView: View {
     @State private var fileExists = false
     @State private var fileSize = "0 KB"
     @State private var daysInFile = 0
@@ -181,4 +181,4 @@ extension TrainingLoadStorage {
         let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         return documentsDirectory.appendingPathComponent("trainingLoadData.json")
     }
-}
+}*/
