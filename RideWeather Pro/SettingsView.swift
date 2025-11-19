@@ -201,7 +201,7 @@ struct SettingsView: View {
 
                 // MARK: - Riding Preferences Section
                 Section("Riding Preferences") {
-                    VStack(alignment: .leading, spacing: 12) {
+/*                    VStack(alignment: .leading, spacing: 12) {
                         Text("Primary Goal")
                             .font(.subheadline)
                             .foregroundStyle(.primary)
@@ -217,7 +217,7 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.top, 4)
-                    }
+                    }*/
                     
                     Picker("Wind Tolerance", selection: $viewModel.settings.windTolerance) {
                         ForEach(AppSettings.WindTolerance.allCases) { tolerance in
@@ -318,9 +318,9 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     
-                    Toggle("Prefer Liquid Fueling", isOn: $viewModel.settings.preferLiquids)
-                    Toggle("Avoid Gluten", isOn: $viewModel.settings.avoidGluten)
-                    Toggle("Avoid Caffeine", isOn: $viewModel.settings.avoidCaffeine)
+//                    Toggle("Prefer Liquid Fueling", isOn: $viewModel.settings.preferLiquids)
+//                    Toggle("Avoid Gluten", isOn: $viewModel.settings.avoidGluten)
+//                    Toggle("Avoid Caffeine", isOn: $viewModel.settings.avoidCaffeine)
                 }
 
                 Section("Apple Health") { // <-- ADD THIS ENTIRE SECTION

@@ -112,6 +112,9 @@ struct TrainingLoadView: View {
                                 .multilineTextAlignment(.center)
                         }
                         
+                        // Insights
+                        TrainingLoadInsightsSection(insights: viewModel.insights)
+
                         // Training Load Chart
                         TrainingLoadChart(
                             dailyLoads: viewModel.dailyLoads,
@@ -123,9 +126,6 @@ struct TrainingLoadView: View {
                         
                         // Key Metrics
                         MetricsGrid(summary: summary)
-                        
-                        // Insights
-                        TrainingLoadInsightsSection(insights: viewModel.insights)
                         
                     } else {
                         // Show empty state
