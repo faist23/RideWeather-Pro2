@@ -113,16 +113,58 @@ struct RideWeatherProApp: App {
     }*/
 
     private func syncWeight() async {
+        // Check the user's preferred source
+        let source = weatherViewModel.settings.weightSource
+        
+        var newWeight: Double? = nil
+        
+        switch source {
+        case .strava:
+            // Only attempt if user wants Strava and is connected
+            if stravaService.isAuthenticated {
+                do {
+                    // We call fetchAthleteWeight directly, bypassing the old "autoSync" boolean check
+                    newWeight = try await stravaService.fetchAthleteWeight()
+                } catch {
+                    print("Strava weight sync failed: \(error)")
+                }
+            }
+            
+        case .healthKit:
+            // Only fetch from HealthKit if selected
+            if healthManager.isAuthorized {
+                newWeight = await healthManager.fetchLatestWeight()
+            }
+            
+        case .manual:
+            // Do nothing - user wants to manage it manually
+            return
+        }
+        
+        // If we got a valid weight from the selected source, update the app settings
+        if let weight = newWeight, weight > 0 {
+            await MainActor.run {
+                // Update settings with the new weight
+                weatherViewModel.settings.bodyWeight = weight
+                
+                // Trigger UI update (computed property access)
+                let _ = weatherViewModel.settings.bodyWeightInUserUnits
+                print("✅ Synced weight from \(source.rawValue): \(weight) kg")
+            }
+        }
+    }
+    
+/*    private func syncWeight() async {
         if let newWeightKg = await stravaService.autoSyncWeightIfNeeded(settings: weatherViewModel.settings) {
             // Update the view model's settings, which will trigger UI updates and save to UserDefaults
             await MainActor.run {
                 // Set the raw KG value
                 weatherViewModel.settings.bodyWeight = newWeightKg
-                
+                print("Synced new weight: \(newWeightKg) kg")
                 // This will trigger the UI to update correctly in lbs or kg
                 // by re-calculating from the new source KG value.
                 let _ = weatherViewModel.settings.bodyWeightInUserUnits
             }
         }
-    }
+    }*/
 }

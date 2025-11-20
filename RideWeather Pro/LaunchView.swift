@@ -17,8 +17,10 @@ struct LaunchView: View {
             ).ignoresSafeArea()
 
             VStack {
-                Image(systemName: "bicycle")
+                    Image("rider_bike_image")
+ //               Image(systemName: "bicycle")
                     .resizable()
+                    .renderingMode(.template) // 2. THIS allows .foregroundColor to work
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 100, height: 100)
                     .foregroundColor(.white)

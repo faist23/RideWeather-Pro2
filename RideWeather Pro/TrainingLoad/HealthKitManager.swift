@@ -23,7 +23,8 @@ class HealthKitManager: ObservableObject {
         return [
             HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!,
             HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
-            HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
+            HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
+            HKObjectType.quantityType(forIdentifier: .bodyMass)! //
         ]
     }
     
@@ -125,6 +126,47 @@ class HealthKitManager: ObservableObject {
         }
     }
     
+    // MARK: - NEW: Weight Fetching
+        
+        /// Fetches the most recent weight entry from HealthKit in Kilograms
+        func fetchLatestWeight() async -> Double? {
+            guard isAuthorized,
+                  let weightType = HKQuantityType.quantityType(forIdentifier: .bodyMass) else {
+                return nil
+            }
+            
+            return await withCheckedContinuation { continuation in
+                // Sort by date descending to get the newest
+                let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+                
+                let query = HKSampleQuery(
+                    sampleType: weightType,
+                    predicate: nil,
+                    limit: 1,
+                    sortDescriptors: [sortDescriptor]
+                ) { (_, samples, error) in
+                    if let error = error {
+                        print("HealthKit: Error fetching weight: \(error.localizedDescription)")
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    
+                    guard let sample = samples?.first as? HKQuantitySample else {
+                        print("HealthKit: No weight data found.")
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    
+                    // Convert to kg
+                    let weightInKg = sample.quantity.doubleValue(for: .gramUnit(with: .kilo))
+                    print("HealthKit: Fetched weight: \(weightInKg) kg")
+                    continuation.resume(returning: weightInKg)
+                }
+                
+                healthStore.execute(query)
+            }
+        }
+
     /// **WORKING:** Fetches the *average* of all samples recorded *today*.
     private func fetchTodaysAverage(for typeIdentifier: HKQuantityTypeIdentifier, unit: HKUnit) async -> Double? {
         guard let quantityType = HKQuantityType.quantityType(forIdentifier: typeIdentifier) else {

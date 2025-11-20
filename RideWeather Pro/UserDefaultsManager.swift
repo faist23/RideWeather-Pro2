@@ -32,6 +32,9 @@ struct AppSettings: Codable, Equatable {
     
     var autoSyncWeightFromStrava: Bool = false 
 
+    // Exclusive Weight Source Selection
+    var weightSource: WeightSource = .manual
+
     // Enhanced recommendation preferences
     var primaryRidingGoal: RidingGoal = .performance
     var temperatureTolerance: TemperatureTolerance = .neutral
@@ -91,6 +94,14 @@ struct AppSettings: Codable, Equatable {
     
     // MARK: - Enums
     
+    enum WeightSource: String, CaseIterable, Identifiable, Codable {
+            case manual = "Manual Input"
+            case strava = "Strava"
+            case healthKit = "Apple Health"
+            
+            var id: String { self.rawValue }
+        }
+        
     enum SpeedCalculationMethod: String, CaseIterable, Identifiable, Codable {
         case averageSpeed = "average_speed"
         case powerBased = "power_based"

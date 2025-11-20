@@ -204,8 +204,39 @@ struct SettingsView: View {
                     in: viewModel.settings.units == .metric ? 40...150 : 90...330,
                     step: 0.1
                 )
+                // Disable manual slider if a sync source is active
+                .disabled(viewModel.settings.weightSource != .manual)
+                .opacity(viewModel.settings.weightSource != .manual ? 0.6 : 1.0)
+                
+                // ✅ Weight Source Picker with Auto-Update
+                Picker("Update from", selection: $viewModel.settings.weightSource) {
+                    ForEach(AppSettings.WeightSource.allCases) { source in
+                        Text(source.rawValue).tag(source)
+                    }
+                }
+                .pickerStyle(.segmented)
+                // Trigger sync immediately when source changes
+                .onChange(of: viewModel.settings.weightSource) { _, newSource in
+                    Task {
+                        await performWeightSync(source: newSource)
+                    }
+                }
+                
+                if viewModel.settings.weightSource == .strava && !stravaService.isAuthenticated {
+                    Text("⚠️ Connect Strava in Integrations to sync")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                } else if viewModel.settings.weightSource == .healthKit && !healthManager.isAuthorized {
+                    Text("⚠️ Connect Health in Integrations to sync")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
             }
             .padding(.vertical, 4)
+            // Ensure weight is fresh when viewing settings
+            .task {
+                await performWeightSync(source: viewModel.settings.weightSource)
+            }
             
             // Bike Weight
             VStack(alignment: .leading, spacing: 8) {
@@ -227,6 +258,37 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.vertical, 4)
+        }
+    }
+    
+    // MARK: - Sync Helper
+    
+    private func performWeightSync(source: AppSettings.WeightSource) async {
+        var newWeight: Double? = nil
+        
+        switch source {
+        case .strava:
+            if stravaService.isAuthenticated {
+                do {
+                    newWeight = try await stravaService.fetchAthleteWeight()
+                } catch {
+                    print("Settings: Strava weight sync failed: \(error)")
+                }
+            }
+        case .healthKit:
+            if healthManager.isAuthorized {
+                newWeight = await healthManager.fetchLatestWeight()
+            }
+        case .manual:
+            return
+        }
+        
+        if let weight = newWeight, weight > 0 {
+            await MainActor.run {
+                viewModel.settings.bodyWeight = weight
+                // Access computed property to trigger any necessary UI updates
+                let _ = viewModel.settings.bodyWeightInUserUnits
+            }
         }
     }
 }
@@ -399,6 +461,9 @@ struct IntegrationsSettingsView: View {
     
     @State private var isConnectingHealth = false
     
+    // Strava Brand Color
+    private let stravaOrange = Color(hex: "FC5200")
+    
     var body: some View {
         Form {
             // Apple Health
@@ -422,7 +487,17 @@ struct IntegrationsSettingsView: View {
                             isConnectingHealth = false
                         }
                     } label: {
-                        if isConnectingHealth { ProgressView() } else { Text("Connect Apple Health") }
+                        if isConnectingHealth {
+                            ProgressView()
+                        } else {
+                            // ✅ Added Apple logo as requested
+                            HStack {
+                                Image(systemName: "apple.logo")
+                                    .font(.title2)
+                                    .foregroundColor(.primary)
+                                Text("Connect Apple Health")
+                            }
+                        }
                     }
                 }
             } header: {
@@ -435,6 +510,12 @@ struct IntegrationsSettingsView: View {
             Section("Strava") {
                 if stravaService.isAuthenticated {
                     HStack {
+                        // ✅ Show logo when connected too
+                        Image("strava_logo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 35, height: 35)
+                            
                         VStack(alignment: .leading) {
                             Text(stravaService.athleteName ?? "Connected")
                                 .font(.headline)
@@ -447,15 +528,22 @@ struct IntegrationsSettingsView: View {
                             .buttonStyle(.borderless)
                     }
                     
-                    // Auto-Sync Weight Toggle
-                    Toggle(isOn: $viewModel.settings.autoSyncWeightFromStrava) {
-                        Text("Auto-Sync Weight")
-                    }
+                    // REMOVED: Auto-Sync Weight Toggle is now in Rider Profile
+                    
                 } else {
                     Button {
                         stravaService.authenticate()
                     } label: {
-                        Label("Connect with Strava", systemImage: "link")
+                        // ✅ Updated with Logo and Color
+                        HStack {
+                            Image("strava_logo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 35, height: 35)
+                            
+                            Text("Connect with Strava")
+                                .foregroundColor(stravaOrange)
+                        }
                     }
                 }
             }
@@ -464,6 +552,11 @@ struct IntegrationsSettingsView: View {
             Section("Garmin") {
                 if garminService.isAuthenticated {
                     HStack {
+                        Image("garmin_logo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 35, height: 35)
+                        
                         Text(garminService.athleteName ?? "Connected")
                         Spacer()
                         Button("Disconnect", role: .destructive) { garminService.disconnect() }
@@ -473,7 +566,16 @@ struct IntegrationsSettingsView: View {
                     Button {
                         garminService.authenticate()
                     } label: {
-                        Label("Connect with Garmin", systemImage: "link")
+                        // ✅ Updated with Logo
+                        HStack {
+                            Image("garmin_logo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 35, height: 35)
+                                .foregroundColor(.primary)
+                            
+                            Text("Connect with Garmin")
+                        }
                     }
                 }
                 if let error = garminService.errorMessage {
@@ -485,6 +587,11 @@ struct IntegrationsSettingsView: View {
             Section("Wahoo") {
                 if wahooService.isAuthenticated {
                     HStack {
+                        Image("wahoo_logo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 35, height: 35)
+                        
                         Text(wahooService.athleteName ?? "Connected")
                         Spacer()
                         Button("Disconnect", role: .destructive) { wahooService.disconnect() }
@@ -494,7 +601,15 @@ struct IntegrationsSettingsView: View {
                     Button {
                         wahooService.authenticate()
                     } label: {
-                        Label("Connect with Wahoo", systemImage: "link")
+                        // ✅ Updated with Logo
+                        HStack {
+                            Image("wahoo_logo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 35, height: 35)
+                            
+                            Text("Connect with Wahoo")
+                        }
                     }
                 }
                 if let error = wahooService.errorMessage {

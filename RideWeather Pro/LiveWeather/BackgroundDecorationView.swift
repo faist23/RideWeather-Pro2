@@ -38,8 +38,10 @@ struct BackgroundDecorationView: View {
                 let bikeOffsetY = cos(bikePhase * 1.2) * 30
                 let bikeRotation = sin(bikePhase * 1.5) * 10
                 
-                Image(systemName: "bicycle")
+                Image("rider_bike_image")
+                //               Image(systemName: "bicycle")
                     .resizable()
+                    .renderingMode(.template) // 2. THIS allows .foregroundColor to work
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 200, height: 200)
                     .foregroundStyle(baseColor.opacity(intensity * 1.6))
