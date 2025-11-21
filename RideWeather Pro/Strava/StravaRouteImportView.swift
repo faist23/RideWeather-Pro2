@@ -509,6 +509,9 @@ class StravaRoutesViewModel: ObservableObject {
                 print("🔵 Step 3: Updating weather view model")
                 
                 await MainActor.run {
+                    // ✅ NEW: Clear the previous pacing plan when importing new route
+                     weatherViewModel.clearAdvancedPlan()
+                     
                     print("🔵 Step 4: Setting route points (\(coordinates.count) points)")
                     weatherViewModel.routePoints = coordinates
 
