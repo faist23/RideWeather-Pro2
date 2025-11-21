@@ -1322,6 +1322,7 @@ struct UpdatedOptimizedExportTab: View {
     @State private var exportingSummary = false
     @State private var exportingToWahoo = false
     @State private var exportingToGarmin = false
+    @State private var exportingStemNote = false
     @State private var exportError: String?
     @State private var currentShareItem: URL? = nil
     
@@ -1334,7 +1335,7 @@ struct UpdatedOptimizedExportTab: View {
                 }
                 
                 // Export Status Card
-                exportStatusCard
+ //               exportStatusCard
                 
                 // Available Export Options
                 if viewModel.advancedController?.pacingPlan != nil {
@@ -1398,7 +1399,7 @@ struct UpdatedOptimizedExportTab: View {
                 
                 ExportStatusRow(
                     title: "Device Sync",
-                    status: .comingSoon,
+                    status: .available,
                     description: "Direct sync to Garmin Connect and Wahoo"
                 )
             }
@@ -1448,6 +1449,18 @@ struct UpdatedOptimizedExportTab: View {
                 ) {
                     await exportFitFile()
                 }
+                
+                ExportOptionButton(
+                    title: "Stem Note Image",
+                    subtitle: "High-contrast cheat sheet for your bike",
+                    icon: "list.clipboard.fill",
+                    isLoading: exportingStemNote
+                ) {
+                    await exportStemNote()
+                }
+                .tint(.indigo)
+                
+ //               Divider().padding(.vertical, 4) // Visual separator
                 
                 ExportOptionButton(
                     title: "Export CSV Data",
@@ -1526,10 +1539,14 @@ struct UpdatedOptimizedExportTab: View {
             
             VStack(alignment: .leading, spacing: 8) {
                 TipRow(
-                    icon: "desktopcomputer",
-                    text: "Upload FIT files to Garmin Connect, then sync to your device"
+                    icon: "phone",
+                    text: "Sync directly to Garmin Connect or Wahoo"
                 )
-                
+                TipRow(
+                    icon: "desktopcomputer",
+                    text: "Upload FIT files to Garmin Connect or Wahoo, then sync to your device"
+                )
+
                 TipRow(
                     icon: "map",
                     text: "Course files show GPS route + power targets on your bike computer"
@@ -1542,7 +1559,7 @@ struct UpdatedOptimizedExportTab: View {
                 
                 TipRow(
                     icon: "printer.fill",
-                    text: "Print the race summary for easy reference during your ride"
+                    text: "Print the Stem Note for easy reference during your ride"
                 )
                 
                 if !viewModel.routeDisplayName.isEmpty {
@@ -1766,6 +1783,47 @@ struct UpdatedOptimizedExportTab: View {
                 exportingFIT = false
             }
         }
+    }
+    
+    @MainActor
+    private func exportStemNote() async {
+        exportingStemNote = true
+        exportError = nil
+        
+        // 1. Verify plan exists
+        guard let plan = viewModel.finalPacingPlan else {
+            exportError = "No pacing plan available"
+            exportingStemNote = false
+            return
+        }
+        
+        // 2. Create the view
+        let stemView = StemNoteView(pacingPlan: plan, settings: viewModel.settings)
+        
+        // 3. Render to Image (iOS 16+ ImageRenderer)
+        let renderer = ImageRenderer(content: stemView)
+        renderer.scale = 3.0 // Render at 3x for crisp printing
+        
+        // Important: ImageRenderer needs to run on MainActor (which this func is)
+        if let image = renderer.uiImage {
+            // 4. Save to temp file
+            if let data = image.pngData() {
+                let tempDir = FileManager.default.temporaryDirectory
+                let filename = viewModel.generateExportFilename(baseName: nil, suffix: "stem-note", extension: "png")
+                let url = tempDir.appendingPathComponent(filename)
+                
+                do {
+                    try data.write(to: url)
+                    currentShareItem = url
+                } catch {
+                    exportError = "Failed to save image: \(error.localizedDescription)"
+                }
+            }
+        } else {
+            exportError = "Failed to render stem note image"
+        }
+        
+        exportingStemNote = false
     }
     
     private func exportCSVFile() async {
