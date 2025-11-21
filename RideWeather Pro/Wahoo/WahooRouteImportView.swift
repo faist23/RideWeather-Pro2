@@ -289,9 +289,13 @@ class WahooActivitiesImportViewModel: ObservableObject {
                 
                 // Update the main view model
                 await MainActor.run {
+                    // ✅ NEW: Clear the previous pacing plan when importing new route
+                     weatherViewModel.clearAdvancedPlan()
+                     
                     weatherViewModel.routePoints = coordinates
                     weatherViewModel.routeDisplayName = activityName
-                    
+                    weatherViewModel.importedRouteDisplayName = activityName
+
                     self.isImporting = false
                     
                     let impact = UIImpactFeedbackGenerator(style: .medium)

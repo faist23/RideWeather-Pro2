@@ -58,6 +58,14 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
             // This task ONLY performs analysis now
             await performAnalysis()
         }
+        // ✅ ADD THIS: Re-run analysis when the weather data updates
+        .onChange(of: viewModel.weatherDataForRoute.count) { _, _ in
+            Task { await performAnalysis() }
+        }
+        // ✅ ADD THIS: Also listen for timestamp changes (e.g. same route, new start time)
+        .onChange(of: viewModel.weatherDataForRoute.first?.eta) { _, _ in
+            Task { await performAnalysis() }
+        }
         .onChange(of: selectedDistance) { _, newDistance in
             guard let analysis = analysisResult else { return }
 
@@ -1452,7 +1460,7 @@ struct UpdatedOptimizedExportTab: View {
                 
                 ExportOptionButton(
                     title: "Stem Note Image",
-                    subtitle: "High-contrast cheat sheet for your bike",
+                    subtitle: "High-contrast cue sheet for your bike",
                     icon: "list.clipboard.fill",
                     isLoading: exportingStemNote
                 ) {

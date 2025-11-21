@@ -479,6 +479,9 @@ struct UnifiedRouteAnalyticsEngine {
     }
     
     private func generateWindRecommendations() -> [UnifiedRecommendation] {
+        // Fix: Add safety check for empty/single point arrays to prevent crashes on route clear
+        guard weatherPoints.count > 1 else { return [] }
+        
         var recs: [UnifiedRecommendation] = []
         
         var strongestHeadwindPoint: RouteWeatherPoint?
@@ -770,7 +773,6 @@ struct UnifiedRouteAnalyticsEngine {
     
     // MARK: - Weather Time Helper Functions Using Real HourlyForecast Data
     
-    // Replace your entire existing `getCurrentWeatherForTime` function with this one.
     private func getCurrentWeatherForTime(_ time: Date) -> HourlyForecast? {
         // This is the check that was failing, now it will work.
         guard !cachedHourlyForecasts.isEmpty else {

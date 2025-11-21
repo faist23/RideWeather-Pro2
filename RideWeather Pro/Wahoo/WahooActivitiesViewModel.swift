@@ -217,6 +217,9 @@ class WahooActivitiesViewModel: ObservableObject {
                     storage.saveSource(sourceInfo, for: rideAnalysis.id)
 
                     await MainActor.run {
+                        // ✅ NEW: Clear the previous pacing plan when importing new route
+                         weatherViewModel.clearAdvancedPlan()
+                         
                         self.isImporting = false
                         self.showingAnalysisImport = false
 

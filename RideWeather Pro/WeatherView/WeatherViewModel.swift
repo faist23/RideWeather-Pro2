@@ -171,10 +171,19 @@ class WeatherViewModel: ObservableObject {
     }
     
     /// Generates export filename with custom suffix
-    func generateExportFilename(baseName: String? = nil, suffix: String, extension fileExtension: String) -> String {
+    func generateExportFilename(
+        baseName: String? = nil,
+        suffix: String,
+        extension fileExtension: String
+    ) -> String {
         let routeName: String
+        
+        // ✅ PRIORITY: baseName > importedRouteDisplayName > lastImportedFileName > default
         if let baseName = baseName, !baseName.isEmpty {
             routeName = baseName
+        } else if !importedRouteDisplayName.isEmpty {
+            // ✅ NEW: Check stored display name FIRST
+            routeName = importedRouteDisplayName
         } else if let fileName = lastImportedFileName, !fileName.isEmpty {
             routeName = cleanFileName(fileName)
         } else {
@@ -187,7 +196,7 @@ class WeatherViewModel: ObservableObject {
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "\\", with: "_")
             .replacingOccurrences(of: ":", with: "_")
-            .replacingOccurrences(of: "\n", with: "_") // <-- ADD THIS LINE
+            .replacingOccurrences(of: "\n", with: "_")
         
         return "\(cleanName)-\(suffix).\(fileExtension)"
     }
@@ -202,10 +211,9 @@ class WeatherViewModel: ObservableObject {
             elevationAnalysis = nil
             authoritativeRouteDistanceMeters = nil // ✅ ADD THIS
             
-            // ✅ ADDED: Clear the advanced plan and cached power analysis to prevent showing stale data.
-            advancedController = nil
-            powerAnalysisResult = nil
-            
+            // ✅ Use the helper method for consistency
+             clearAdvancedPlan()
+             
             // Store filename information
             let fileName = url.lastPathComponent
             self.lastImportedFileName = fileName
@@ -589,7 +597,11 @@ class WeatherViewModel: ObservableObject {
             print("   \(index + 1): \(Int(segment.distanceMeters))m, \(String(format: "%.1f", segment.elevationGrade * 100))%, \(Int(segment.powerRequired))W")
         }
     }
-    
+    func clearAdvancedPlan() {
+        advancedController = nil
+        powerAnalysisResult = nil
+        print("🔄 Cleared pacing plan and power analysis")
+    }
 }
 
 fileprivate struct HashableCoordinate: Hashable {

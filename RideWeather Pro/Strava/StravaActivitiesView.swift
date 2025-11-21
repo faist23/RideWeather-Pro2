@@ -447,8 +447,10 @@ class StravaActivitiesViewModel: ObservableObject {
                 
                 await MainActor.run {
                     self.isImporting = false
-                    // ✅ REMOVED: self.showingAnalysisImport = false
-                    
+
+                    // ✅ NEW: Clear the previous pacing plan when importing new route
+                    weatherViewModel.clearAdvancedPlan()
+                     
                     // Small delay to ensure sheet dismisses first
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         // Post notification to show the analysis
@@ -461,6 +463,10 @@ class StravaActivitiesViewModel: ObservableObject {
                     }
                     TrainingLoadManager.shared.addRide(analysis: analysis)
                     
+                    print("StravaImport: Setting route display name to '\(activity.name)'")
+                    weatherViewModel.routeDisplayName = activity.name
+                    weatherViewModel.importedRouteDisplayName = activity.name
+
                     onSuccess() // ✅ Call success callback
                 }
             } catch { // ✅ Handle all errors

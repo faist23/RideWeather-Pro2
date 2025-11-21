@@ -518,6 +518,9 @@ class StravaRoutesViewModel: ObservableObject {
                     print("🔵 Step 5: Setting route name to '\(routeName)'")
                     weatherViewModel.routeDisplayName = routeName
                     
+                    // ✅ NEW: Also set the internal display name so stem notes use it
+                    weatherViewModel.importedRouteDisplayName = routeName
+                    
                     print("🔵 Step 6: Import complete")
                     self.isImporting = false
                     
@@ -662,6 +665,9 @@ class StravaActivitiesImportViewModel: ObservableObject {
                 print("🔵 Step 3: Updating weather view model")
                 
                 await MainActor.run {
+                    // ✅ NEW: Clear the previous pacing plan when importing new route
+                     weatherViewModel.clearAdvancedPlan()
+                     
                     print("🔵 Step 4: Setting route points (\(coordinates.count) points)")
                     weatherViewModel.routePoints = coordinates
                     
@@ -670,6 +676,9 @@ class StravaActivitiesImportViewModel: ObservableObject {
                     
                     print("🔵 Step 5: Setting route name to '\(activityName)'")
                     weatherViewModel.routeDisplayName = activityName
+                    
+                    // ✅ NEW: Also set the internal display name so stem notes use it
+                    weatherViewModel.importedRouteDisplayName = activityName
                     
                     print("🔵 Step 7: Import complete")
                     self.isImporting = false
