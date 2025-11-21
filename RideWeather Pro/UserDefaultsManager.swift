@@ -92,6 +92,10 @@ struct AppSettings: Codable, Equatable {
         return bodyWeight + bikeAndEquipmentWeight
     }
     
+    // Time checkpoint settings
+    var enableTimeCheckpoints: Bool = true
+    var timeCheckpointIntervalKm: Double = 8.05 // ~5 miles by default
+
     // MARK: - Enums
     
     enum WeightSource: String, CaseIterable, Identifiable, Codable {
@@ -243,4 +247,25 @@ class UserDefaultsManager {
         return AppSettings()
     }
 }
+
+extension AppSettings {
+    // Computed property for converting to user's preferred distance units
+    var timeCheckpointIntervalInUserUnits: Double {
+        get {
+            if units == .metric {
+                return timeCheckpointIntervalKm
+            } else {
+                return timeCheckpointIntervalKm * 0.621371
+            }
+        }
+        set {
+            if units == .metric {
+                timeCheckpointIntervalKm = newValue
+            } else {
+                timeCheckpointIntervalKm = newValue / 0.621371
+            }
+        }
+    }
+}
+
 

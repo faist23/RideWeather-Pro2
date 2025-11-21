@@ -24,7 +24,10 @@ struct SettingsView: View {
                             Text(unit.description).tag(unit)
                         }
                     }
-                    
+                    .onChange(of: viewModel.settings.units) { _, newUnits in
+                        // Update checkpoint interval when units change
+                        viewModel.settings.timeCheckpointIntervalKm = newUnits == .metric ? 10.0 : 8.05
+                    }
                     Picker("Analysis Method", selection: $viewModel.settings.speedCalculationMethod) {
                         ForEach(AppSettings.SpeedCalculationMethod.allCases) { method in
                             Text(method.description).tag(method)
@@ -444,6 +447,34 @@ struct RouteSettingsView: View {
                     Toggle("Avoid Gluten", isOn: $settings.avoidGluten)
                     Toggle("Avoid Caffeine", isOn: $settings.avoidCaffeine)
                     */
+                }
+            }
+            
+            Section("Time Checkpoints for Pacing Plans") {
+                Toggle("Enable Time Checkpoints", isOn: $settings.enableTimeCheckpoints)
+                
+                if settings.enableTimeCheckpoints {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Checkpoint Interval")
+                            Spacer()
+                            Text(String(format: "%.1f \(settings.units == .metric ? "km" : "mi")", settings.timeCheckpointIntervalInUserUnits))
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        Slider(
+                            value: Binding(
+                                get: { settings.timeCheckpointIntervalInUserUnits },
+                                set: { settings.timeCheckpointIntervalInUserUnits = $0 }
+                            ),
+                            in: settings.units == .metric ? 1...20 : 1...12,
+                            step: 0.5
+                        )
+                        
+                        Text("Your bike computer will show expected arrival time every \(String(format: "%.1f", settings.timeCheckpointIntervalInUserUnits)) \(settings.units == .metric ? "km" : "mi")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }

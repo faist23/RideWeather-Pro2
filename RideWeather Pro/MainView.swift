@@ -54,7 +54,7 @@ struct MainView: View {
                 .tabItem {
                     Label("Fitness", systemImage: "chart.line.uptrend.xyaxis")
                 }
-                .tag(2)
+                .tag(3)
             
         }
         .environmentObject(wahooService)
