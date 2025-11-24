@@ -16,7 +16,6 @@ struct RideAnalysisView: View {
     
     private let trainingLoadManager = TrainingLoadManager.shared
 
-    // 🔥 ADD CUSTOM INIT
     init(weatherViewModel: WeatherViewModel) {
         self.weatherViewModel = weatherViewModel
         // Create the viewModel with settings
@@ -54,13 +53,10 @@ struct RideAnalysisView: View {
                                 Label("Import from Wahoo", systemImage: "square.and.arrow.down.on.square")
                             }
                         }
-                        // ✅ ADD THIS
                         Divider()
                         Button(action: { viewModel.showingSavedPlans = true }) {
                             Label("Saved Pacing Plans", systemImage: "list.bullet.rectangle")
                         }
-
-                        // ✅ ADD THIS
                         if viewModel.currentAnalysis != nil {
                             Divider()
                             Button(action: {
@@ -93,7 +89,11 @@ struct RideAnalysisView: View {
                  showDecoration: true,
                  decorationColor: .white,
                  decorationIntensity: 0.06
-             )
+            )
+            // Ensure data loads when the view appears
+            .task {
+                viewModel.loadInitialData()
+            }
             .sheet(isPresented: $viewModel.showingHistory) {
                 RideHistoryView(viewModel: viewModel)
             }
@@ -123,7 +123,7 @@ struct RideAnalysisView: View {
             .sheet(isPresented: $viewModel.showingSavedPlans) {
                 SavedPlansView()
             }
-            // ✅ ADD THIS - Listen for Strava imports
+            // Listen for Strava imports
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NewAnalysisImported"))) { notification in
                 if let analysis = notification.object as? RideAnalysis {
                     viewModel.currentAnalysis = analysis
@@ -172,7 +172,7 @@ struct RideAnalysisView: View {
             }
             .padding(.horizontal, 40)
             
-            // ✅ ADD THIS - Strava import button
+            // Strava import button
             if stravaService.isAuthenticated {
                 Button(action: { viewModel.showingStravaActivities = true }) {
                     HStack(spacing: 12) {
@@ -263,7 +263,7 @@ struct RideAnalysisView: View {
                     if let analysis = viewModel.currentAnalysis {
                         // Add an ID to the first element
 //                        RideMetadataCard(analysis: analysis, useMetric: weatherViewModel.settings.units == .metric)
-                        // ✅ NEW: Compact header replaces RideMetadataCard
+                        // Compact header replaces RideMetadataCard
                         CompactRideHeaderCard(
                             analysis: analysis,
                             source: viewModel.getRideSource(for: analysis)
@@ -376,7 +376,7 @@ struct RideAnalysisView: View {
                 }
                 .padding()
             }
-            // ✅ ADD THIS: Scroll to top when analysis changes
+            // Scroll to top when analysis changes
             .onChange(of: viewModel.currentAnalysis?.id) { oldValue, newValue in
                 if newValue != nil && oldValue != newValue {
                     withAnimation {
@@ -1807,6 +1807,11 @@ struct ExportButtonsCard: View {
 struct RideHistoryView: View {
     @ObservedObject var viewModel: RideAnalysisViewModel
     @Environment(\.dismiss) var dismiss
+
+    // STATE FOR MULTI-SELECT
+    @State private var isEditing = false
+    @State private var selectedAnalysisIDs = Set<UUID>()
+    @State private var showingDeleteConfirmation = false
     
     var body: some View {
         NavigationView {
@@ -1823,26 +1828,36 @@ struct RideHistoryView: View {
                         Spacer()
                     }
                 } else {
-                    List {
-/*                        Section {
-                            TrendChartView(trendData: viewModel.getTrendData())
-                                .frame(height: 200)
-                                .listRowInsets(EdgeInsets())
-                        }*/
+                    List (selection: $selectedAnalysisIDs) {
+                        /*                        Section {
+                         TrendChartView(trendData: viewModel.getTrendData())
+                         .frame(height: 200)
+                         .listRowInsets(EdgeInsets())
+                         }*/
                         
                         Section(header: Text("Past Analyses")) {
                             ForEach(viewModel.analysisHistory) { analysis in
                                 HistoryRow(analysis: analysis)
+                                    .tag(analysis.id) // ✅ Tag for selection
                                     .contentShape(Rectangle())
                                     .onTapGesture {
-                                        viewModel.selectAnalysis(analysis)
-                                        dismiss()
+                                        // ✅ Only navigate if NOT editing
+                                        if !isEditing {
+                                            viewModel.selectAnalysis(analysis)
+                                            dismiss()
+                                        }
                                     }
                             }
                             .onDelete { indexSet in
                                 viewModel.deleteAnalyses(at: indexSet)
                             }
                         }
+                    }
+                    // Bind edit mode
+                    .environment(\.editMode, .constant(isEditing ? .active : .inactive))
+                    // Refresh history when view appears
+                    .onAppear {
+                        viewModel.loadHistory()
                     }
                 }
             }
@@ -1854,13 +1869,66 @@ struct RideHistoryView: View {
                         dismiss()
                     }
                 }
-                
-                if !viewModel.analysisHistory.isEmpty {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(action: { viewModel.exportAllHistory() }) {
-                            Image(systemName: "square.and.arrow.up")
+                // Trailing: Select or Export
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if !viewModel.analysisHistory.isEmpty {
+                        if isEditing {
+                            Button {
+                                withAnimation { isEditing = false }
+                            } label: {
+                                Text("Done")
+                                    .fontWeight(.bold)
+                            }
+                        } else {
+                            HStack(spacing: 16) {
+  /*                              Button(action: { viewModel.exportAllHistory() }) {
+                                    Image(systemName: "square.and.arrow.up")
+                                }*/
+                                
+                                Button("Select") {
+                                    withAnimation { isEditing = true }
+                                }
+                            }
                         }
                     }
+                }
+                
+                // Bottom Bar: Trash
+                ToolbarItem(placement: .bottomBar) {
+                    if isEditing {
+                        HStack {
+                            Spacer()
+                            Button(role: .destructive) {
+                                if !selectedAnalysisIDs.isEmpty {
+                                    showingDeleteConfirmation = true
+                                }
+                            } label: {
+                                Image(systemName: "trash")
+                                    .foregroundColor(.red)
+                            }
+                            .disabled(selectedAnalysisIDs.isEmpty)
+                            Spacer()
+                        }
+                    }
+                }
+            }
+            // ✅ Delete confirmation alert
+            .alert("Delete \(selectedAnalysisIDs.count) Rides?", isPresented: $showingDeleteConfirmation) {
+                Button("Delete", role: .destructive) {
+                    withAnimation {
+                        viewModel.deleteAnalyses(ids: selectedAnalysisIDs)
+                        selectedAnalysisIDs.removeAll()
+                        isEditing = false
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Are you sure you want to permanently delete the selected ride analyses? This cannot be undone.")
+            }
+            // Clear selection if we exit edit mode
+            .onChange(of: isEditing) { _, newValue in
+                if newValue == false {
+                    selectedAnalysisIDs.removeAll()
                 }
             }
         }
@@ -2132,12 +2200,13 @@ class RideAnalysisViewModel: ObservableObject {
     
     @Published var showingPlanComparison = false
     @Published var showingComparisonSelection = false
+
     // ✅ NEW: Track source information
     @Published var analysisSources: [UUID: RideSourceInfo] = [:]
 
     private let parser = FITFileParser()
     let storage = AnalysisStorageManager()
-    private let settings: AppSettings  // 🔥 ADD THIS
+    private let settings: AppSettings
 
     @MainActor  // Add this
     init(settings: AppSettings = AppSettings()) {
@@ -2153,7 +2222,7 @@ class RideAnalysisViewModel: ObservableObject {
         }
     }
     
-    // ✅ NEW: Get ride source for display
+    // Get ride source for display
     func getRideSource(for analysis: RideAnalysis) -> CompactRideHeaderCard.RideSource {
         if let sourceInfo = analysisSources[analysis.id] {
             switch sourceInfo.type {
@@ -2190,9 +2259,9 @@ class RideAnalysisViewModel: ObservableObject {
                 }
                 defer { url.stopAccessingSecurityScopedResource() }
                 
-                // ✅ Extract both the name without extension and the full filename
+                // Extract both the name without extension and the full filename
                 let fileNameWithoutExtension = fileName ?? url.deletingPathExtension().lastPathComponent
-                let fullFileName = url.lastPathComponent  // ✅ ADD THIS - includes .fit extension
+                let fullFileName = url.lastPathComponent  // includes .fit extension
 
                 analysisStatus = "Parsing FIT data..."
                 let dataPoints = try await parser.parseFile(at: url)
@@ -2221,11 +2290,11 @@ class RideAnalysisViewModel: ObservableObject {
                 // 3. Update the ride name
                 analysis.rideName = fileNameWithoutExtension
                 
-                // ✅ NEW: Update the ride name to use the filename
+                // Update the ride name to use the filename
                 analysis = RideAnalysis(
                     id: analysis.id,
                     date: analysis.date,
-                    rideName: fileNameWithoutExtension,  // ✅ Use filename as ride name
+                    rideName: fileNameWithoutExtension,  // Use filename as ride name
                     duration: analysis.duration,
                     distance: analysis.distance,
                     metadata: analysis.metadata,
@@ -2262,7 +2331,7 @@ class RideAnalysisViewModel: ObservableObject {
                 
                 await MainActor.run {
                     self.currentAnalysis = analysis
-                    // ✅ CHANGED: Store full filename with extension for source
+                    // Store full filename with extension for source
                     self.analysisSources[analysis.id] = RideSourceInfo(
                         type: .fitFile,
                         fileName: fullFileName  // Use full filename with .fit extension
@@ -2320,6 +2389,15 @@ class RideAnalysisViewModel: ObservableObject {
         loadHistory()
     }
     
+    // Bulk delete function
+    func deleteAnalyses(ids: Set<UUID>) {
+        let analysesToDelete = analysisHistory.filter { ids.contains($0.id) }
+        for analysis in analysesToDelete {
+            storage.deleteAnalysis(analysis)
+        }
+        loadHistory()
+    }
+    
     func getTrendData() -> [TrendDataPoint] {
         return storage.getAnalysisTrend(limit: 10)
     }
@@ -2358,7 +2436,6 @@ struct ShareItem: Identifiable {
 extension AnalysisStorageManager {
     private var sourceStorageKey: String { "analysisSourceInfo" }
     
-    // ✅ This doesn't need @MainActor
     func saveSource(_ source: RideSourceInfo, for analysisId: UUID) {
         var sources = loadAllSources()
         sources[analysisId] = source
@@ -2368,7 +2445,6 @@ extension AnalysisStorageManager {
         }
     }
     
-    // ✅ This doesn't need @MainActor either
     func loadAllSources() -> [UUID: RideSourceInfo] {
         guard let data = UserDefaults.standard.data(forKey: sourceStorageKey),
               let sources = try? JSONDecoder().decode([UUID: RideSourceInfo].self, from: data) else {
