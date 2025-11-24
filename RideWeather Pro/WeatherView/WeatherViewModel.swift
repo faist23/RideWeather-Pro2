@@ -600,6 +600,7 @@ class WeatherViewModel: ObservableObject {
     func clearAdvancedPlan() {
         advancedController = nil
         powerAnalysisResult = nil
+        elevationAnalysis = nil
         print("🔄 Cleared pacing plan and power analysis")
     }
 }
@@ -658,7 +659,8 @@ extension WeatherViewModel {
         weatherDataForRoute.removeAll()
         enhancedRoutePoints.removeAll()
         lastImportedFileName = ""
-        authoritativeRouteDistanceMeters = nil // ✅ ADD THIS
+        authoritativeRouteDistanceMeters = nil 
+        importedRouteDisplayName = "" // ✅ FIXED: Explicitly reset the imported name
         // Reset any other route-related state
     }
 }

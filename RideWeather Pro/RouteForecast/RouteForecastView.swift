@@ -37,7 +37,6 @@ struct RouteForecastView: View {
     // Single sheet state
     @State private var activeSheet: RouteForecastSheet?
     
-    @State private var importedFileName: String = ""
     @State private var showImportSuccess = false
     @State private var screenHeight: CGFloat = 0
     
@@ -358,8 +357,8 @@ struct RouteForecastView: View {
                 Text("Route imported successfully!")
                     .font(.subheadline.weight(.semibold))
                 
-                if !importedFileName.isEmpty {
-                    Text(importedFileName)
+                if !viewModel.routeDisplayName.isEmpty {
+                    Text(viewModel.routeDisplayName)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -430,7 +429,7 @@ struct RouteForecastView: View {
         case .success(let url):
             let fileName = url.lastPathComponent
             viewModel.lastImportedFileName = fileName
-            importedFileName = viewModel.routeDisplayName
+//            importedFileName = viewModel.routeDisplayName -------no longer using local filename
             let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
             impactFeedback.impactOccurred()
             viewModel.importRoute(from: url)
@@ -458,7 +457,7 @@ struct RouteForecastView: View {
     private func clearRoute() {
         withAnimation {
             viewModel.clearRoute()
-            importedFileName = ""
+            // ✅ FIXED: Removed setting local 'importedFileName'
         }
     }
     
