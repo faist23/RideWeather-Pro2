@@ -35,7 +35,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     private var webAuthSession: ASWebAuthenticationSession?
     private var currentPkceVerifier: String?
     
-    private var currentTokens: GarminTokens? {
+/*    private */var currentTokens: GarminTokens? {
         didSet {
             isAuthenticated = currentTokens != nil
             saveTokensToKeychain()
@@ -86,7 +86,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             URLQueryItem(name: "client_id", value: clientId),
             URLQueryItem(name: "redirect_uri", value: redirectUri),
             URLQueryItem(name: "code_challenge", value: pkce.challenge),
-            URLQueryItem(name: "code_challenge_method", value: "S256")
+            URLQueryItem(name: "code_challenge_method", value: "S256")  
         ]
         
         guard let authURL = components.url else { return }
@@ -567,7 +567,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     }
     
     // MARK: - Helpers
-    private func refreshTokenIfNeededAsync() async throws {
+/*    private */func refreshTokenIfNeededAsync() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             refreshTokenIfNeeded { result in
                 continuation.resume(with: result)

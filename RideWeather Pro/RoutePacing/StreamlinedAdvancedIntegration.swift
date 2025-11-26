@@ -808,9 +808,16 @@ struct RouteInfoCardView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
+                    // Route Name
                     Text(viewModel.routeDisplayName)
                         .font(.body)
                         .fontWeight(.semibold)
+
+                    // Date and Time display
+                    Text("\(formattedDate) at \(formattedTime)")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
                 }
                 
                 Spacer()
@@ -830,6 +837,19 @@ struct RouteInfoCardView: View {
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+    
+    // Date/Time Formatters
+    private var formattedDate: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "E, MMM d"
+        return formatter.string(from: viewModel.rideDate)
+    }
+    
+    private var formattedTime: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: viewModel.rideDate)
     }
 }
 

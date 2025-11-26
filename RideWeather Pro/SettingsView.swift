@@ -491,6 +491,9 @@ struct IntegrationsSettingsView: View {
     @EnvironmentObject var healthManager: HealthKitManager
     
     @State private var isConnectingHealth = false
+
+    @State private var garminPermissions: [String] = []
+    @State private var checkingPermissions = false
     
     // Strava Brand Color
     private let stravaOrange = Color(hex: "FC5200")
@@ -580,6 +583,7 @@ struct IntegrationsSettingsView: View {
             }
             
             // Garmin
+            // Garmin Section with Permission Check
             Section("Garmin") {
                 if garminService.isAuthenticated {
                     HStack {
@@ -593,11 +597,60 @@ struct IntegrationsSettingsView: View {
                         Button("Disconnect", role: .destructive) { garminService.disconnect() }
                             .buttonStyle(.borderless)
                     }
+                    
+                    // ✅ ADD THIS: Permission Status
+                    if checkingPermissions {
+                        HStack {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Checking permissions...")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if !garminPermissions.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Permissions:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            
+                            ForEach(garminPermissions, id: \.self) { permission in
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.green)
+                                        .font(.caption2)
+                                    Text(permission)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            
+                            // ✅ ADD THIS: Warning if ACTIVITY_EXPORT is missing
+                            if !garminPermissions.contains("ACTIVITY_EXPORT") {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(.orange)
+                                    
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Activity import unavailable")
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(.orange)
+                                        
+                                        Text("Disconnect and reconnect to enable activity import")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(.top, 4)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    
                 } else {
                     Button {
                         garminService.authenticate()
                     } label: {
-                        // ✅ Updated with Logo
                         HStack {
                             Image("garmin_logo")
                                 .resizable()
@@ -609,11 +662,12 @@ struct IntegrationsSettingsView: View {
                         }
                     }
                 }
+                
                 if let error = garminService.errorMessage {
                     Text(error).font(.caption).foregroundStyle(.red)
                 }
             }
-            
+
             // Wahoo
             Section("Wahoo") {
                 if wahooService.isAuthenticated {
@@ -650,7 +704,7 @@ struct IntegrationsSettingsView: View {
         }
         .navigationTitle("Integrations")
     }
-}
+ }
 
 // MARK: - UI Components
 struct ConnectionBadge: View {

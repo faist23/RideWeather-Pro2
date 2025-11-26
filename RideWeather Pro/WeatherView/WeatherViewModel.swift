@@ -507,7 +507,7 @@ class WeatherViewModel: ObservableObject {
     
     func generateAdvancedCyclingPlan(
         strategy: PacingStrategy = .balanced,
-        startTime: Date = Date()
+        startTime: Date? = nil // Changed from 'Date = Date()' to 'Date? = nil'
     ) async {
         await MainActor.run {
             guard !weatherDataForRoute.isEmpty else {
@@ -548,12 +548,15 @@ class WeatherViewModel: ObservableObject {
 
         debugPowerAnalysis(powerAnalysis)
         
+        // ✅ Determine the correct start time (default to user-selected ride date)
+        let planStartTime = startTime ?? rideDate
+
         // Use fueling preferences from settings
         await controller.generateAdvancedRacePlan(
             from: powerAnalysis,
             strategy: strategy,
             fuelingPreferences: settings.fuelingPreferences,
-            startTime: startTime,
+            startTime: planStartTime, // Pass the correct time,
             routeName: self.routeDisplayName
         )
         

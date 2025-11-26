@@ -18,6 +18,7 @@ enum RouteViewState {
 enum RouteForecastSheet: Identifiable {
     case stravaImport
     case wahooImport
+//    case garminImport
     case settings
     case datePicker
     case timePicker
@@ -30,7 +31,7 @@ struct RouteForecastView: View {
     @EnvironmentObject var viewModel: WeatherViewModel
     @EnvironmentObject var stravaService: StravaService
     @EnvironmentObject var wahooService: WahooService
-    @EnvironmentObject var garminService: GarminService
+//    @EnvironmentObject var garminService: GarminService
     
     @State private var isImporting = false
     
@@ -114,6 +115,11 @@ struct RouteForecastView: View {
                     WahooRouteImportView(onDismiss: { activeSheet = nil })
                         .environmentObject(wahooService)
                         .environmentObject(viewModel)
+/*                case .garminImport:
+                    GarminImportExplainerView()
+                        .environmentObject(garminService)
+                        .environmentObject(stravaService)
+                        .environmentObject(viewModel) */
                 case .settings:
                     SettingsView()
                         .environmentObject(viewModel)
@@ -135,7 +141,7 @@ struct RouteForecastView: View {
     // MARK: - Empty State View
     private var emptyStateView: some View {
         ScrollView {
-            LazyVStack(spacing: 32) {
+            LazyVStack(spacing: 24) {
                 Spacer().frame(height: 40)
                 
                 VStack(spacing: 16) {
@@ -174,15 +180,25 @@ struct RouteForecastView: View {
                         }
                         .buttonStyle(.plain)
                     }
+/*                    if garminService.isAuthenticated {
+                        Button { activeSheet = .garminImport } label: {
+                            importButtonLabel(
+                                icon: "figure.outdoor.cycle",
+                                title: "Import from Garmin",
+                                gradient: [Color.black.opacity(0.8), Color.gray.opacity(0.6)]
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }*/
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 12)
                 
-                VStack(spacing: 16) {
+                VStack(spacing: 1) {
                     FeatureRow(icon: "cloud.sun.fill", title: "Weather Forecast", description: "Hour-by-hour conditions along your route")
                     FeatureRow(icon: "chart.line.uptrend.xyaxis", title: "Route Analytics", description: "Comfort scores, safety insights, and timing")
                     FeatureRow(icon: "bolt.fill", title: "Power Pacing", description: "AI-generated pacing strategies for optimal performance")
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 12)
                 
                 Spacer()
             }
