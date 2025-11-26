@@ -130,7 +130,6 @@ struct RouteParser: Sendable {
     func parseWithElevation(fitData: Data) throws -> (coordinates: [CLLocationCoordinate2D], elevationAnalysis: ElevationAnalysis?) {
             let fitFile = FitFile(data: fitData)
             
-            // --- START OF FIX 1 ---
             // Try to get 'record' messages first (for activities)
             var messages = fitFile.messages(forMessageType: .record)
             var isCourseFile = false
@@ -138,14 +137,13 @@ struct RouteParser: Sendable {
             // If no 'record' messages, it's a Course file. Get 'course_point' messages.
             if messages.isEmpty {
                 print("RouteParser: No 'record' messages found. Checking for 'course_point' messages.")
-                // ✅ THIS IS THE FIX: It's .course_point, not .coursePoint
+
                 messages = fitFile.messages(forMessageType: .course_point)
                 isCourseFile = true
                 if !messages.isEmpty {
                     print("RouteParser: Found \(messages.count) course_point messages.")
                 }
             }
-            // --- END OF FIX 1 ---
 
             var enhancedPoints: [EnhancedRoutePoint] = []
             var cumulativeDistance: Double = 0.0 // This will be read from the message for course files
@@ -171,7 +169,6 @@ struct RouteParser: Sendable {
                     }
                 }
                 
-                // --- START OF FIX 2: Handle different keys ---
                 if let values = valuesDict {
                     // Try 'record' message keys first
                     var lat = values["position_lat"]
@@ -195,9 +192,7 @@ struct RouteParser: Sendable {
                         }
                     }
                 }
-                // --- END OF FIX 2 ---
 
-                // --- START OF FIX 3: Handle different elevation keys ---
                 if let values = valuesDict {
                     let altitudeKeys = ["enhanced_altitude", "altitude", "enhanced_alt", "alt"]
                     var altValue: Double?
@@ -209,17 +204,13 @@ struct RouteParser: Sendable {
                     }
                     elevation = altValue
                 }
-                // --- END OF FIX 3 ---
 
-                // --- START OF FIX 4: Handle different distance keys ---
                 // 'record' messages usually have cumulative distance. 'course_point' messages
                 // have a 'distance' field which is also cumulative.
                 if let values = valuesDict, let dist = values["distance"] {
                      cumulativeDistance = dist // Read cumulative distance directly
                 }
-                // --- END OF FIX 4 ---
 
-                // --- START OF FIX 5: Handle different timestamp keys ---
                 if let dates = datesDict, let ts = dates["timestamp"] {
                     timestamp = ts
                 } else if let values = valuesDict, let tsSeconds = values["timestamp"] { // course_point uses 'timestamp'
@@ -227,7 +218,6 @@ struct RouteParser: Sendable {
                     let fitEpoch = Date(timeIntervalSinceReferenceDate: -347222400)
                     timestamp = Date(timeInterval: tsSeconds, since: fitEpoch)
                 }
-                // --- END OF FIX 5 ---
                 
                 // Skip if no coordinate
                 guard let coord = coordinate else { continue }

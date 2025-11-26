@@ -10,10 +10,9 @@ extension WahooService {
     
     /// Converts Wahoo workout stream data into the app's standard `FITDataPoint` array.
     func convertWahooDataToFITDataPoints(
-        workout: WahooWorkoutSummary, // <-- Was WahooWorkoutSummary
+        workout: WahooWorkoutSummary,
         streams: WahooWorkoutData
     ) -> [FITDataPoint] {
-    // --- END FIX ---
         
         guard let timeData = streams.time, !timeData.isEmpty else {
             return []
@@ -29,11 +28,9 @@ extension WahooService {
         let distanceData = streams.distance
         let altitudeData = streams.altitude
         
-        // --- THIS IS THE FIX ---
         // Change from snake_case to camelCase
         let latData = streams.positionLat
         let lonData = streams.positionLong
-        // --- END FIX ---
         
         for i in 0..<timeData.count {
             let timestamp = startDate.addingTimeInterval(timeData[i])

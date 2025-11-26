@@ -18,12 +18,10 @@ final class AdvancedCyclingController: ObservableObject {
     @Published var energyExpenditure: EnergyExpenditure?
     @Published var fuelingStrategy: FuelingStrategy?
     @Published var isGeneratingPlan = false
-//    @Published var syncResults: [SyncResult] = []
     
     // MARK: - Components
     private var pacingEngine: PacingEngine
     private var energyCalculator: EnergyCalculator
-//    private var deviceSyncManager: DeviceSyncManager
     private let settings: AppSettings
     
     // MARK: - Initialization
@@ -32,7 +30,6 @@ final class AdvancedCyclingController: ObservableObject {
         self.settings = settings
         self.pacingEngine = PacingEngine(settings: settings)
         self.energyCalculator = EnergyCalculator(settings: settings)
- //       self.deviceSyncManager = DeviceSyncManager()
     }
     
     // MARK: - Main Workflow

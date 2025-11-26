@@ -105,7 +105,7 @@ struct StravaStreams: Codable {
     let cadence: StreamData?
     let watts: StreamData?
     let temp: StreamData?
-    let moving: BoolStreamData?  // ✅ CHANGED from StreamData to BoolStreamData
+    let moving: BoolStreamData?
     let grade_smooth: StreamData?
     
     struct StreamData: Codable {
@@ -115,7 +115,7 @@ struct StravaStreams: Codable {
         let resolution: String
     }
     
-    struct BoolStreamData: Codable {  // ✅ NEW type for boolean streams
+    struct BoolStreamData: Codable {
         let data: [Bool]
         let series_type: String
         let original_size: Int
@@ -164,7 +164,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         super.init()
         loadConfig()
         loadTokensFromKeychain()
-        loadAthleteNameFromKeychain() // ✅ restore athlete name
+        loadAthleteNameFromKeychain() // restore athlete name
     }
     
     /// Automatically syncs athlete weight from Strava if the setting is enabled and it hasn't been synced today.
@@ -327,7 +327,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                         refreshToken: tokenResponse.refresh_token,
                         expiresAt: tokenResponse.expires_at
                     )
-                    // ✅ CRITICAL: Store athlete ID
+                    // CRITICAL: Store athlete ID
                     if let athleteId = tokenResponse.athlete?.id {
                         UserDefaults.standard.set(athleteId, forKey: "strava_athlete_id")
                         print("StravaService: ✅ Stored athlete ID: \(athleteId)")

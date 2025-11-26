@@ -17,7 +17,7 @@ struct WahooRouteImportView: View {
     @StateObject private var viewModel = WahooActivitiesImportViewModel()
     let onDismiss: () -> Void
     
-    @State private var importingId: Int? = nil // ✅ ADDED: For per-row loading
+    @State private var importingId: Int? = nil // For per-row loading
     
     var body: some View {
         NavigationStack {
@@ -71,7 +71,6 @@ struct WahooRouteImportView: View {
             
             // Activity list
             ForEach(viewModel.activities) { activity in
-                // ✅ CHANGED: Replaced NavigationLink with Button
                 Button(action: {
                     importingId = activity.id
                     viewModel.importRouteFromActivity(
@@ -84,7 +83,7 @@ struct WahooRouteImportView: View {
                             importingId = nil
                             onDismiss()
                         },
-                        onFailure: { // ✅ ADDED: Handle failure
+                        onFailure: { // Handle failure
                             importingId = nil
                         }
                     )
@@ -108,7 +107,6 @@ struct WahooRouteImportView: View {
                 .disabled(importingId != nil) // Disable all rows while importing
             }
             
-            // ... (your existing Load More section) ...
             if viewModel.hasMorePages {
                 Section {
                     Button(action: {
@@ -198,12 +196,11 @@ class WahooActivitiesImportViewModel: ObservableObject {
                 let response = try await service.fetchRecentWorkouts(page: self.currentPage, perPage: perPage) // <-- Fetch page 0
                 let allActivities = response.workouts
                 
-                // --- ADD THIS FILTER ---
                 let filteredActivities = allActivities.filter {
                     let distance = Double($0.workoutSummary?.distanceAccum ?? "0") ?? 0
                     return distance > 0
                 }
-                // --- END ADD ---
+
                 await MainActor.run {
                     self.activities = filteredActivities // <-- Use filtered list
                     if let total = response.total, let p = response.page, let pp = response.perPage, total > 0, pp > 0 {
@@ -239,12 +236,11 @@ class WahooActivitiesImportViewModel: ObservableObject {
                 let response = try await service.fetchRecentWorkouts(page: self.currentPage, perPage: self.perPage)
                 let newActivities = response.workouts
                 
-                // --- ADD THIS FILTER ---
                 let filteredActivities = newActivities.filter {
                     let distance = Double($0.workoutSummary?.distanceAccum ?? "0") ?? 0
                     return distance > 0
                 }
-                // --- END ADD ---
+
                 await MainActor.run {
                     self.activities.append(contentsOf: filteredActivities) // <-- Use filtered list
                     if let total = response.total, let p = response.page, let pp = response.perPage, total > 0, pp > 0 {
@@ -265,7 +261,6 @@ class WahooActivitiesImportViewModel: ObservableObject {
         }
     }
 
-    // ✅ UPDATED: Added onFailure callback
     func importRouteFromActivity(
         activityId: Int,
         activityName: String,
@@ -273,7 +268,7 @@ class WahooActivitiesImportViewModel: ObservableObject {
         service: WahooService,
         weatherViewModel: WeatherViewModel,
         onSuccess: @escaping () -> Void,
-        onFailure: @escaping () -> Void // ✅ ADDED
+        onFailure: @escaping () -> Void
     ) {
         isImporting = true
         errorMessage = nil
@@ -289,14 +284,14 @@ class WahooActivitiesImportViewModel: ObservableObject {
                 
                 // Update the main view model
                 await MainActor.run {
-                    // ✅ NEW: Clear the previous pacing plan when importing new route
+                    // Clear the previous pacing plan when importing new route
                      weatherViewModel.clearAdvancedPlan()
                      
                     weatherViewModel.routePoints = coordinates
                     weatherViewModel.routeDisplayName = activityName
                     weatherViewModel.importedRouteDisplayName = activityName
                     
-                    // ✅ ADDED: Populate elevation data
+                    // Populate elevation data
                     weatherViewModel.elevationAnalysis = elevationAnalysis
                     
                     // If we have elevation analysis, trigger finalize to prepare for power analysis
@@ -316,7 +311,7 @@ class WahooActivitiesImportViewModel: ObservableObject {
                 await MainActor.run {
                     self.errorMessage = "Failed to import route: \(error.localizedDescription)"
                     self.isImporting = false
-                    onFailure() // ✅ ADDED: Call failure callback
+                    onFailure() 
                 }
             }
         }

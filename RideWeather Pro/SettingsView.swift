@@ -524,7 +524,6 @@ struct IntegrationsSettingsView: View {
                         if isConnectingHealth {
                             ProgressView()
                         } else {
-                            // ✅ Added Apple logo as requested
                             HStack {
                                 Image(systemName: "apple.logo")
                                     .font(.title2)
@@ -544,7 +543,7 @@ struct IntegrationsSettingsView: View {
             Section("Strava") {
                 if stravaService.isAuthenticated {
                     HStack {
-                        // ✅ Show logo when connected too
+                        // Show logo when connected too
                         Image("strava_logo")
                             .resizable()
                             .scaledToFit()
@@ -561,14 +560,12 @@ struct IntegrationsSettingsView: View {
                         Button("Disconnect", role: .destructive) { stravaService.disconnect() }
                             .buttonStyle(.borderless)
                     }
-                    
-                    // REMOVED: Auto-Sync Weight Toggle is now in Rider Profile
-                    
+                                        
                 } else {
                     Button {
                         stravaService.authenticate()
                     } label: {
-                        // ✅ Updated with Logo and Color
+                        // Updated with Logo and Color
                         HStack {
                             Image("strava_logo")
                                 .resizable()
@@ -598,7 +595,6 @@ struct IntegrationsSettingsView: View {
                             .buttonStyle(.borderless)
                     }
                     
-                    // ✅ ADD THIS: Permission Status
                     if checkingPermissions {
                         HStack {
                             ProgressView()
@@ -624,7 +620,6 @@ struct IntegrationsSettingsView: View {
                                 }
                             }
                             
-                            // ✅ ADD THIS: Warning if ACTIVITY_EXPORT is missing
                             if !garminPermissions.contains("ACTIVITY_EXPORT") {
                                 HStack(spacing: 8) {
                                     Image(systemName: "exclamationmark.triangle.fill")
@@ -686,7 +681,7 @@ struct IntegrationsSettingsView: View {
                     Button {
                         wahooService.authenticate()
                     } label: {
-                        // ✅ Updated with Logo
+                        // Updated with Logo
                         HStack {
                             Image("wahoo_logo")
                                 .resizable()

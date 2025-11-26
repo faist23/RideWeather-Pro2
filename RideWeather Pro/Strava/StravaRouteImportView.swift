@@ -65,10 +65,9 @@ struct StravaRoutesTab: View {
     @StateObject private var viewModel = StravaRoutesViewModel()
     let onDismiss: () -> Void
     
-    @State private var importingId: Int? = nil // ✅ ADDED: For per-row loading
+    @State private var importingId: Int? = nil // For per-row loading
     
     var body: some View {
-        // ✅ REMOVED: Redundant NavigationStack
         Group {
             if viewModel.isLoading && viewModel.routes.isEmpty {
                 ProgressView("Loading routes...")
@@ -90,7 +89,6 @@ struct StravaRoutesTab: View {
     private var routesList: some View {
         List {
             ForEach(viewModel.routes) { route in
-                // ✅ CHANGED: Replaced NavigationLink with Button
                 Button(action: {
                     importingId = route.id
                     viewModel.importRoute(
@@ -102,7 +100,7 @@ struct StravaRoutesTab: View {
                             importingId = nil
                             onDismiss()
                         },
-                        onFailure: { // ✅ ADDED: Handle failure
+                        onFailure: {
                             importingId = nil
                         }
                     )
@@ -173,10 +171,9 @@ struct StravaActivitiesTab: View {
     @StateObject private var viewModel = StravaActivitiesImportViewModel()
     let onDismiss: () -> Void
     
-    @State private var importingId: Int? = nil // ✅ ADDED: For per-row loading
+    @State private var importingId: Int? = nil // For per-row loading
     
     var body: some View {
-        // ✅ REMOVED: Redundant NavigationStack
         Group {
             if viewModel.isLoading && viewModel.activities.isEmpty {
                 ProgressView("Loading activities...")
@@ -197,7 +194,6 @@ struct StravaActivitiesTab: View {
     
     private var activitiesList: some View {
         List {
-            // ... (your existing activity count Section) ...
             Section {
                 HStack {
                     Image(systemName: "figure.outdoor.cycle")
@@ -217,7 +213,6 @@ struct StravaActivitiesTab: View {
             
             // Activity list
             ForEach(viewModel.activities) { activity in
-                // ✅ CHANGED: Replaced NavigationLink with Button
                 Button(action: {
                     importingId = activity.id
                     viewModel.importRoute(
@@ -230,7 +225,7 @@ struct StravaActivitiesTab: View {
                             importingId = nil
                             onDismiss()
                         },
-                        onFailure: { // ✅ ADDED: Handle failure
+                        onFailure: { // Handle failure
                             importingId = nil
                         }
                     )
@@ -253,7 +248,6 @@ struct StravaActivitiesTab: View {
                 .disabled(importingId != nil) // Disable all rows while importing
             }
             
-            // ... (your existing Load More section) ...
             if viewModel.hasMorePages {
                 Section {
                     Button(action: {
@@ -409,7 +403,7 @@ struct StravaActivityRow: View {
                 
                 Spacer()
                 
-                // ✅ CHANGED: Show bolt icon if power data exists
+                // Show bolt icon if power data exists
                 if let watts = activity.average_watts, watts > 0 {
                     Image(systemName: "bolt.fill")
                         .foregroundColor(.orange)
@@ -433,7 +427,7 @@ struct StravaActivityRow: View {
                     systemImage: "figure.outdoor.cycle"
                 )
                 .font(.caption)
-                // ✅ ADDED: Show average watts if it exists
+                // Show average watts if it exists
                 if let watts = activity.average_watts, watts > 0 {
                     Label("\(Int(watts))W", systemImage: "bolt")
                         .font(.caption)
@@ -482,14 +476,13 @@ class StravaRoutesViewModel: ObservableObject {
         }
     }
     
-    // ✅ UPDATED: Added onFailure callback
     func importRoute(
         routeId: Int,
         routeName: String,
         service: StravaService,
         weatherViewModel: WeatherViewModel,
         onSuccess: @escaping () -> Void,
-        onFailure: @escaping () -> Void // ✅ ADDED
+        onFailure: @escaping () -> Void
     ) {
         print("🔵 Starting import for route: \(routeName)")
         isImporting = true
@@ -498,7 +491,6 @@ class StravaRoutesViewModel: ObservableObject {
         Task {
             do {
                 print("🔵 Step 1: Extracting route \(routeId)")
-                // ✅ UPDATED: Expect tuple return
                 let (coordinates, totalDistance, elevationAnalysis) = try await service.extractRouteFromStravaRoute(routeId: routeId)
                 print("🔵 Step 2: Got \(coordinates.count) coordinates")
                 
@@ -510,22 +502,22 @@ class StravaRoutesViewModel: ObservableObject {
                 print("🔵 Step 3: Updating weather view model")
                 
                 await MainActor.run {
-                    // ✅ NEW: Clear the previous pacing plan when importing new route
+                    // Clear the previous pacing plan when importing new route
                      weatherViewModel.clearAdvancedPlan()
                      
                     print("🔵 Step 4: Setting route points (\(coordinates.count) points)")
                     weatherViewModel.routePoints = coordinates
 
-                    // ✅ ADDED: Set the authoritative distance
+                    // Set the authoritative distance
                     weatherViewModel.authoritativeRouteDistanceMeters = totalDistance
                     
-                    // ✅ ADDED: Set elevation analysis if available
+                    // Set elevation analysis if available
                     weatherViewModel.elevationAnalysis = elevationAnalysis
                     
                     print("🔵 Step 5: Setting route name to '\(routeName)'")
                     weatherViewModel.routeDisplayName = routeName
                     
-                    // ✅ NEW: Also set the internal display name so stem notes use it
+                    // Set the internal display name so stem notes use it
                     weatherViewModel.importedRouteDisplayName = routeName
                     
                     // If we have elevation analysis, trigger finalize to prepare for power analysis
@@ -548,7 +540,7 @@ class StravaRoutesViewModel: ObservableObject {
                 await MainActor.run {
                     self.errorMessage = "Failed to import route: \(error.localizedDescription)"
                     self.isImporting = false
-                    onFailure() // ✅ ADDED: Call failure callback
+                    onFailure()
                 }
             }
         }
@@ -648,7 +640,6 @@ class StravaActivitiesImportViewModel: ObservableObject {
         }
     }
 
-    // ✅ UPDATED: Added onFailure callback
     func importRoute(
         activityId: Int,
         activityName: String,
@@ -656,7 +647,7 @@ class StravaActivitiesImportViewModel: ObservableObject {
         service: StravaService,
         weatherViewModel: WeatherViewModel,
         onSuccess: @escaping () -> Void,
-        onFailure: @escaping () -> Void // ✅ ADDED
+        onFailure: @escaping () -> Void
     ) {
         print("🔵 Starting import for activity: \(activityName)")
         isImporting = true
@@ -665,7 +656,7 @@ class StravaActivitiesImportViewModel: ObservableObject {
         Task {
             do {
                 print("🔵 Step 1: Extracting route for activity \(activityId)")
-                // ✅ CHANGED: Capture all returned values, including elevation
+                // Capture all returned values, including elevation
                 let (coordinates, totalDistance, elevationAnalysis) = try await service.extractRouteFromActivity(activityId: activityId)
                 print("🔵 Step 2: Got \(coordinates.count) coordinates")
                 
@@ -677,22 +668,22 @@ class StravaActivitiesImportViewModel: ObservableObject {
                 print("🔵 Step 3: Updating weather view model")
                 
                 await MainActor.run {
-                    // ✅ NEW: Clear the previous pacing plan when importing new route
+                    // Clear the previous pacing plan when importing new route
                      weatherViewModel.clearAdvancedPlan()
                      
                     print("🔵 Step 4: Setting route points (\(coordinates.count) points)")
                     weatherViewModel.routePoints = coordinates
                     
-                    // ✅ ADDED: Set the authoritative distance
+                    // Set the authoritative distance
                     weatherViewModel.authoritativeRouteDistanceMeters = totalDistance
                     
-                    // ✅ ADDED: Set the elevation analysis
+                    // Set the elevation analysis
                     weatherViewModel.elevationAnalysis = elevationAnalysis
                     
                     print("🔵 Step 5: Setting route name to '\(activityName)'")
                     weatherViewModel.routeDisplayName = activityName
                     
-                    // ✅ NEW: Also set the internal display name so stem notes use it
+                    // Set the internal display name so stem notes use it
                     weatherViewModel.importedRouteDisplayName = activityName
                     
                     // If we have elevation analysis, trigger finalize to prepare for power analysis
@@ -715,7 +706,7 @@ class StravaActivitiesImportViewModel: ObservableObject {
                 await MainActor.run {
                     self.errorMessage = "Failed to import route: \(error.localizedDescription)"
                     self.isImporting = false
-                    onFailure() // ✅ ADDED: Call failure callback
+                    onFailure()
                 }
             }
         }

@@ -153,18 +153,4 @@ struct RideWeatherProApp: App {
             }
         }
     }
-    
-/*    private func syncWeight() async {
-        if let newWeightKg = await stravaService.autoSyncWeightIfNeeded(settings: weatherViewModel.settings) {
-            // Update the view model's settings, which will trigger UI updates and save to UserDefaults
-            await MainActor.run {
-                // Set the raw KG value
-                weatherViewModel.settings.bodyWeight = newWeightKg
-                print("Synced new weight: \(newWeightKg) kg")
-                // This will trigger the UI to update correctly in lbs or kg
-                // by re-calculating from the new source KG value.
-                let _ = weatherViewModel.settings.bodyWeightInUserUnits
-            }
-        }
-    }*/
 }

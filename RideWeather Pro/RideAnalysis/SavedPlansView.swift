@@ -129,10 +129,6 @@ struct SavedPlansView: View {
     }
 }
 
-//
-// NO CHANGES TO SavedPlanRow or SavedPlansViewModel
-//
-
 struct SavedPlanRow: View {
     let plan: StoredPacingPlan
     

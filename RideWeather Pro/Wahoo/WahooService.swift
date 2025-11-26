@@ -329,7 +329,6 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         exchangeToken(code: code, pkceVerifier: pkceVerifier)
     }
     
-    // --- FIX: Add .keyDecodingStrategy = .convertFromSnakeCase ---
     private func exchangeToken(code: String, pkceVerifier: String) {
         guard let tokenURL = URL(string: "\(apiBaseUrl)/oauth/token") else { return }
         var request = URLRequest(url: tokenURL)
@@ -378,7 +377,6 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         }.resume()
     }
     
-    // --- FIX: Add .keyDecodingStrategy = .convertFromSnakeCase ---
     func refreshTokenIfNeeded(completion: @escaping (Result<Void, Error>) -> Void) {
         guard let tokens = currentTokens else {
             completion(.failure(WahooError.notAuthenticated)); return
@@ -433,7 +431,6 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         }.resume()
     }
     
-    // (Disconnect is correct)
     func disconnect() {
         currentTokens = nil
         athleteName = nil
@@ -441,7 +438,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         isAuthenticated = false
     }
     
-    // --- FIX: Keychain functions must use a *default* decoder/encoder ---
+    // Keychain functions must use a *default* decoder/encoder ---
     // We are encoding our *own* Swift struct (WahooTokens), which is already camelCase.
     private let keychainService = Bundle.main.bundleIdentifier ?? "com.rideweatherpro.wahoo"
     private let keychainAccount = "wahooUserTokensV1"
@@ -522,9 +519,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
     }
     
     // MARK: - API Methods
-    
-    // Replace the fetchUserName() function in WahooService.swift with this:
-    
+        
     func fetchUserName() async {
         try? await refreshTokenIfNeededAsync()
         guard let token = currentTokens?.accessToken else { return }
@@ -591,18 +586,12 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
     
     // Fetch workouts list
     func fetchRecentWorkouts(page: Int, perPage: Int = 50) async throws -> WahooWorkoutsResponse {
-        /* let url = URL(string: "https://api.wahooligan.com/v1/workouts?page=1&per_page=50")!
-         var request = URLRequest(url: url)
-         // Add your authentication headers here...
-         
-         guard let token = currentTokens?.accessToken else { throw WahooError.notAuthenticated }
-         print("WahooService: Using token:", token)*/
         try await refreshTokenIfNeededAsync()
         guard let token = currentTokens?.accessToken else { throw WahooError.notAuthenticated }
         var components = URLComponents(string: "\(apiBaseUrl)/v1/workouts")!
         components.queryItems = [
-            URLQueryItem(name: "page", value: String(page)), // <-- USE PARAMETER
-            URLQueryItem(name: "per_page", value: String(perPage)), // <-- USE PARAMETER
+            URLQueryItem(name: "page", value: String(page)),
+            URLQueryItem(name: "per_page", value: String(perPage)),
             URLQueryItem(name: "sort", value: "-starts"),
             URLQueryItem(name: "workout_type_id", value: "0")
         ]
@@ -742,8 +731,6 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
             throw WahooError.invalidURL
         }
         
-        // --- ALL OF THIS IS NEW ---
-        
         // 1. Create a unique boundary for the multipart request
         let boundary = "Boundary-\(UUID().uuidString)"
         
@@ -764,9 +751,7 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
             body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
             body.append("\(value)\r\n".data(using: .utf8)!)
         }
-        
-        // --- END HELPER ---
-        
+                
         // Sanitize the route name (same as before)
         let allowedChars = CharacterSet.alphanumerics.union(.whitespaces).union(.init(charactersIn: "-_"))
         let sanitizedName = String(routeName.unicodeScalars.filter(allowedChars.contains))
@@ -816,7 +801,6 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         // 7. Set the built body as the request's httpBody
         request.httpBody = body
         
-        // --- ALL OF THIS LOGGING IS THE SAME ---
         print("WahooService: Uploading route to \(url.absoluteString) via multipart/form-data")
         print("WahooService: Route name: \(sanitizedName)")
         print("WahooService: External ID: \(externalId)")
@@ -824,7 +808,6 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         print("WahooService: Start coordinate: \(startCoordinate.latitude), \(startCoordinate.longitude)")
         print("WahooService: Distance: \(String(format: "%.2f", routeDistanceMeters))m, Ascent: \(String(format: "%.0f", routeAscent))m")
         
-        // --- THE REST OF THE FUNCTION IS THE SAME ---
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             
@@ -876,7 +859,6 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         try await refreshTokenIfNeededAsync()
         guard let token = currentTokens?.accessToken else { throw WahooError.notAuthenticated }
         
-        // --- START OF FIX ---
         // We are making ONE call to /v1/plans using x-www-form-urlencoded
         
         guard let planUrl = URL(string: "\(apiBaseUrl)/v1/plans") else {

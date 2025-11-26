@@ -11,7 +11,7 @@ import Foundation
 class TrainingLoadManager {
     static let shared = TrainingLoadManager()
     
-    private let storage = TrainingLoadStorage.shared  // ✅ Changed from UserDefaults
+    private let storage = TrainingLoadStorage.shared  // Changed from UserDefaults
     private let emaATLDays = 7
     private let emaCTLDays = 42
     
@@ -302,7 +302,7 @@ class TrainingLoadManager {
     
     /// Clears all training load data
     func clearAll() {
-        storage.clearAll()  // ✅ Changed from UserDefaults
+        storage.clearAll()  // Changed from UserDefaults
         print("🗑️ Training Load: All data cleared")
     }
     
@@ -336,11 +336,11 @@ class TrainingLoadManager {
     // MARK: - Private Methods
     
     func loadAllDailyLoads() -> [DailyTrainingLoad] {
-        return storage.loadAllDailyLoads()  // ✅ Changed from UserDefaults
+        return storage.loadAllDailyLoads()  // Changed from UserDefaults
     }
     
     func saveDailyLoads(_ loads: [DailyTrainingLoad]) {
-        storage.saveDailyLoads(loads)  // ✅ Changed from UserDefaults
+        storage.saveDailyLoads(loads)  // Changed from UserDefaults
     }
     
     func recalculateMetrics(for loads: [DailyTrainingLoad]) -> [DailyTrainingLoad] {
