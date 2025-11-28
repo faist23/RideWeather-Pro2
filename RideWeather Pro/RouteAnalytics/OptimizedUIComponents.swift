@@ -857,13 +857,19 @@ struct OptimizedAdvancedCyclingTabView: View {
                         Label("Fueling", systemImage: "drop.fill")
                     }
                 
-                UpdatedOptimizedExportTab(viewModel: viewModel)
+                AIInsightsTab(viewModel: viewModel)
                     .tag(2)
+                    .tabItem {
+                        Label("AI Insights", systemImage: "sparkles")
+                    }
+                
+                UpdatedOptimizedExportTab(viewModel: viewModel)
+                    .tag(3)
                     .tabItem {
                         Label("Export", systemImage: "square.and.arrow.up")
                     }
                 RideAnalysisView(weatherViewModel: viewModel)
-                    .tag(3)
+                    .tag(4)
                     .tabItem {
                         Label("Analysis", systemImage: "chart.xyaxis.line")
                     }
