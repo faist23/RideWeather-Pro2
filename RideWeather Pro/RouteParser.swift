@@ -267,22 +267,12 @@ struct RouteParser: Sendable {
             return createEstimatedElevationAnalysis(from: points)
         }
         
-        var totalGain = 0.0
-        var totalLoss = 0.0
-        var previousElevation: Double?
+        // STEP 1: Build elevation profile first
         var elevationProfile: [ElevationPoint] = []
+        var previousElevation: Double?
         
         for point in pointsWithElevation {
             guard let elevation = point.elevation else { continue }
-            
-            if let prevElevation = previousElevation {
-                let elevationChange = elevation - prevElevation
-                if elevationChange > 0.2 {  //was 0.5
-                    totalGain += elevationChange
-                } else if elevationChange < -0.1 {
-                    totalLoss += abs(elevationChange)
-                }
-            }
             
             var grade: Double?
             if let prevPoint = elevationProfile.last, let prevElevation = previousElevation {
@@ -302,15 +292,65 @@ struct RouteParser: Sendable {
             previousElevation = elevation
         }
         
+        // STEP 2: Calculate gain/loss DIRECTLY from raw data with minimal filtering
+        var totalGain = 0.0
+        var totalLoss = 0.0
+        var filteredOutGain = 0.0
+        var filteredOutLoss = 0.0
+        var impossibleGrades = 0
+        
+        for i in 1..<elevationProfile.count {
+            let elevationChange = elevationProfile[i].elevation - elevationProfile[i-1].elevation
+            let distanceBetweenPoints = elevationProfile[i].distance - elevationProfile[i-1].distance
+            
+            // Only filter out impossible grades (GPS errors)
+            // Real steep grades can be 15-20%, so only filter if >35%
+            if distanceBetweenPoints > 0 {
+                let grade = abs(elevationChange / distanceBetweenPoints)
+                
+                // If grade is reasonable (<35%), count it
+                if grade < 0.35 {
+                    if elevationChange > 0 {
+                        totalGain += elevationChange
+                    } else if elevationChange < 0 {
+                        totalLoss += abs(elevationChange)
+                    }
+                } else {
+                    // Track what we're filtering out
+                    impossibleGrades += 1
+                    if elevationChange > 0 {
+                        filteredOutGain += elevationChange
+                    } else {
+                        filteredOutLoss += abs(elevationChange)
+                    }
+                }
+            }
+        }
+        
+        // Use the RAW profile for visualization (smoothing was destroying data)
+        let smoothedProfile = elevationProfile
+        
         let elevations = pointsWithElevation.compactMap { $0.elevation }
         guard !elevations.isEmpty else { return nil }
+        
+        let elevationRange = (elevations.max() ?? 0) - (elevations.min() ?? 0)
+        
+        print("📊 Elevation Analysis:")
+        print("   Raw points: \(pointsWithElevation.count)")
+        print("   Total gain: \(Int(totalGain))m (\(Int(totalGain * 3.28084))ft)")
+        print("   Total loss: \(Int(totalLoss))m (\(Int(totalLoss * 3.28084))ft)")
+        print("   Max elevation: \(Int(elevations.max() ?? 0))m (\(Int((elevations.max() ?? 0) * 3.28084))ft)")
+        print("   Min elevation: \(Int(elevations.min() ?? 0))m (\(Int((elevations.min() ?? 0) * 3.28084))ft)")
+        print("   Elevation range: \(Int(elevationRange))m (\(Int(elevationRange * 3.28084))ft)")
+        print("   Filtered impossible grades: \(impossibleGrades) points")
+        print("   Filtered gain: \(Int(filteredOutGain))m, loss: \(Int(filteredOutLoss))m")
         
         return ElevationAnalysis(
             totalGain: totalGain,
             totalLoss: totalLoss,
             maxElevation: elevations.max() ?? 0,
             minElevation: elevations.min() ?? 0,
-            elevationProfile: elevationProfile,
+            elevationProfile: smoothedProfile,
             hasActualData: true
         )
     }

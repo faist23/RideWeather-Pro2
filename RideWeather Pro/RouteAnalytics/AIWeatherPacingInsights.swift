@@ -27,23 +27,7 @@ struct AIWeatherPacingInsights {
     }
     
     func generateInsights() -> WeatherPacingInsightResult? {
-        // Only generate insights if we have power analysis
-        guard let powerAnalysis = powerAnalysis else { return nil }
-        
-        let criticalSegments = identifyCriticalWeatherSegments(powerSegments: powerAnalysis.segments)
-        let strategicGuidance = generateStrategicGuidance(powerSegments: powerAnalysis.segments)
-        let overallRecommendation = generateOverallRecommendation(powerSegments: powerAnalysis.segments)
-        
-        // Only return if we have meaningful insights
-        guard !criticalSegments.isEmpty || !strategicGuidance.isEmpty || !overallRecommendation.isEmpty else {
-            return nil
-        }
-        
-        return WeatherPacingInsightResult(
-            criticalSegments: criticalSegments,
-            strategicGuidance: strategicGuidance,
-            overallRecommendation: overallRecommendation
-        )
+        return generateSmartInsights()
     }
     
     // MARK: - Critical Segment Identification
@@ -791,6 +775,575 @@ struct StrategicGuidance: Identifiable {
             case .medium: return .yellow
             case .high: return .orange
             case .critical: return .red
+            }
+        }
+    }
+}
+
+// MARK: - Smart Insight Generation (Non-Obvious Only)
+
+// Replace the entire generateSmartInsights() method in AIWeatherPacingInsights.swift
+
+extension AIWeatherPacingInsights {
+    
+    func generateSmartInsights() -> WeatherPacingInsightResult? {
+        guard let powerAnalysis = powerAnalysis,
+              let elevationAnalysis = elevationAnalysis else {
+            return nil
+        }
+        
+        var criticalSegments: [CriticalWeatherSegment] = []
+        var strategicGuidance: [StrategicGuidance] = []
+        
+        // 1. ROUTE OVERVIEW - Always provide context for significant routes
+        if let overview = generateRouteOverview(
+            powerSegments: powerAnalysis.segments,
+            elevation: elevationAnalysis
+        ) {
+            strategicGuidance.append(overview)
+        }
+        
+        // 2. CLIMB STRATEGY - Identify major climbs and their tactical context
+        let climbInsights = analyzeClimbStrategy(
+            powerSegments: powerAnalysis.segments,
+            elevation: elevationAnalysis
+        )
+        criticalSegments.append(contentsOf: climbInsights.criticalSegments)
+        strategicGuidance.append(contentsOf: climbInsights.guidance)
+        
+        // 3. WIND PATTERNS - Only if asymmetric or unusual
+        if let windGuidance = analyzeWindPattern(powerSegments: powerAnalysis.segments) {
+            strategicGuidance.append(windGuidance)
+        }
+        
+        // 4. DANGER ZONES - Safety-critical combinations
+        let dangers = identifyDangerZones(powerSegments: powerAnalysis.segments)
+        criticalSegments.append(contentsOf: dangers)
+        
+        // 5. PACING BREAKDOWN - Use the ACTUAL pacing plan if available, not raw power analysis
+        if let pacingDistribution = analyzePacingDistribution() {
+            strategicGuidance.append(pacingDistribution)
+        }
+        
+        // Only return if we have meaningful insights
+        guard !criticalSegments.isEmpty || !strategicGuidance.isEmpty else {
+            return nil
+        }
+        
+        let overallRec = generateStrategicSummary(
+            criticalSegments: criticalSegments,
+            guidance: strategicGuidance,
+            elevation: elevationAnalysis,
+            powerSegments: powerAnalysis.segments
+        )
+        
+        return WeatherPacingInsightResult(
+            criticalSegments: criticalSegments,
+            strategicGuidance: strategicGuidance,
+            overallRecommendation: overallRec
+        )
+    }
+    
+    // MARK: - Route Overview
+    
+    private func generateRouteOverview(
+        powerSegments: [PowerRouteSegment],
+        elevation: ElevationAnalysis
+    ) -> StrategicGuidance? {
+        let totalDistance = powerSegments.reduce(0.0) { $0 + $1.distanceMeters } / 1000
+        let totalGain = elevation.totalGain
+        
+        // Only provide overview for significant routes
+        guard totalDistance > 30 || totalGain > 500 else { return nil }
+        
+        let userFTP = Double(settings.functionalThresholdPower)
+        
+        // Use pacing plan average if available, otherwise use power analysis
+        let avgPower: Double
+        let avgIntensity: Int
+        let totalTime: Double
+        
+        if let plan = pacingPlan {
+            avgPower = plan.averagePower
+            avgIntensity = Int((avgPower / userFTP) * 100)
+            totalTime = plan.totalTimeMinutes / 60.0
+        } else {
+            avgPower = powerSegments.map { $0.powerRequired }.reduce(0, +) / Double(powerSegments.count)
+            avgIntensity = Int((avgPower / userFTP) * 100)
+            totalTime = powerSegments.reduce(0.0) { $0 + $1.timeSeconds } / 3600
+        }
+        
+        let distanceStr = settings.units == .metric ?
+        String(format: "%.0f km", totalDistance) :
+        String(format: "%.0f mi", totalDistance / 1.609)
+        let gainStr = settings.units == .metric ?
+        String(format: "%.0f m", totalGain) :
+        String(format: "%.0f ft", totalGain * 3.28084)
+        
+        var description = "Route: \(distanceStr), \(gainStr) climbing, \(formatTime(totalTime * 3600)) at \(avgIntensity)% FTP average."
+        
+        // Categorize the route
+        let climbingDensity = totalGain / totalDistance // meters per km
+        var routeType: String
+        var actionItems: [String] = []
+        
+        if climbingDensity > 25 { // Very hilly
+            routeType = "Mountain Route"
+            description += " High climbing density (\(Int(climbingDensity))m/km) = sustained climbing."
+            actionItems = [
+                "Pace the climbs conservatively - there are many",
+                "Focus on steady power rather than surging",
+                "Nutrition is critical - eat before you're hungry on long climbs"
+            ]
+        } else if climbingDensity > 15 {
+            routeType = "Hilly Route"
+            description += " Moderate climbing throughout."
+            actionItems = [
+                "Route has continuous elevation changes",
+                "Maintain rhythm through rolling terrain",
+                "Use descents for active recovery and fueling"
+            ]
+        } else if totalGain > 1000 {
+            routeType = "Long Route with Major Climbs"
+            description += " Climbing concentrated in specific sections."
+            actionItems = [
+                "Expect distinct flat and climbing sections",
+                "Build a base of endurance before major climbs",
+                "Recover fully on flat sections between climbs"
+            ]
+        } else {
+            routeType = "Endurance Route"
+            description += " Relatively flat with sustained effort."
+            actionItems = [
+                "Steady endurance pacing is key",
+                "Mental stamina matters as much as physical",
+                "Stay on top of nutrition - long duration at moderate intensity"
+            ]
+        }
+        
+        return StrategicGuidance(
+            category: .strategy,
+            title: "Route Profile: \(routeType)",
+            description: description,
+            actionItems: actionItems,
+            impactLevel: .medium
+        )
+    }
+    
+    // MARK: - Climb Strategy Analysis
+    
+    private struct ClimbAnalysisResult {
+        let criticalSegments: [CriticalWeatherSegment]
+        let guidance: [StrategicGuidance]
+    }
+    
+    private func analyzeClimbStrategy(
+        powerSegments: [PowerRouteSegment],
+        elevation: ElevationAnalysis
+    ) -> ClimbAnalysisResult {
+        var criticalSegments: [CriticalWeatherSegment] = []
+        var guidance: [StrategicGuidance] = []
+        
+        // Find all significant climbs
+        struct Climb {
+            let startIndex: Int
+            let endIndex: Int
+            let gainMeters: Double
+            let maxGrade: Double
+            let avgPower: Double
+            let avgIntensity: Double
+        }
+        
+        var climbs: [Climb] = []
+        var currentClimb: (start: Int, gain: Double, maxGrade: Double, powerSum: Double, count: Int)? = nil
+        
+        let userFTP = Double(settings.functionalThresholdPower)
+        
+        for (index, seg) in powerSegments.enumerated() {
+            let grade = seg.elevationGrade * 100
+            let gainThisSegment = max(0, seg.elevationGrade * seg.distanceMeters)
+            
+            if grade > 2.5 { // Climbing
+                if let climb = currentClimb {
+                    currentClimb = (
+                        climb.start,
+                        climb.gain + gainThisSegment,
+                        max(climb.maxGrade, grade),
+                        climb.powerSum + seg.powerRequired,
+                        climb.count + 1
+                    )
+                } else {
+                    currentClimb = (index, gainThisSegment, grade, seg.powerRequired, 1)
+                }
+            } else if let climb = currentClimb {
+                // Climb ended
+                if climb.gain > 100 { // Significant climb
+                    let avgPower = climb.powerSum / Double(climb.count)
+                    let avgIntensity = (avgPower / userFTP) * 100
+                    
+                    climbs.append(Climb(
+                        startIndex: climb.start,
+                        endIndex: index - 1,
+                        gainMeters: climb.gain,
+                        maxGrade: climb.maxGrade,
+                        avgPower: avgPower,
+                        avgIntensity: avgIntensity
+                    ))
+                }
+                currentClimb = nil
+            }
+        }
+        
+        // Handle climb at end of route
+        if let climb = currentClimb, climb.gain > 100 {
+            let avgPower = climb.powerSum / Double(climb.count)
+            let avgIntensity = (avgPower / userFTP) * 100
+            climbs.append(Climb(
+                startIndex: climb.start,
+                endIndex: powerSegments.count - 1,
+                gainMeters: climb.gain,
+                maxGrade: climb.maxGrade,
+                avgPower: avgPower,
+                avgIntensity: avgIntensity
+            ))
+        }
+        
+        // Generate insights for major climbs
+        if climbs.count >= 2 {
+            // Multiple climb strategy
+            let totalClimbGain = climbs.reduce(0.0) { $0 + $1.gainMeters }
+            let hardestClimb = climbs.max(by: { $0.avgIntensity < $1.avgIntensity })!
+            let firstClimb = climbs.first!
+            let lastClimb = climbs.last!
+            
+            var climbList: [String] = []
+            for (i, climb) in climbs.enumerated() {
+                let distanceMarker = formatDistance(powerSegments[climb.startIndex].startPoint.distance)
+                let gainStr = settings.units == .metric ?
+                "\(Int(climb.gainMeters))m" :
+                "\(Int(climb.gainMeters * 3.28084))ft"
+                climbList.append("Climb \(i+1) at \(distanceMarker): \(gainStr), \(Int(climb.avgIntensity))% FTP")
+            }
+            
+            let totalGainStr = settings.units == .metric ?
+            "\(Int(totalClimbGain))m" :
+            "\(Int(totalClimbGain * 3.28084))ft"
+            
+            guidance.append(StrategicGuidance(
+                category: .pacing,
+                title: "\(climbs.count) Major Climbs - Pacing Strategy",
+                description: "Route has \(climbs.count) significant climbs totaling \(totalGainStr). Your pacing plan distributes effort across all climbs. The hardest effort is climb at \(formatDistance(powerSegments[hardestClimb.startIndex].startPoint.distance)).",
+                actionItems: climbList + [
+                    "Don't blow up on first climb - you have \(climbs.count - 1) more to go",
+                    "Trust your power targets - they account for cumulative fatigue",
+                    "Hardest effort: \(formatDistance(powerSegments[hardestClimb.startIndex].startPoint.distance)) at \(Int(hardestClimb.avgIntensity))% FTP"
+                ],
+                impactLevel: .high
+            ))
+            
+            // Flag each major climb with weather context
+            for (i, climb) in climbs.enumerated() {
+                let climbSegments = powerSegments[climb.startIndex...climb.endIndex]
+                let avgHeadwind = climbSegments.map { $0.averageHeadwindMps }.reduce(0, +) / Double(climbSegments.count)
+                let windSpeed = abs(avgHeadwind) * (settings.units == .metric ? 3.6 : 2.237)
+                
+                let gainStr = settings.units == .metric ?
+                "\(Int(climb.gainMeters))m" :
+                "\(Int(climb.gainMeters * 3.28084))ft"
+                
+                var conditions: [String] = [
+                    "Climb \(i+1): \(gainStr) gain",
+                    "Max grade \(String(format: "%.1f", climb.maxGrade))%",
+                    "Avg \(Int(climb.avgPower))W (\(Int(climb.avgIntensity))% FTP)"
+                ]
+                
+                var notes: [String] = []
+                var severity = 5.0 + (climb.avgIntensity / 20.0) // Base severity on intensity
+                
+                if windSpeed > 15 {
+                    conditions.append("\(Int(windSpeed))\(settings.units.speedUnitAbbreviation) \(avgHeadwind > 0 ? "headwind" : "tailwind")")
+                    
+                    if avgHeadwind > 4 {
+                        severity += 3.0
+                        notes.append("⚠️ Headwind on climb increases difficulty significantly")
+                        notes.append("Plan already accounts for this - stay disciplined on power")
+                    } else if avgHeadwind < -3 {
+                        notes.append("💨 Tailwind assistance - rare advantage on a climb")
+                        notes.append("Could add 5-10W if feeling strong")
+                    }
+                }
+                
+                if climb.avgIntensity > 90 {
+                    notes.append("⚠️ Near-threshold effort for entire climb")
+                    notes.append("This will hurt - accept it and stay on target")
+                }
+                
+                if i == climbs.count - 1 && climb.avgIntensity > 85 {
+                    notes.append("Final climb - all remaining energy goes here")
+                }
+                
+                if !notes.isEmpty {
+                    criticalSegments.append(CriticalWeatherSegment(
+                        segmentIndex: climb.startIndex,
+                        distanceMarker: formatDistance(powerSegments[climb.startIndex].startPoint.distance),
+                        weatherConditions: conditions.joined(separator: " • "),
+                        powerAdjustment: "",
+                        strategicNotes: notes.joined(separator: " • "),
+                        severity: severity
+                    ))
+                }
+            }
+        } else if climbs.count == 1 {
+            // Single major climb
+            let climb = climbs[0]
+            let gainStr = settings.units == .metric ?
+            "\(Int(climb.gainMeters))m" :
+            "\(Int(climb.gainMeters * 3.28084))ft"
+            
+            guidance.append(StrategicGuidance(
+                category: .pacing,
+                title: "Single Major Climb Strategy",
+                description: "Route features one major climb at \(formatDistance(powerSegments[climb.startIndex].startPoint.distance)): \(gainStr) gain at \(Int(climb.avgIntensity))% FTP average. This is the defining feature of your ride.",
+                actionItems: [
+                    "Build endurance base before the climb",
+                    "Fuel well 15-20 minutes before climb starts",
+                    "Climb intensity: \(Int(climb.avgIntensity))% FTP average",
+                    "Maintain steady rhythm - avoid surging on steep pitches"
+                ],
+                impactLevel: .high
+            ))
+        }
+        
+        return ClimbAnalysisResult(criticalSegments: criticalSegments, guidance: guidance)
+    }
+    
+    // MARK: - Wind Pattern Analysis
+    
+    private func analyzeWindPattern(powerSegments: [PowerRouteSegment]) -> StrategicGuidance? {
+        let totalTime = powerSegments.reduce(0.0) { $0 + $1.timeSeconds }
+        
+        var headwindTime: Double = 0
+        var tailwindTime: Double = 0
+        var headwindSegments: [Int] = []
+        var tailwindSegments: [Int] = []
+        
+        for (index, seg) in powerSegments.enumerated() {
+            if seg.averageHeadwindMps > 3.0 {
+                headwindTime += seg.timeSeconds
+                headwindSegments.append(index)
+            } else if seg.averageHeadwindMps < -3.0 {
+                tailwindTime += seg.timeSeconds
+                tailwindSegments.append(index)
+            }
+        }
+        
+        let headwindPercent = (headwindTime / totalTime) * 100
+        let tailwindPercent = (tailwindTime / totalTime) * 100
+        
+        // Only mention if significantly asymmetric (>60% one direction)
+        if headwindPercent > 60 || tailwindPercent > 60 {
+            let dominant = headwindPercent > tailwindPercent ? "headwind" : "tailwind"
+            let dominantPercent = max(headwindPercent, tailwindPercent)
+            let dominantTime = max(headwindTime, tailwindTime) / 60
+            
+            // Check if front-loaded or back-loaded
+            let isEarly = (dominant == "headwind" && headwindSegments.first! < powerSegments.count / 2) ||
+            (dominant == "tailwind" && tailwindSegments.first! < powerSegments.count / 2)
+            
+            return StrategicGuidance(
+                category: .strategy,
+                title: "Asymmetric Wind Pattern",
+                description: "Route is \(Int(dominantPercent))% \(dominant) (\(Int(dominantTime))min). Wind is \(isEarly ? "early" : "late") in the ride. Your pacing plan already accounts for this with appropriate power distribution.",
+                actionItems: [
+                    "Mental preparation: \(isEarly ? "Early" : "Late") sections will feel \(dominant == "headwind" ? "harder" : "easier") than power suggests",
+                    "Trust your power targets - they're optimized for the wind pattern",
+                    "Don't \(dominant == "headwind" ? "panic about slow speed" : "overcook the easy sections")",
+                    "Overall time balances out across the full route"
+                ],
+                impactLevel: .medium
+            )
+        }
+        
+        return nil
+    }
+    
+    // MARK: - Danger Zones
+    
+    private func identifyDangerZones(powerSegments: [PowerRouteSegment]) -> [CriticalWeatherSegment] {
+        var dangers: [CriticalWeatherSegment] = []
+        
+        for (index, seg) in powerSegments.enumerated() {
+            let grade = seg.elevationGrade * 100
+            let crosswind = abs(seg.averageCrosswindMps) * (settings.units == .metric ? 3.6 : 2.237)
+            
+            // ONLY flag truly dangerous: Fast descent + strong crosswind
+            if grade < -6 && crosswind > 25 {
+                dangers.append(CriticalWeatherSegment(
+                    segmentIndex: index,
+                    distanceMarker: formatDistance(seg.startPoint.distance),
+                    weatherConditions: "Steep descent (\(String(format: "%.1f", abs(grade)))%) with \(Int(crosswind))\(settings.units.speedUnitAbbreviation) crosswinds",
+                    powerAdjustment: "",
+                    strategicNotes: "⚠️ CRASH RISK: Reduce speed 30-40% • Avoid deep-section wheels • Feather brakes early • Don't overlap wheels if in group",
+                    severity: 9.5
+                ))
+            }
+        }
+        
+        return dangers
+    }
+    
+    // MARK: - Pacing Distribution (FROM ACTUAL PACING PLAN)
+    
+    private func analyzePacingDistribution() -> StrategicGuidance? {
+        // Use the ACTUAL pacing plan if available
+        guard let plan = pacingPlan else {
+            return nil
+        }
+        
+        let userFTP = Double(settings.functionalThresholdPower)
+        let totalTime = plan.segments.reduce(0.0) { $0 + $1.estimatedTime }
+        
+        // Use ACTUAL power zone definitions from PacingEngine
+        var recoveryTime: Double = 0      // 0-55% FTP
+        var enduranceTime: Double = 0     // 55-75% FTP
+        var tempoTime: Double = 0         // 75-87% FTP
+        var sweetSpotTime: Double = 0     // 87-94% FTP
+        var thresholdTime: Double = 0     // 94-105% FTP
+        var vo2MaxTime: Double = 0        // >105% FTP
+        
+        // Analyze the PACING PLAN targets, not raw power requirements
+        for seg in plan.segments {
+            let intensity = seg.targetPower / userFTP
+            
+            if intensity < 0.55 {
+                recoveryTime += seg.estimatedTime
+            } else if intensity < 0.75 {
+                enduranceTime += seg.estimatedTime
+            } else if intensity < 0.87 {
+                tempoTime += seg.estimatedTime
+            } else if intensity < 0.94 {
+                sweetSpotTime += seg.estimatedTime
+            } else if intensity < 1.05 {
+                thresholdTime += seg.estimatedTime
+            } else {
+                vo2MaxTime += seg.estimatedTime
+            }
+        }
+        
+        // Calculate "hard" as anything above tempo (>87% FTP)
+        let hardTime = sweetSpotTime + thresholdTime + vo2MaxTime
+        let hardPercent = (hardTime / totalTime) * 100
+        
+        // Only show if there's meaningful distribution to discuss
+        let hasVariety = (recoveryTime > 60 || enduranceTime > 60) && (tempoTime > 60 || hardTime > 60)
+        let hasSignificantHardWork = hardPercent > 20
+        
+        guard hasVariety || hasSignificantHardWork else {
+            return nil
+        }
+        
+        var items: [String] = []
+        
+        // Build the breakdown matching the pacing plan zones
+        if recoveryTime > 60 {
+            items.append("Recovery (<55% FTP): \(formatTime(recoveryTime))")
+        }
+        if enduranceTime > 60 {
+            items.append("Endurance (55-75% FTP): \(formatTime(enduranceTime))")
+        }
+        if tempoTime > 60 {
+            items.append("Tempo (75-87% FTP): \(formatTime(tempoTime))")
+        }
+        if sweetSpotTime > 60 {
+            items.append("Sweet Spot (87-94% FTP): \(formatTime(sweetSpotTime))")
+        }
+        if thresholdTime > 60 {
+            items.append("Threshold (94-105% FTP): \(formatTime(thresholdTime))")
+        }
+        if vo2MaxTime > 60 {
+            items.append("VO2 Max (>105% FTP): \(formatTime(vo2MaxTime))")
+        }
+        
+        // Only show if we have items to display
+        guard !items.isEmpty else { return nil }
+        
+        let description: String
+        if hardPercent > 30 {
+            description = "Your pacing plan includes \(Int(hardPercent))% high-intensity effort (>87% FTP). This is \(formatTime(hardTime)) of sustained work above tempo."
+        } else if tempoTime > 1800 {
+            description = "Steady tempo-paced ride with \(formatTime(tempoTime)) at 75-87% FTP. Sustainable endurance effort."
+        } else if enduranceTime > 1800 {
+            description = "Endurance-paced ride with \(formatTime(enduranceTime)) at 55-75% FTP. Base-building effort."
+        } else {
+            description = "Balanced effort distribution across power zones."
+        }
+        
+        items.append("Total time: \(formatTime(totalTime)) | Avg: \(Int(plan.averagePower))W (\(Int((plan.averagePower/userFTP)*100))% FTP)")
+        
+        return StrategicGuidance(
+            category: .pacing,
+            title: "Pacing Plan Zone Distribution",
+            description: description,
+            actionItems: items,
+            impactLevel: .medium
+        )
+    }
+    
+    // MARK: - Strategic Summary
+    
+    private func generateStrategicSummary(
+        criticalSegments: [CriticalWeatherSegment],
+        guidance: [StrategicGuidance],
+        elevation: ElevationAnalysis,
+        powerSegments: [PowerRouteSegment]
+    ) -> String {
+        // Count major climbs
+        var climbCount = 0
+        var inClimb = false
+        for seg in powerSegments {
+            let grade = seg.elevationGrade * 100
+            let gain = max(0, seg.elevationGrade * seg.distanceMeters)
+            
+            if grade > 2.5 && !inClimb {
+                inClimb = true
+            } else if grade <= 2.5 && inClimb {
+                climbCount += 1
+                inClimb = false
+            }
+        }
+        if inClimb { climbCount += 1 }
+        
+        let totalGainStr = settings.units == .metric ?
+        "\(Int(elevation.totalGain))m" :
+        "\(Int(elevation.totalGain * 3.28084))ft"
+        
+        if climbCount >= 3 {
+            return "🏔️ Major climbing route with \(climbCount) climbs totaling \(totalGainStr). See climb-by-climb breakdown below."
+        } else if climbCount >= 2 {
+            return "⛰️ Multi-climb route (\(totalGainStr) total). Pace conservatively on early climbs."
+        } else if elevation.totalGain > 1000 {
+            return "🗻 Single major climb route (\(totalGainStr)). Build your base before the main ascent."
+        } else if criticalSegments.contains(where: { $0.severity >= 9 }) {
+            return "⚠️ Safety-critical conditions identified. Review danger zones below."
+        } else {
+            return "📊 Route analysis complete. Key tactical points identified below."
+        }
+    }
+    
+    // MARK: - Helper: Format Time Consistently
+    
+    private func formatTime(_ seconds: Double) -> String {
+        let totalMinutes = Int(seconds / 60)
+        
+        if totalMinutes < 60 {
+            return "\(totalMinutes)min"
+        } else {
+            let hours = totalMinutes / 60
+            let minutes = totalMinutes % 60
+            if minutes == 0 {
+                return "\(hours)h"
+            } else {
+                return "\(hours)h \(minutes)min"
             }
         }
     }

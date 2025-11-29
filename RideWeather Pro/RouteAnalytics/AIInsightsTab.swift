@@ -32,7 +32,8 @@ struct AIInsightsTab: View {
     
     private var insights: WeatherPacingInsightResult? {
         guard let powerAnalysis = viewModel.getPowerAnalysisResult(),
-              let elevationAnalysis = viewModel.elevationAnalysis else { return nil }
+              let elevationAnalysis = viewModel.elevationAnalysis,
+              viewModel.finalPacingPlan != nil else { return nil }
         
         let aiEngine = AIWeatherPacingInsights(
             pacingPlan: viewModel.finalPacingPlan,
@@ -51,10 +52,12 @@ struct AIInsightsTab: View {
                 emptyStateView
             } else if !viewModel.isPowerBasedAnalysisEnabled {
                 powerDisabledView
-            } else if let insights = insights {
+            } else if viewModel.finalPacingPlan == nil {
+                noPacingPlanView
+            } else if let insights = insights, hasActionableInsights(insights) {
                 insightsContentView(insights)
             } else {
-                noInsightsView
+                noActionableInsightsView
             }
         }
         .animatedBackground(
@@ -64,10 +67,20 @@ struct AIInsightsTab: View {
             decorationIntensity: 0.06
         )
         .sheet(isPresented: $showingExportSheet) {
-            if let insights = insights {
-                let exportData = generateExportText(for: insights)
-                let filename = generateExportFilename()
-                ShareSheetView(activityItems: [ExportItem(text: exportData, filename: filename)])
+            Group {
+                if let insights = insights {
+                    let exportData = generateExportText(for: insights)
+                    let filename = generateExportFilename()
+                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+                    // Return a ShareSheetView and write the file as a side effect when presented
+                    ShareSheetView(activityItems: [tempURL])
+                        .task {
+                            try? exportData.write(to: tempURL, atomically: true, encoding: .utf8)
+                        }
+                } else {
+                    // Fallback to an empty view if insights are missing
+                    EmptyView()
+                }
             }
         }
     }
@@ -114,11 +127,11 @@ struct AIInsightsTab: View {
                     .foregroundStyle(.blue)
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("AI Weather Intelligence")
+                    Text("AI Strategic Intelligence")
                         .font(.headline)
                         .fontWeight(.bold)
                     
-                    Text("Physics-based analysis powered by real-time weather data")
+                    Text("Non-obvious insights you might miss")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -130,7 +143,7 @@ struct AIInsightsTab: View {
                 Divider()
                 
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Overall Assessment", systemImage: "chart.bar.doc.horizontal")
+                    Label("Key Strategic Insight", systemImage: "lightbulb.fill")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                     
@@ -152,7 +165,7 @@ struct AIInsightsTab: View {
                 
                 InsightStatView(
                     value: "\(insights.strategicGuidance.count)",
-                    label: "Strategic\nGuidances",
+                    label: "Strategic\nInsights",
                     color: .blue
                 )
                 
@@ -293,7 +306,7 @@ struct AIInsightsTab: View {
                 .font(.title2)
                 .fontWeight(.semibold)
             
-            Text("Import a route to unlock AI-powered weather and pacing insights")
+            Text("Import a route to unlock AI-powered strategic insights")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -326,41 +339,72 @@ struct AIInsightsTab: View {
         .frame(maxHeight: .infinity)
     }
     
-    private var noInsightsView: some View {
+    private var noActionableInsightsView: some View {
         VStack(spacing: 20) {
-            Image(systemName: "sparkles")
+            Image(systemName: "checkmark.circle")
                 .font(.system(size: 64))
-                .foregroundStyle(.blue.opacity(0.5))
+                .foregroundStyle(.green.opacity(0.5))
             
-            Text("No Significant Insights")
+            Text("No Strategic Insights Needed")
                 .font(.title2)
                 .fontWeight(.semibold)
             
-            Text("Weather conditions are favorable with no critical concerns detected")
+            Text("Conditions are straightforward with no critical tactical opportunities or concerns")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
             
-            Text("✓ Good riding conditions")
+            Text("✓ Ride as planned")
                 .font(.headline)
                 .foregroundStyle(.green)
         }
         .frame(maxHeight: .infinity)
     }
     
+    private var noPacingPlanView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .font(.system(size: 64))
+                .foregroundStyle(.blue.opacity(0.5))
+            
+            Text("Pacing Plan Required")
+                .font(.title2)
+                .fontWeight(.semibold)
+            
+            Text("AI insights analyze your pacing plan's power distribution and strategic opportunities")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+            
+            Text("Generate a pacing plan first to see AI-powered strategic insights")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+        }
+        .frame(maxHeight: .infinity)
+    }
+    
     // MARK: - Helper Methods
+    
+    private func hasActionableInsights(_ insights: WeatherPacingInsightResult) -> Bool {
+        // Only show tab if there are truly actionable insights
+        return !insights.criticalSegments.isEmpty || !insights.strategicGuidance.isEmpty
+    }
     
     private func generateExportFilename() -> String {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyyMMdd-HHmm"
         let dateString = dateFormatter.string(from: Date())
         
-        let routeName = viewModel.routeDisplayName
-            .replacingOccurrences(of: " ", with: "_")
-            .replacingOccurrences(of: "/", with: "_")
-        
-        return "\(routeName)-\(dateString)-insights.txt"
+        // Use the viewModel's helper method to generate proper filename
+        return viewModel.generateExportFilename(
+            baseName: nil, // Let it use the stored route name
+            suffix: "\(dateString)-ai",
+            extension: "txt"
+        )
     }
     
     private func filterGuidance(_ guidance: [StrategicGuidance]) -> [StrategicGuidance] {
@@ -423,7 +467,7 @@ struct AIInsightsTab: View {
         
         var text = """
         ═══════════════════════════════════════════════
-        AI WEATHER-PACING INSIGHTS
+        AI STRATEGIC INTELLIGENCE
         Generated: \(formatter.string(from: Date()))
         ═══════════════════════════════════════════════
         
@@ -435,7 +479,7 @@ struct AIInsightsTab: View {
         if !insights.overallRecommendation.isEmpty {
             text += """
             
-            📊 OVERALL ASSESSMENT
+            💡 KEY STRATEGIC INSIGHT
             ─────────────────────────────────────────────
             \(insights.overallRecommendation)
             
@@ -445,14 +489,14 @@ struct AIInsightsTab: View {
         if !insights.criticalSegments.isEmpty {
             text += """
             
-            ⚠️  CRITICAL WEATHER SEGMENTS (\(insights.criticalSegments.count))
+            ⚠️  CRITICAL TACTICAL OPPORTUNITIES (\(insights.criticalSegments.count))
             ─────────────────────────────────────────────
             
             """
             
             for segment in insights.criticalSegments {
                 text += """
-                Segment \(segment.segmentIndex + 1) • \(segment.distanceMarker)
+                📍 \(segment.distanceMarker)
                 Severity: \(Int(segment.severity))/10
                 
                 Conditions: \(segment.weatherConditions)
@@ -474,7 +518,7 @@ struct AIInsightsTab: View {
         if !insights.strategicGuidance.isEmpty {
             text += """
             
-            💡 STRATEGIC GUIDANCE (\(insights.strategicGuidance.count))
+            🎯 STRATEGIC GUIDANCE (\(insights.strategicGuidance.count))
             ─────────────────────────────────────────────
             
             """
@@ -610,33 +654,6 @@ extension LinearGradient {
 }
 
 // MARK: - Share Sheet
-
-class ExportItem: NSObject, UIActivityItemSource {
-    let text: String
-    let filename: String
-    
-    init(text: String, filename: String) {
-        self.text = text
-        self.filename = filename
-        super.init()
-    }
-    
-    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
-        return text
-    }
-    
-    func activityViewController(_ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? {
-        return text
-    }
-    
-    func activityViewController(_ activityViewController: UIActivityViewController, subjectForActivityType activityType: UIActivity.ActivityType?) -> String {
-        return filename
-    }
-    
-    func activityViewController(_ activityViewController: UIActivityViewController, dataTypeIdentifierForActivityType activityType: UIActivity.ActivityType?) -> String {
-        return "public.plain-text"
-    }
-}
 
 struct ShareSheetView: UIViewControllerRepresentable {
     let activityItems: [Any]
