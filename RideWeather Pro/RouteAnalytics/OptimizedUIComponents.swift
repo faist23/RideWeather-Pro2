@@ -1696,6 +1696,7 @@ struct UpdatedOptimizedExportTab: View {
                 routePoints: viewModel.enhancedRoutePoints,
                 courseName: courseName,
                 pacingPlan: pacingPlan, // Pass the pacing plan
+                settings: viewModel.settings, // ADD THIS
                 activityType: "ROAD_CYCLING"
             )
             

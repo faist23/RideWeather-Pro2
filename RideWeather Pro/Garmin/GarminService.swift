@@ -338,7 +338,13 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         }
     }
     
-    func uploadCourse(routePoints: [EnhancedRoutePoint], courseName: String, pacingPlan: PacingPlan? = nil, activityType: String = "ROAD_CYCLING") async throws {
+    func uploadCourse(
+        routePoints: [EnhancedRoutePoint],
+        courseName: String,
+        pacingPlan: PacingPlan? = nil,
+        settings: AppSettings? = nil, 
+        activityType: String = "ROAD_CYCLING"
+    ) async throws {
         try await refreshTokenIfNeededAsync()
         guard let token = currentTokens?.accessToken else { throw GarminError.notAuthenticated }
         
@@ -396,7 +402,106 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         )
         print("GarminService: Optimized route from \(routePoints.count) to \(optimizedPoints.count) points")
         
-        // Build geoPoints array with power targets
+        // ✅ ADD: Calculate time checkpoints if enabled in settings
+        var timeCheckpoints: [(distance: Double, time: Double)] = []
+        if let plan = pacingPlan, plan.summary.settings.enableTimeCheckpoints {
+            let checkpointInterval = plan.summary.settings.timeCheckpointIntervalKm * 1000 // Convert to meters
+            var checkpointDistance = checkpointInterval
+            
+            while checkpointDistance < totalDistance {
+                // Calculate elapsed time to this checkpoint
+                let elapsedTime = calculateElapsedTime(
+                    toDistance: checkpointDistance,
+                    pacingPlan: plan
+                )
+                
+                timeCheckpoints.append((distance: checkpointDistance, time: elapsedTime))
+                checkpointDistance += checkpointInterval
+            }
+            
+            print("GarminService: Generated \(timeCheckpoints.count) time checkpoints")
+        }
+
+        // ✅ NEW: Pre-calculate which point index should get each checkpoint
+        // This ensures each checkpoint appears exactly once
+        var checkpointAssignments: [Int: (distance: Double, time: Double)] = [:] // pointIndex -> checkpoint
+        for checkpoint in timeCheckpoints {
+            // Find the single closest point to this checkpoint
+            var closestIndex = 0
+            var closestDistance = Double.greatestFiniteMagnitude
+            
+            for (index, point) in optimizedPoints.enumerated() {
+                let distance = abs(point.distance - checkpoint.distance)
+                if distance < closestDistance {
+                    closestDistance = distance
+                    closestIndex = index
+                }
+            }
+            
+            // Assign this checkpoint to the closest point
+            checkpointAssignments[closestIndex] = checkpoint
+        }
+
+        print("GarminService: Assigned \(checkpointAssignments.count) checkpoints to specific points")
+
+        // Build geoPoints array with power targets AND time checkpoints
+        var geoPointsArray: [[String: Any]] = []
+
+        for (index, point) in optimizedPoints.enumerated() {
+            var geoPoint: [String: Any] = [
+                "latitude": point.coordinate.latitude,
+                "longitude": point.coordinate.longitude
+            ]
+            
+            // Add elevation if available
+            if let elevation = point.elevation {
+                geoPoint["elevation"] = elevation
+            }
+            
+            let pointDistance = point.distance
+            
+            // ✅ PRIORITY 1: Check if this specific point was assigned a time checkpoint
+            if let checkpoint = checkpointAssignments[index] {
+                let hours = Int(checkpoint.time / 3600)
+                let minutes = Int((checkpoint.time.truncatingRemainder(dividingBy: 3600)) / 60)
+                let seconds = Int(checkpoint.time.truncatingRemainder(dividingBy: 60))
+                
+                let distanceKm = checkpoint.distance / 1000
+                let displayDistance = pacingPlan?.summary.settings.units == .metric ? distanceKm : distanceKm * 0.621371
+                let unitSymbol = pacingPlan?.summary.settings.units == .metric ? "km" : "mi"
+                
+                let coursePoint: [String: Any] = [
+                    "name": String(format: "%.1f%@ %02d:%02d:%02d", displayDistance, unitSymbol, hours, minutes, seconds),
+                    "coursePointType": "GENERIC"
+                ]
+                geoPoint["information"] = coursePoint
+                
+                print("GarminService: Added time checkpoint at point \(index): \(String(format: "%.1f%@ %02d:%02d:%02d", displayDistance, unitSymbol, hours, minutes, seconds))")
+            }
+            // ✅ PRIORITY 2: If no time checkpoint, check for power targets
+            else if !segmentBoundaries.isEmpty {
+                // Find which segment this point belongs to
+                for (start, end, power) in segmentBoundaries {
+                    if pointDistance >= start && pointDistance < end {
+                        // Only add course point at segment starts (within 50m)
+                        let distanceFromStart = abs(pointDistance - start)
+                        if distanceFromStart < 50 {
+                            let coursePoint: [String: Any] = [
+                                "name": "Power \(Int(power))W",
+                                "coursePointType": "INFO"
+                            ]
+                            geoPoint["information"] = coursePoint
+                            break
+                        }
+                    }
+                }
+            }
+            
+            geoPointsArray.append(geoPoint)
+        }
+
+        
+        /*        // Build geoPoints array with power targets
         var geoPointsArray: [[String: Any]] = []
         
         for point in optimizedPoints {
@@ -432,7 +537,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             }
             
             geoPointsArray.append(geoPoint)
-        }
+        } */
         
         // Build the course JSON payload
         let coursePayload: [String: Any] = [
@@ -517,7 +622,39 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             throw GarminError.networkError(error)
         }
     }
-
+    
+    /// Calculates the elapsed time to reach a specific distance in the route
+    private func calculateElapsedTime(
+        toDistance: Double, // in meters
+        pacingPlan: PacingPlan
+    ) -> Double {
+        var elapsedTime: Double = 0
+        
+        for segment in pacingPlan.segments {
+            let segmentStart = segment.originalSegment.startPoint.distance  // in meters
+            let segmentEnd = segment.originalSegment.endPoint.distance      // in meters
+            
+            if toDistance <= segmentStart {
+                // Checkpoint is before this segment starts
+                break
+            }
+            
+            if toDistance >= segmentEnd {
+                // Entire segment is before the checkpoint
+                elapsedTime += segment.estimatedTime
+            } else {
+                // Checkpoint is within this segment
+                let distanceInSegment = toDistance - segmentStart
+                let segmentDistance = segmentEnd - segmentStart
+                let fractionOfSegment = distanceInSegment / segmentDistance
+                elapsedTime += segment.estimatedTime * fractionOfSegment
+                break
+            }
+        }
+        
+        return elapsedTime
+    }
+    
     // Helper to downsample points
     private func optimizeRoutePoints(_ points: [EnhancedRoutePoint], targetCount: Int, boundaries: [(start: Double, end: Double, power: Double)]) -> [EnhancedRoutePoint] {
         guard points.count > targetCount else { return points }
