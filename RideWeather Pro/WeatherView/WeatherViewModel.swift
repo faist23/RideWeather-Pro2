@@ -205,30 +205,32 @@ class WeatherViewModel: ObservableObject {
     
     func importRoute(from url: URL) {
         Task {
-            uiState = .parsing(0.0)
+            // ✅ FIX: Use .loading immediately (Indeterminate Spinner)
+            // This ensures we see "Working" the whole time, not a progress bar.
+            uiState = .loading
+            
             weatherDataForRoute = []
             routePoints = []
             elevationAnalysis = nil
-            authoritativeRouteDistanceMeters = nil // ✅ ADD THIS
+            authoritativeRouteDistanceMeters = nil
             
-            // ✅ Use the helper method for consistency
-             clearAdvancedPlan()
-             
-            // Store filename information
+            clearAdvancedPlan()
+            
             let fileName = url.lastPathComponent
             self.lastImportedFileName = fileName
             self.importedRouteDisplayName = cleanFileName(fileName)
-
+            
             let parser = RouteParser()
             let isAccessing = url.startAccessingSecurityScopedResource()
             defer { if isAccessing { url.stopAccessingSecurityScopedResource() } }
-
+            
             do {
                 let fileData = try Data(contentsOf: url)
-                uiState = .parsing(0.2)
+                // Note: Removed intermediate .parsing updates to prevent UI flicker/progress ring
                 
                 let result: (coordinates: [CLLocationCoordinate2D], elevationAnalysis: ElevationAnalysis?)
                 let fileExtension = url.pathExtension.lowercased()
+                
                 if fileExtension == "gpx" {
                     result = try parser.parseWithElevation(gpxData: fileData)
                 } else if fileExtension == "fit" {
@@ -236,33 +238,25 @@ class WeatherViewModel: ObservableObject {
                 } else {
                     throw RouteParseError.unknownFileType
                 }
-
-                uiState = .parsing(0.8)
-                try await Task.sleep(nanoseconds: 200_000_000)
-
+                
                 self.routePoints = result.coordinates
                 self.elevationAnalysis = result.elevationAnalysis
-                
-                // ✅ ADD THIS: Calculate distance for file-based imports
                 self.authoritativeRouteDistanceMeters = self.calculateTotalDistance(result.coordinates)
+                self.powerAnalysisResult = nil
                 
-                self.powerAnalysisResult = nil // Clear the cache
-
-                self.finalizeRouteImport()
-
+                // Heavy calculation (async) - Spinner continues spinning
+                await self.finalizeRouteImport()
+                
                 if let analysis = result.elevationAnalysis, analysis.hasActualData {
-                    print("✅ Successfully imported route with elevation data. Total Gain: \(analysis.totalGain)m")
-                } else {
-                    print("⚠️ Route imported, but no elevation data was found or generated.")
+                    print("✅ Successfully imported route with elevation data.")
                 }
                 
-                // Fetch extended hourly data for the new route
+                // Fetch weather - Spinner continues spinning
                 try await self.fetchExtendedHourlyData()
-
+                
                 uiState = .loaded
                 hapticsManager.triggerSuccess()
             } catch {
-                // Clear filename info on error
                 self.lastImportedFileName = nil
                 self.importedRouteDisplayName = ""
                 uiState = .error("Failed to parse route file: \(error.localizedDescription)")
@@ -672,15 +666,54 @@ extension WeatherViewModel {
 extension WeatherViewModel {
     
     /// Call this after importing a route to prepare for FIT export
-    func finalizeRouteImport() {
-        buildEnhancedRoutePoints()
+    func finalizeRouteImport() async {
+        await buildEnhancedRoutePoints()
     }
 }
 
 extension WeatherViewModel {
     
+    /// Builds enhanced route points in background to keep UI responsive
+    func buildEnhancedRoutePoints() async {
+        // 1. Capture data LOCALLY on the Main Thread before detaching
+        let rawPoints = self.routePoints
+        let localElevationAnalysis = self.elevationAnalysis // <--- Capture copy here
+        
+        // 2. Run heavy calculation in a detached task (Background Thread)
+        let enhanced = await Task.detached(priority: .userInitiated) {
+            var points: [EnhancedRoutePoint] = []
+            var cumulativeDistance = 0.0
+            var previousCoordinate: CLLocationCoordinate2D?
+            
+            for coordinate in rawPoints {
+                if let prevCoord = previousCoordinate {
+                    let loc1 = CLLocation(latitude: prevCoord.latitude, longitude: prevCoord.longitude)
+                    let loc2 = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                    cumulativeDistance += loc2.distance(from: loc1)
+                }
+                
+                // Use the LOCAL copy, not self.elevationAnalysis
+                let elevation = localElevationAnalysis?.elevation(at: cumulativeDistance)
+                
+                points.append(EnhancedRoutePoint(
+                    coordinate: coordinate,
+                    elevation: elevation,
+                    distance: cumulativeDistance,
+                    timestamp: nil
+                ))
+                
+                previousCoordinate = coordinate
+            }
+            return points
+        }.value
+        
+        // 3. Update UI on Main Actor
+        self.enhancedRoutePoints = enhanced
+        print("✅ Built \(enhanced.count) enhanced route points (Async)")
+    }
+
     /// Builds enhanced route points from basic coordinates and elevation data
-    func buildEnhancedRoutePoints() {
+/*    func buildEnhancedRoutePoints() {
         guard !routePoints.isEmpty else {
             enhancedRoutePoints = []
             return
@@ -715,13 +748,13 @@ extension WeatherViewModel {
         
         self.enhancedRoutePoints = enhanced
         print("✅ Built \(enhanced.count) enhanced route points")
-    }
+    }*/
     
     /// Export Garmin Course FIT file with power targets
     func exportGarminCourseFIT() async throws -> URL? {
         // Build enhanced points if not already done
         if enhancedRoutePoints.isEmpty {
-            buildEnhancedRoutePoints()
+            await buildEnhancedRoutePoints()
         }
         
         guard let controller = advancedController,

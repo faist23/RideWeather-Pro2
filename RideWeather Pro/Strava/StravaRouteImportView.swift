@@ -68,15 +68,24 @@ struct StravaRoutesTab: View {
     @State private var importingId: Int? = nil // For per-row loading
     
     var body: some View {
-        Group {
-            if viewModel.isLoading && viewModel.routes.isEmpty {
-                ProgressView("Loading routes...")
-            } else if let error = viewModel.errorMessage {
-                errorView(error: error)
-            } else if viewModel.routes.isEmpty {
-                emptyRoutesView
-            } else {
-                routesList
+        ZStack { // <--- Wrapped in ZStack
+            // 1. Main Content Logic
+            Group {
+                if viewModel.isLoading && viewModel.routes.isEmpty {
+                    ProgressView("Loading routes...")
+                } else if let error = viewModel.errorMessage {
+                    errorView(error: error)
+                } else if viewModel.routes.isEmpty {
+                    emptyRoutesView
+                } else {
+                    routesList
+                }
+            }
+            
+            // Consistent Processing Overlay
+            if viewModel.isImporting {
+                ProcessingOverlay(message: "Importing Route...", progress: nil)
+                    .zIndex(1)
             }
         }
         .onAppear {
@@ -109,14 +118,10 @@ struct StravaRoutesTab: View {
                         StravaRouteRow(route: route)
                             .environmentObject(weatherViewModel)
                         Spacer()
-                        if importingId == route.id {
-                            ProgressView()
-                                .frame(width: 20)
-                        } else {
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.bold))
-                                .foregroundColor(.secondary.opacity(0.5))
-                        }
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(.secondary.opacity(0.5))
                     }
                 }
                 .buttonStyle(.plain)
@@ -174,15 +179,23 @@ struct StravaActivitiesTab: View {
     @State private var importingId: Int? = nil // For per-row loading
     
     var body: some View {
-        Group {
-            if viewModel.isLoading && viewModel.activities.isEmpty {
-                ProgressView("Loading activities...")
-            } else if let error = viewModel.errorMessage {
-                errorView(error: error)
-            } else if viewModel.activities.isEmpty {
-                emptyActivitiesView
-            } else {
-                activitiesList
+        ZStack { // ✅ Wrapped in ZStack
+            Group {
+                if viewModel.isLoading && viewModel.activities.isEmpty {
+                    ProgressView("Loading activities...")
+                } else if let error = viewModel.errorMessage {
+                    errorView(error: error)
+                } else if viewModel.activities.isEmpty {
+                    emptyActivitiesView
+                } else {
+                    activitiesList
+                }
+            }
+            
+            // ✅ Consistent Processing Overlay
+            if viewModel.isImporting {
+                ProcessingOverlay(message: "Importing Activity...", progress: nil)
+                    .zIndex(1)
             }
         }
         .onAppear {
@@ -234,14 +247,10 @@ struct StravaActivitiesTab: View {
                         StravaActivityRow(activity: activity)
                             .environmentObject(weatherViewModel)
                         Spacer()
-                        if importingId == activity.id {
-                            ProgressView()
-                                .frame(width: 20)
-                        } else {
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.bold))
-                                .foregroundColor(.secondary.opacity(0.5))
-                        }
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(.secondary.opacity(0.5))
                     }
                 }
                 .buttonStyle(.plain)
@@ -501,7 +510,7 @@ class StravaRoutesViewModel: ObservableObject {
                 
                 print("🔵 Step 3: Updating weather view model")
                 
-                await MainActor.run {
+//                await MainActor.run {
                     // Clear the previous pacing plan when importing new route
                      weatherViewModel.clearAdvancedPlan()
                      
@@ -522,7 +531,7 @@ class StravaRoutesViewModel: ObservableObject {
                     
                     // If we have elevation analysis, trigger finalize to prepare for power analysis
                     if elevationAnalysis != nil {
-                        weatherViewModel.finalizeRouteImport()
+                        await weatherViewModel.finalizeRouteImport()
                     }
                     
                     print("🔵 Step 6: Import complete")
@@ -533,7 +542,7 @@ class StravaRoutesViewModel: ObservableObject {
                     
                     print("🔵 Step 7: Calling onSuccess callback")
                     onSuccess()
-                }
+ //               }
                 
             } catch {
                 print("❌ Import failed: \(error.localizedDescription)")
@@ -667,7 +676,7 @@ class StravaActivitiesImportViewModel: ObservableObject {
                 
                 print("🔵 Step 3: Updating weather view model")
                 
-                await MainActor.run {
+//                await MainActor.run {
                     // Clear the previous pacing plan when importing new route
                      weatherViewModel.clearAdvancedPlan()
                      
@@ -688,7 +697,7 @@ class StravaActivitiesImportViewModel: ObservableObject {
                     
                     // If we have elevation analysis, trigger finalize to prepare for power analysis
                     if elevationAnalysis != nil {
-                        weatherViewModel.finalizeRouteImport()
+                        await weatherViewModel.finalizeRouteImport()
                     }
                     
                     print("🔵 Step 7: Import complete")
@@ -699,7 +708,7 @@ class StravaActivitiesImportViewModel: ObservableObject {
                     
                     print("🔵 Step 8: Calling onSuccess callback")
                     onSuccess()
-                }
+//                }
                 
             } catch {
                 print("❌ Import failed: \(error.localizedDescription)")

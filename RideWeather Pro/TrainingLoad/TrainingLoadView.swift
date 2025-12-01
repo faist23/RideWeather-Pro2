@@ -965,8 +965,8 @@ class TrainingLoadViewModel: ObservableObject {
         totalDaysInStorage = manager.loadAllDailyLoads().count
     }
     
-    func loadPeriod(_ period: TrainingLoadPeriod) {
-        guard currentPeriodDays != period.days else {
+    func loadPeriod(_ period: TrainingLoadPeriod, forceReload: Bool = false) {
+        guard forceReload || currentPeriodDays != period.days else {
             print("📊 Chart: Period unchanged, skipping reload")
             return
         }

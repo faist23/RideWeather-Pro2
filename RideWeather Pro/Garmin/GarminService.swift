@@ -357,7 +357,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             .trimmingCharacters(in: CharacterSet(charactersIn: "-._ "))
             .prefix(100)
         
-        // Calculate course statistics
+        // Calculate course statistics on FULL dataset for accuracy
         let totalDistance = routePoints.last?.distance ?? 0.0
         var elevationGain: Double = 0.0
         var elevationLoss: Double = 0.0
@@ -374,9 +374,6 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             }
         }
         
-        // Build geoPoints array with power targets
-        var geoPointsArray: [[String: Any]] = []
-        
         // ✅ Build a lookup map of segment boundaries
         var segmentBoundaries: [(start: Double, end: Double, power: Double)] = []
         if let plan = pacingPlan {
@@ -390,7 +387,19 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             print("GarminService: Built \(segmentBoundaries.count) segment boundaries")
         }
         
-        for point in routePoints {
+        // ✅ OPTIMIZATION: Reduce points to avoid 400 Bad Request (Limit Exceeded)
+        // Garmin API limit is ~3500-5000 points. We'll target 3500.
+        let optimizedPoints = optimizeRoutePoints(
+            routePoints,
+            targetCount: 3500,
+            boundaries: segmentBoundaries
+        )
+        print("GarminService: Optimized route from \(routePoints.count) to \(optimizedPoints.count) points")
+        
+        // Build geoPoints array with power targets
+        var geoPointsArray: [[String: Any]] = []
+        
+        for point in optimizedPoints {
             var geoPoint: [String: Any] = [
                 "latitude": point.coordinate.latitude,
                 "longitude": point.coordinate.longitude
@@ -509,7 +518,53 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         }
     }
 
-    
+    // Helper to downsample points
+    private func optimizeRoutePoints(_ points: [EnhancedRoutePoint], targetCount: Int, boundaries: [(start: Double, end: Double, power: Double)]) -> [EnhancedRoutePoint] {
+        guard points.count > targetCount else { return points }
+        
+        var indicesToKeep = Set<Int>()
+        indicesToKeep.insert(0)
+        indicesToKeep.insert(points.count - 1)
+        
+        // 1. Preserve points that MUST be kept for segment markers
+        // We find the index closest to each segment start distance
+        for (start, _, _) in boundaries {
+            // Find best matching point
+            // Optimization: Assume array is somewhat linear, but binary search or simple scan is safer
+            // Given the array is sorted by distance, we could binary search.
+            // For simplicity and robustness with 20k points, we can do a distance-based search.
+            
+            // Find closest index
+            // Note: Swift's `min(by:)` on the whole array is slow.
+            // We'll use a fast approximation: distance / totalDistance * count
+            
+            let approximateIndex = Int((start / (points.last?.distance ?? 1)) * Double(points.count))
+            let searchRange = max(0, approximateIndex - 500)...min(points.count - 1, approximateIndex + 500)
+            
+            var bestIdx = approximateIndex
+            var bestDiff = Double.greatestFiniteMagnitude
+            
+            for i in searchRange {
+                let diff = abs(points[i].distance - start)
+                if diff < bestDiff {
+                    bestDiff = diff
+                    bestIdx = i
+                }
+            }
+            indicesToKeep.insert(bestIdx)
+        }
+        
+        // 2. Uniformly sample the rest to reach target count
+        let step = Double(points.count) / Double(targetCount)
+        var current: Double = 0
+        while current < Double(points.count) {
+            indicesToKeep.insert(Int(current))
+            current += step
+        }
+        
+        let sortedIndices = indicesToKeep.sorted()
+        return sortedIndices.map { points[$0] }
+    }
     
     /// Helper function to attempt upload to a specific endpoint
     private func attemptUpload(to urlString: String, fitData: Data, courseName: String, token: String) async throws {

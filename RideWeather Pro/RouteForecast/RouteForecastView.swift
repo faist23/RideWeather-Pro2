@@ -66,6 +66,7 @@ struct RouteForecastView: View {
     var body: some View {
         NavigationStack {
             ZStack {
+                // 1. Main Content Content
                 switch currentView {
                 case .empty:
                     emptyStateView
@@ -75,12 +76,18 @@ struct RouteForecastView: View {
                     analysisView
                 }
                 
+                // 2. Success Banner (Existing)
                 if showImportSuccess {
                     VStack {
                         importSuccessBanner
                         Spacer()
                     }
                     .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                
+                if viewModel.isLoading {
+                    ProcessingOverlay(message: "Importing route...", progress: nil)
+                        .zIndex(2)
                 }
             }
  
@@ -312,7 +319,7 @@ struct RouteForecastView: View {
             OptimizedUnifiedRouteAnalyticsDashboard()
                 .environmentObject(viewModel)
             
-            if viewModel.isLoading {
+/*            if viewModel.isLoading {
                 ZStack {
                     Color.black.opacity(0.3).ignoresSafeArea()
                     VStack(spacing: 16) {
@@ -326,7 +333,7 @@ struct RouteForecastView: View {
                     }
                 }
                 .transition(.opacity)
-            }
+            }*/
         }
     }
     

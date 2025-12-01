@@ -13,7 +13,7 @@ struct StravaActivitiesView: View {
     @StateObject private var viewModel = StravaActivitiesViewModel()
     @Environment(\.dismiss) private var dismiss
     
-    @State private var importingId: Int? = nil // ✅ ADDED: For per-row loading
+    @State private var importingId: Int? = nil // For per-row loading
 
     var body: some View {
         NavigationStack {

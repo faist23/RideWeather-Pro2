@@ -21,15 +21,28 @@ struct WahooRouteImportView: View {
     
     var body: some View {
         NavigationStack {
-            Group {
-                if viewModel.isLoading && viewModel.activities.isEmpty {
-                    ProgressView("Loading activities...")
-                } else if let error = viewModel.errorMessage {
-                    errorView(error: error)
-                } else if viewModel.activities.isEmpty {
-                    emptyActivitiesView
-                } else {
-                    activitiesList
+            ZStack { // 1. Wrap content in ZStack for layering
+                // Main Content Layer
+                Group {
+                    if viewModel.isLoading && viewModel.activities.isEmpty {
+                        ProgressView("Loading activities...")
+                    } else if let error = viewModel.errorMessage {
+                        errorView(error: error)
+                    } else if viewModel.activities.isEmpty {
+                        emptyActivitiesView
+                    } else {
+                        activitiesList
+                    }
+                }
+                
+                // 2. Loading Overlay Layer
+                // This appears on top when the ViewModel is busy importing
+                if viewModel.isImporting {
+                    ProcessingOverlay(
+                        message: "Importing from Wahoo...",
+                        progress: nil // Indeterminate spinner
+                    )
+                    .zIndex(1) // Ensure it sits on top of the list
                 }
             }
             .navigationTitle("Import Wahoo Activity")
@@ -89,18 +102,13 @@ struct WahooRouteImportView: View {
                     )
                 }) {
                     HStack {
-                        // Re-using the row from WahooActivitiesView.swift
                         WahooActivityRow(activity: activity)
                             .environmentObject(weatherViewModel)
                         Spacer()
-                        if importingId == activity.id {
-                            ProgressView()
-                                .frame(width: 20)
-                        } else {
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.bold))
-                                .foregroundColor(.secondary.opacity(0.5))
-                        }
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(.secondary.opacity(0.5))
                     }
                 }
                 .buttonStyle(.plain)
@@ -275,44 +283,42 @@ class WahooActivitiesImportViewModel: ObservableObject {
         
         Task {
             do {
-                // Use the new service function which returns a tuple
+                // 1. Extract Route (Async, Background)
+                // We await this, which suspends the task without blocking the UI
                 let (coordinates, elevationAnalysis) = try await service.extractRouteFromActivity(activityId: activityId)
                 
                 guard !coordinates.isEmpty else {
                     throw WahooService.WahooError.noRouteData
                 }
                 
-                // Update the main view model
-                await MainActor.run {
-                    // Clear the previous pacing plan when importing new route
-                     weatherViewModel.clearAdvancedPlan()
-                     
-                    weatherViewModel.routePoints = coordinates
-                    weatherViewModel.routeDisplayName = activityName
-                    weatherViewModel.importedRouteDisplayName = activityName
-                    
-                    // Populate elevation data
-                    weatherViewModel.elevationAnalysis = elevationAnalysis
-                    
-                    // If we have elevation analysis, trigger finalize to prepare for power analysis
-                    if elevationAnalysis != nil {
-                        weatherViewModel.finalizeRouteImport()
-                    }
-
-                    self.isImporting = false
-                    
-                    let impact = UIImpactFeedbackGenerator(style: .medium)
-                    impact.impactOccurred()
-                    
-                    onSuccess()
+                // 2. Update UI (Main Actor)
+                // Since this class is @MainActor, these run on the main thread automatically
+                weatherViewModel.clearAdvancedPlan()
+                
+                weatherViewModel.routePoints = coordinates
+                weatherViewModel.routeDisplayName = activityName
+                weatherViewModel.importedRouteDisplayName = activityName
+                
+                // Populate elevation data
+                weatherViewModel.elevationAnalysis = elevationAnalysis
+                
+                // 3. Finalize Import (Async)
+                // This was the cause of the error. We must await it now.
+                if elevationAnalysis != nil {
+                    await weatherViewModel.finalizeRouteImport()
                 }
                 
+                self.isImporting = false
+                
+                let impact = UIImpactFeedbackGenerator(style: .medium)
+                impact.impactOccurred()
+                
+                onSuccess()
+                
             } catch {
-                await MainActor.run {
-                    self.errorMessage = "Failed to import route: \(error.localizedDescription)"
-                    self.isImporting = false
-                    onFailure() 
-                }
+                self.errorMessage = "Failed to import route: \(error.localizedDescription)"
+                self.isImporting = false
+                onFailure()
             }
         }
     }

@@ -39,13 +39,29 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     }
     
     var body: some View {
-        Group {
+        ZStack { // ✅ 1. Wrapped in ZStack for layering
+            // Main Content Layer
+            Group {
+                if let analysis = analysisResult {
+                    analysisContentView(analysis)
+                    // If re-analyzing while content exists, dim it slightly
+                        .opacity(isAnalyzing ? 0.6 : 1.0)
+                } else if !isAnalyzing {
+                    analysisErrorView
+                } else {
+                    // Empty background while initial analysis runs
+                    Color.clear
+                }
+            }
+            
+            // ✅ 2. Consistent Processing Overlay
+            // Replaces the old 'analysisLoadingView'
             if isAnalyzing {
-                analysisLoadingView
-            } else if let analysis = analysisResult {
-                analysisContentView(analysis)
-            } else {
-                analysisErrorView
+                ProcessingOverlay(
+                    message: "Analyzing Route...",
+                    progress: nil
+                )
+                .zIndex(10)
             }
         }
         .animatedBackground(
@@ -1340,36 +1356,49 @@ struct UpdatedOptimizedExportTab: View {
     @State private var exportError: String?
     @State private var currentShareItem: URL? = nil
     
+    // ✅ Helper to determine what text to show in the overlay
+    private var activeProcessingMessage: String? {
+        if exportingToGarmin { return "Syncing to Garmin..." }
+        if exportingToWahoo { return "Syncing to Wahoo..." }
+        if exportingFIT { return "Generating FIT File..." }
+        if exportingCSV { return "Exporting CSV..." }
+        if exportingSummary { return "Creating Summary..." }
+        if exportingStemNote { return "Rendering Stem Note..." }
+        return nil
+    }
+    
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 20) {
-                // Route Info Card
-                if !viewModel.routeDisplayName.isEmpty {
-                    RouteInfoCardView(viewModel: viewModel)
+        ZStack { // ✅ 1. Wrap in ZStack
+            ScrollView {
+                LazyVStack(spacing: 20) {
+                    if !viewModel.routeDisplayName.isEmpty {
+                        RouteInfoCardView(viewModel: viewModel)
+                    }
+                    
+                    if viewModel.advancedController?.pacingPlan != nil {
+                        exportOptionsCard
+                    } else {
+                        exportUnavailableCard
+                    }
+                    
+                    exportTipsCard
                 }
-                
-                // Export Status Card
- //               exportStatusCard
-                
-                // Available Export Options
-                if viewModel.advancedController?.pacingPlan != nil {
-                    exportOptionsCard
-                } else {
-                    exportUnavailableCard
-                }
-                
-                // Help & Tips
-                exportTipsCard
+                .padding()
             }
-            .padding()
+            .animatedBackground(
+                gradient: .exportBackground,
+                showDecoration: true,
+                decorationColor: .white,
+                decorationIntensity: 0.06
+            )
+            
+            // ✅ 2. Show Overlay if any export is active
+            if let message = activeProcessingMessage {
+                ProcessingOverlay(message: message, progress: nil)
+                    .zIndex(10)
+            }
         }
-        .animatedBackground(
-            gradient: .exportBackground,
-            showDecoration: true,
-            decorationColor: .white,
-            decorationIntensity: 0.06
-        )
-       .sheet(item: Binding<ShareableItem?>(
+        .sheet(item: Binding<ShareableItem?>(
             get: { currentShareItem.map { ShareableItem(url: $0) } },
             set: { _ in currentShareItem = nil }
         )) { item in
@@ -1613,10 +1642,10 @@ struct UpdatedOptimizedExportTab: View {
     // Updated exportToGarmin() method - passes pacing plan for power targets
 
     private func exportToGarmin() async {
-        await MainActor.run {
+ //       await MainActor.run {
             exportingToGarmin = true
             exportError = nil
-        }
+ //       }
         
         print("📱 UI: exportToGarmin() called")
         
@@ -1625,9 +1654,9 @@ struct UpdatedOptimizedExportTab: View {
         // Build enhanced points if they don't exist
         if viewModel.enhancedRoutePoints.isEmpty {
             print("📱 UI: Building enhanced route points...")
-            await MainActor.run {
-                viewModel.buildEnhancedRoutePoints()
-            }
+//            await MainActor.run {
+                await viewModel.buildEnhancedRoutePoints()
+ //           }
         }
         
         guard let _ = viewModel.advancedController,
@@ -1636,10 +1665,10 @@ struct UpdatedOptimizedExportTab: View {
             
             print("📱 UI: ❌ Prerequisites not met")
             let errorMsg = "No workout data available to sync."
-            await MainActor.run {
+//            await MainActor.run {
                 exportError = errorMsg
                 exportingToGarmin = false
-            }
+//            }
             return
         }
         
@@ -1669,39 +1698,39 @@ struct UpdatedOptimizedExportTab: View {
                 activityType: "ROAD_CYCLING"
             )
             
-            await MainActor.run {
+//            await MainActor.run {
                 exportingToGarmin = false
                 // Show success feedback
                 let notification = UINotificationFeedbackGenerator()
                 notification.notificationOccurred(.success)
-            }
+//            }
             
             print("📱 UI: ✅ Course synced to Garmin successfully!")
             
         } catch {
             print("📱 UI: ❌ Export failed: \(error.localizedDescription)")
-            await MainActor.run {
+//            await MainActor.run {
                 exportError = "Garmin Sync Failed: \(error.localizedDescription)"
                 exportingToGarmin = false
-            }
+ //           }
         }
     }
     
     // MARK: - Updated exportToWahoo() in OptimizedUIComponents.swift
     private func exportToWahoo() async {
         print("📱 UI: exportToWahoo() called")
-        await MainActor.run {
+//        await MainActor.run {
             exportingToWahoo = true
             exportError = nil
-        }
+ //       }
         
         try? await Task.sleep(nanoseconds: 50_000_000)
         
         if viewModel.enhancedRoutePoints.isEmpty {
             print("📱 UI: ❌ No route points")
-            await MainActor.run {
-                viewModel.buildEnhancedRoutePoints()
-            }
+//            await MainActor.run {
+                await viewModel.buildEnhancedRoutePoints()
+ //           }
             print("✅ Built \(viewModel.enhancedRoutePoints.count) enhanced route points")
         }
         
@@ -1711,10 +1740,10 @@ struct UpdatedOptimizedExportTab: View {
             
             let errorMsg = "No workout data available to sync."
             print("📱 UI: ❌ \(errorMsg)")
-            await MainActor.run {
+ //           await MainActor.run {
                 exportError = errorMsg
                 exportingToWahoo = false
-            }
+//            }
             return
         }
         
@@ -1746,16 +1775,16 @@ struct UpdatedOptimizedExportTab: View {
                             routeName: courseName
                         )
             
-            await MainActor.run {
+  //          await MainActor.run {
                 exportingToWahoo = false
-            }
+    //        }
             
         } catch {
             print("📱 UI: ❌ Export failed: \(error.localizedDescription)")
-            await MainActor.run {
+//            await MainActor.run {
                 exportError = "Wahoo Sync Failed: \(error.localizedDescription)"
                 exportingToWahoo = false
-            }
+//            }
         }
     }
 

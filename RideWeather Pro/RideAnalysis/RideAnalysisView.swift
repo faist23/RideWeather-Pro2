@@ -24,14 +24,24 @@ struct RideAnalysisView: View {
 
     var body: some View {
         NavigationView {
-            Group {
-                if viewModel.currentAnalysis == nil {
-                    emptyStateView
-                } else {
-                    analysisResultsView
+            ZStack {
+                // Main Content
+                Group {
+                    if viewModel.currentAnalysis == nil {
+                        emptyStateView
+                    } else {
+                        analysisResultsView
+                    }
+                }
+                if viewModel.isAnalyzing {
+                    ProcessingOverlay(
+                        message: viewModel.analysisStatus.isEmpty ? "Analyzing Ride..." : viewModel.analysisStatus,
+                        progress: nil
+                    )
+                    .zIndex(100) // Ensure it sits above everything
                 }
             }
-//            .navigationTitle("Ride Analysis")
+            //            .navigationTitle("Ride Analysis")
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -221,11 +231,11 @@ struct RideAnalysisView: View {
             
             Spacer()
         }
-        .overlay {
+/*        .overlay {
             if viewModel.isAnalyzing {
                 analyzingOverlay
             }
-        }
+        }*/
     }
     
     private var analyzingOverlay: some View {
@@ -268,14 +278,15 @@ struct RideAnalysisView: View {
                             analysis: analysis,
                             source: viewModel.getRideSource(for: analysis)
                         )
+
+                        .id("top")
+
                         // Quick Stats
                         QuickStatsCard(analysis: analysis, useMetric: weatherViewModel.settings.units == .metric)
                         
                         // Power Metrics Card
                         PowerMetricsCard(analysis: analysis)
                         
-                        .id("top")
-
                         // Add the map card right here
                         if let breadcrumbs = analysis.metadata?.routeBreadcrumbs, !breadcrumbs.isEmpty {
                             RideRouteMapCard(
