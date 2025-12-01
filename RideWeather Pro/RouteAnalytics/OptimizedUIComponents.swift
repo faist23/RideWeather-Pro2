@@ -14,9 +14,9 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     @State private var selectedDistance: Double? = nil
     @State private var analysisResult: ComprehensiveRouteAnalysis? = nil
     @State private var isAnalyzing = true
-
+    
     @State private var lastScrubUpdate = Date()
-
+    
     @State private var mapCameraPosition = MapCameraPosition.automatic
     
     // MARK: - New State for Map Control
@@ -39,7 +39,7 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     }
     
     var body: some View {
-        ZStack { // ✅ 1. Wrapped in ZStack for layering
+        ZStack { // 1. Wrapped in ZStack for layering
             // Main Content Layer
             Group {
                 if let analysis = analysisResult {
@@ -54,59 +54,58 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
                 }
             }
             
-            // ✅ 2. Consistent Processing Overlay
-            // Replaces the old 'analysisLoadingView'
+            // 2. Consistent Processing Overlay
             if isAnalyzing {
-                ProcessingOverlay(
-                    message: "Analyzing Route...",
-                    progress: nil
+                ProcessingOverlay.analyzing(
+                    "Analyzing Route",
+                    subtitle: "Processing weather, terrain, and timing"
                 )
                 .zIndex(10)
             }
         }
         .animatedBackground(
-             gradient: .analysisDashboardBackground,
-             showDecoration: true,
-             decorationColor: .white,
-             decorationIntensity: 0.06
-         )
+            gradient: .analysisDashboardBackground,
+            showDecoration: true,
+            decorationColor: .white,
+            decorationIntensity: 0.06
+        )
         .task {
             // This task ONLY performs analysis now
             await performAnalysis()
         }
-        // ✅ ADD THIS: Re-run analysis when the weather data updates
+        // Re-run analysis when the weather data updates
         .onChange(of: viewModel.weatherDataForRoute.count) { _, _ in
             Task { await performAnalysis() }
         }
-        // ✅ ADD THIS: Also listen for timestamp changes (e.g. same route, new start time)
+        // Also listen for timestamp changes (e.g. same route, new start time)
         .onChange(of: viewModel.weatherDataForRoute.first?.eta) { _, _ in
             Task { await performAnalysis() }
         }
         .onChange(of: selectedDistance) { _, newDistance in
             guard let analysis = analysisResult else { return }
-
+            
             if let newDistance = newDistance {
                 // hide cards
                 // (they’ll hide automatically now because scrubbingMarkerCoordinate != nil)
-
+                
                 // throttle to ~20–30 fps
                 let now = Date()
                 if now.timeIntervalSince(lastScrubUpdate) < 0.033 { return }
                 lastScrubUpdate = now
-
+                
                 let meters = newDistance * (analysis.settings.units == .metric ? 1000 : 1609.34)
                 if let newCoord = coordinate(at: meters, on: viewModel.routePoints) {
                     // ⚠️ remove animations entirely — MapKit updates fast markers better without them
                     scrubbingMarkerCoordinate = newCoord
                 }
-
+                
             } else {
                 // show cards again when done
                 scrubbingMarkerCoordinate = nil
             }
-
+            
         }
-
+        
     }
     
     // MARK: - Loading View
@@ -130,7 +129,7 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
             }
             .padding(32)
             .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 16)) // Made darker
-
+            
             Spacer()
         }
         .padding()
@@ -172,7 +171,6 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
             .padding(.horizontal)
             .padding(.top)
             
-            // ... (ScrollView with cards is unchanged) ...
             ScrollView {
                 LazyVStack(spacing: 20) {
                     RouteInfoCardView(viewModel: viewModel)
@@ -282,65 +280,65 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     private func coordinate(at distanceMeters: Double,
                             on polyline: [CLLocationCoordinate2D]) -> CLLocationCoordinate2D? {
         guard polyline.count > 1 else { return polyline.first }
-
+        
         var cumulative: Double = 0
         var interpolated: CLLocationCoordinate2D? = nil
-
+        
         for i in 0..<(polyline.count - 1) {
             let a = polyline[i]
             let b = polyline[i + 1]
-
+            
             let aLoc = CLLocation(latitude: a.latitude, longitude: a.longitude)
             let bLoc = CLLocation(latitude: b.latitude, longitude: b.longitude)
             let segment = bLoc.distance(from: aLoc)
             if segment == 0 { continue }
-
+            
             if cumulative + segment >= distanceMeters {
                 let remaining = distanceMeters - cumulative
                 let t = max(0, min(1, remaining / segment))
-
+                
                 // --- Great-circle interpolation (geodesic) ---
                 let lat1 = a.latitude * .pi / 180
                 let lon1 = a.longitude * .pi / 180
                 let lat2 = b.latitude * .pi / 180
                 let lon2 = b.longitude * .pi / 180
-
+                
                 let d = 2 * asin(sqrt(pow(sin((lat2 - lat1)/2), 2)
-                                     + cos(lat1) * cos(lat2) * pow(sin((lon2 - lon1)/2), 2)))
+                                      + cos(lat1) * cos(lat2) * pow(sin((lon2 - lon1)/2), 2)))
                 if d == 0 {
                     interpolated = a
                     break
                 }
-
+                
                 let A = sin((1 - t) * d) / sin(d)
                 let B = sin(t * d) / sin(d)
-
+                
                 let x = A * cos(lat1) * cos(lon1) + B * cos(lat2) * cos(lon2)
                 let y = A * cos(lat1) * sin(lon1) + B * cos(lat2) * sin(lon2)
                 let z = A * sin(lat1) + B * sin(lat2)
-
+                
                 let newLat = atan2(z, sqrt(x * x + y * y))
                 let newLon = atan2(y, x)
-
+                
                 interpolated = CLLocationCoordinate2D(
                     latitude: newLat * 180 / .pi,
                     longitude: newLon * 180 / .pi
                 )
                 break
             }
-
+            
             cumulative += segment
         }
-
+        
         guard let coord = interpolated ?? polyline.last else { return polyline.last }
-
+        
         // --- Optional off-path correction built-in ---
         let coordLoc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
         var nearest = polyline.first!
         var nearestDist = coordLoc.distance(
             from: CLLocation(latitude: nearest.latitude, longitude: nearest.longitude)
         )
-
+        
         for point in polyline {
             let d = coordLoc.distance(
                 from: CLLocation(latitude: point.latitude, longitude: point.longitude)
@@ -350,7 +348,7 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
                 nearestDist = d
             }
         }
-
+        
         // Snap if >15 m away from actual route vertex
         if nearestDist > 15 {
             return nearest
@@ -358,7 +356,7 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
             return coord
         }
     }
-
+    
     // MARK: - NEW HELPER: Map Centering
     
     /// Calculates and sets the camera position to fit the entire route.
@@ -1357,19 +1355,31 @@ struct UpdatedOptimizedExportTab: View {
     @State private var exportError: String?
     @State private var currentShareItem: URL? = nil
     
-    // ✅ Helper to determine what text to show in the overlay
-    private var activeProcessingMessage: String? {
-        if exportingToGarmin { return "Syncing to Garmin..." }
-        if exportingToWahoo { return "Syncing to Wahoo..." }
-        if exportingFIT { return "Generating FIT File..." }
-        if exportingCSV { return "Exporting CSV..." }
-        if exportingSummary { return "Creating Summary..." }
-        if exportingStemNote { return "Rendering Stem Note..." }
+    // Helper to determine what text to show in the overlay
+    private var activeProcessingOverlay: ProcessingOverlay? {
+        if exportingToGarmin {
+            return .syncing("Garmin", subtitle: "Pushing course with power targets")
+        }
+        if exportingToWahoo {
+            return .syncing("Wahoo", subtitle: "Uploading route data")
+        }
+        if exportingFIT {
+            return .generating("FIT File", subtitle: "Creating course file")
+        }
+        if exportingCSV {
+            return .exporting("CSV", subtitle: "Formatting segment data")
+        }
+        if exportingSummary {
+            return .exporting("Summary", subtitle: "Creating race day notes")
+        }
+        if exportingStemNote {
+            return .exporting("Stem Note", subtitle: "Rendering cue sheet image")
+        }
         return nil
     }
     
     var body: some View {
-        ZStack { // ✅ 1. Wrap in ZStack
+        ZStack { // 1. Wrap in ZStack
             ScrollView {
                 LazyVStack(spacing: 20) {
                     if !viewModel.routeDisplayName.isEmpty {
@@ -1393,10 +1403,9 @@ struct UpdatedOptimizedExportTab: View {
                 decorationIntensity: 0.06
             )
             
-            // ✅ 2. Show Overlay if any export is active
-            if let message = activeProcessingMessage {
-                ProcessingOverlay(message: message, progress: nil)
-                    .zIndex(10)
+            // 2. Show Overlay if any export is active
+            if let overlay = activeProcessingOverlay {
+                overlay.zIndex(10)
             }
         }
         .sheet(item: Binding<ShareableItem?>(
@@ -1470,11 +1479,7 @@ struct UpdatedOptimizedExportTab: View {
                 .tint(.primary) // Garmin is black/blue, primary works well
                 .disabled(!garminService.isAuthenticated)
                 
-//                // Use the improved Garmin sync component
-//                ImprovedExportToGarmin(viewModel: viewModel)
-//                    .environmentObject(garminService)
-                
-               ExportOptionButton(
+                ExportOptionButton(
                     title: "Sync to Wahoo",
                     subtitle: "Push route to your Wahoo ELEMNT",
                     icon: "w.circle.fill", // Use a Wahoo-like icon
@@ -1484,7 +1489,7 @@ struct UpdatedOptimizedExportTab: View {
                 }
                 .tint(.blue) // Wahoo-ish color
                 .disabled(!wahooService.isAuthenticated)
-
+                
                 ExportOptionButton(
                     title: "Export Garmin Course FIT",
                     subtitle: "GPS route with power guidance for Garmin devices",
@@ -1504,7 +1509,7 @@ struct UpdatedOptimizedExportTab: View {
                 }
                 .tint(.indigo)
                 
- //               Divider().padding(.vertical, 4) // Visual separator
+                // Divider().padding(.vertical, 4) // Visual separator
                 
                 ExportOptionButton(
                     title: "Export CSV Data",
@@ -1590,7 +1595,7 @@ struct UpdatedOptimizedExportTab: View {
                     icon: "desktopcomputer",
                     text: "Upload FIT files to Garmin Connect or Wahoo, then sync to your device"
                 )
-
+                
                 TipRow(
                     icon: "map",
                     text: "Course files show GPS route + power targets on your bike computer"
@@ -1629,24 +1634,22 @@ struct UpdatedOptimizedExportTab: View {
             suffix: "",
             extension: ""
         )
-        .replacingOccurrences(of: "_", with: " ")
-        .replacingOccurrences(of: "\n", with: " ")
-        .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         
         return "\(baseName)-paced \(dateString)"
     }
-
-
-
+    
+    
+    
     // MARK: - Export Methods
     
     // Updated exportToGarmin() method - passes pacing plan for power targets
-
+    
     private func exportToGarmin() async {
- //       await MainActor.run {
-            exportingToGarmin = true
-            exportError = nil
- //       }
+        exportingToGarmin = true
+        exportError = nil
         
         print("📱 UI: exportToGarmin() called")
         
@@ -1655,9 +1658,7 @@ struct UpdatedOptimizedExportTab: View {
         // Build enhanced points if they don't exist
         if viewModel.enhancedRoutePoints.isEmpty {
             print("📱 UI: Building enhanced route points...")
-//            await MainActor.run {
-                await viewModel.buildEnhancedRoutePoints()
- //           }
+            await viewModel.buildEnhancedRoutePoints()
         }
         
         guard let _ = viewModel.advancedController,
@@ -1666,32 +1667,23 @@ struct UpdatedOptimizedExportTab: View {
             
             print("📱 UI: ❌ Prerequisites not met")
             let errorMsg = "No workout data available to sync."
-//            await MainActor.run {
-                exportError = errorMsg
-                exportingToGarmin = false
-//            }
+            exportError = errorMsg
+            exportingToGarmin = false
             return
         }
         
         print("📱 UI: ✅ Prerequisites validated")
         print("📱 UI: Route points: \(viewModel.enhancedRoutePoints.count)")
         print("📱 UI: Pacing segments: \(pacingPlan.segments.count)")
-
+        
         let courseName = generateCourseName()
-/*        let courseName = viewModel.generateExportFilename(
-            baseName: viewModel.routeDisplayName,
-            suffix: "",
-            extension: ""
-        )
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: "\n", with: " ")
- */
+
         print("📱 UI: Course name: \(courseName)")
         
         do {
             print("📱 UI: Calling garminService.uploadCourse()...")
             
-            // ✅ Upload with route points AND pacing plan for power targets
+            // Upload with route points AND pacing plan for power targets
             try await garminService.uploadCourse(
                 routePoints: viewModel.enhancedRoutePoints,
                 courseName: courseName,
@@ -1700,39 +1692,31 @@ struct UpdatedOptimizedExportTab: View {
                 activityType: "ROAD_CYCLING"
             )
             
-//            await MainActor.run {
-                exportingToGarmin = false
-                // Show success feedback
-                let notification = UINotificationFeedbackGenerator()
-                notification.notificationOccurred(.success)
-//            }
+            exportingToGarmin = false
+            // Show success feedback
+            let notification = UINotificationFeedbackGenerator()
+            notification.notificationOccurred(.success)
             
             print("📱 UI: ✅ Course synced to Garmin successfully!")
             
         } catch {
             print("📱 UI: ❌ Export failed: \(error.localizedDescription)")
-//            await MainActor.run {
-                exportError = "Garmin Sync Failed: \(error.localizedDescription)"
-                exportingToGarmin = false
- //           }
+            exportError = "Garmin Sync Failed: \(error.localizedDescription)"
+            exportingToGarmin = false
         }
     }
     
     // MARK: - Updated exportToWahoo() in OptimizedUIComponents.swift
     private func exportToWahoo() async {
         print("📱 UI: exportToWahoo() called")
-//        await MainActor.run {
-            exportingToWahoo = true
-            exportError = nil
- //       }
+        exportingToWahoo = true
+        exportError = nil
         
         try? await Task.sleep(nanoseconds: 50_000_000)
         
         if viewModel.enhancedRoutePoints.isEmpty {
             print("📱 UI: ❌ No route points")
-//            await MainActor.run {
-                await viewModel.buildEnhancedRoutePoints()
- //           }
+            await viewModel.buildEnhancedRoutePoints()
             print("✅ Built \(viewModel.enhancedRoutePoints.count) enhanced route points")
         }
         
@@ -1742,10 +1726,8 @@ struct UpdatedOptimizedExportTab: View {
             
             let errorMsg = "No workout data available to sync."
             print("📱 UI: ❌ \(errorMsg)")
- //           await MainActor.run {
-                exportError = errorMsg
-                exportingToWahoo = false
-//            }
+            exportError = errorMsg
+            exportingToWahoo = false
             return
         }
         
@@ -1772,24 +1754,20 @@ struct UpdatedOptimizedExportTab: View {
             print("📱 UI: Calling wahooService.uploadPlanToWahoo()...")
             
             // Use the route upload method. The FIT file already contains the power plan.
-                        try await wahooService.uploadRouteToWahoo(
-                            fitData: data,
-                            routeName: courseName
-                        )
+            try await wahooService.uploadRouteToWahoo(
+                fitData: data,
+                routeName: courseName
+            )
             
-  //          await MainActor.run {
-                exportingToWahoo = false
-    //        }
+            exportingToWahoo = false
             
         } catch {
             print("📱 UI: ❌ Export failed: \(error.localizedDescription)")
-//            await MainActor.run {
-                exportError = "Wahoo Sync Failed: \(error.localizedDescription)"
-                exportingToWahoo = false
-//            }
+            exportError = "Wahoo Sync Failed: \(error.localizedDescription)"
+            exportingToWahoo = false
         }
     }
-
+    
     private func exportFitFile() async {
         await MainActor.run {
             exportingFIT = true

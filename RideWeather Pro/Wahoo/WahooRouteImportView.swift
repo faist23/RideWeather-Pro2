@@ -38,11 +38,11 @@ struct WahooRouteImportView: View {
                 // 2. Loading Overlay Layer
                 // This appears on top when the ViewModel is busy importing
                 if viewModel.isImporting {
-                    ProcessingOverlay(
-                        message: "Importing from Wahoo...",
-                        progress: nil // Indeterminate spinner
+                    ProcessingOverlay.importing(
+                        "Wahoo Activity",
+                        subtitle: "Extracting route and elevation"
                     )
-                    .zIndex(1) // Ensure it sits on top of the list
+                    .zIndex(1)
                 }
             }
             .navigationTitle("Import Wahoo Activity")

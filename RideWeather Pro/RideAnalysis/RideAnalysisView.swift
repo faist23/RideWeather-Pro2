@@ -34,13 +34,13 @@ struct RideAnalysisView: View {
                     }
                 }
                 if viewModel.isAnalyzing {
-                    ProcessingOverlay(
-                        message: viewModel.analysisStatus.isEmpty ? "Analyzing Ride..." : viewModel.analysisStatus,
-                        progress: nil
+                    ProcessingOverlay.analyzing(
+                        "Analyzing Ride",
+                        subtitle: viewModel.analysisStatus.isEmpty ? nil : viewModel.analysisStatus
                     )
-                    .zIndex(100) // Ensure it sits above everything
+                    .zIndex(100)
                 }
-            }
+           }
             //            .navigationTitle("Ride Analysis")
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -230,37 +230,6 @@ struct RideAnalysisView: View {
             }
             
             Spacer()
-        }
-/*        .overlay {
-            if viewModel.isAnalyzing {
-                analyzingOverlay
-            }
-        }*/
-    }
-    
-    private var analyzingOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
-            
-            VStack(spacing: 16) {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    .scaleEffect(1.5)
-                
-                Text("Analyzing Ride...")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                
-                Text(viewModel.analysisStatus)
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.8))
-            }
-            .padding(32)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(.systemGray6))
-            )
         }
     }
     

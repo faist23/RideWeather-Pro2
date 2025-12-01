@@ -114,7 +114,7 @@ struct TrainingLoadView: View {
                         
                         // Insights
                         TrainingLoadInsightsSection(insights: viewModel.insights)
-
+                        
                         // Training Load Chart
                         TrainingLoadChart(
                             dailyLoads: viewModel.dailyLoads,
@@ -227,7 +227,11 @@ struct TrainingLoadView: View {
             }
             .overlay {
                 if syncManager.isSyncing {
-                    syncingOverlay
+                    ProcessingOverlay.syncing(
+                        "Strava",
+                        subtitle: syncManager.syncStatus
+                    )
+                    .zIndex(100)
                 }
             }
             .animatedBackground(
@@ -272,29 +276,6 @@ struct TrainingLoadView: View {
             .onChange(of: healthManager.readiness) {
                 viewModel.refresh(readiness: healthManager.readiness)
             }
-        }
-    }
-    
-    private var syncingOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
-            
-            VStack(spacing: 16) {
-                ProgressView(value: syncManager.syncProgress)
-                    .progressViewStyle(.linear)
-                    .tint(.blue)
-                    .frame(width: 200)
-                
-                Text(syncManager.syncStatus)
-                    .font(.headline)
-                    .foregroundColor(.white)
-            }
-            .padding(32)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(.systemGray6))
-            )
         }
     }
     
