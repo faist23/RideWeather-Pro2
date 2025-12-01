@@ -34,12 +34,12 @@ struct GarminCourseFitGenerator {
     
     /// Generates a Garmin Course FIT file with power targets embedded in course points
     func generateCourseFIT(
-            routePoints: [EnhancedRoutePoint],
-            pacingPlan: PacingPlan,
-            courseName: String,
-            settings: AppSettings,
-            includeRecordMessages: Bool = true // <-- ADD THIS PARAMETER
-        ) throws -> Data {
+        routePoints: [EnhancedRoutePoint],
+        pacingPlan: PacingPlan,
+        courseName: String,
+        settings: AppSettings,
+        includeRecordMessages: Bool = true // <-- ADD THIS PARAMETER
+    ) throws -> Data {
         
         guard !routePoints.isEmpty else {
             throw CourseExportError.noRoutePoints
@@ -61,32 +61,32 @@ struct GarminCourseFitGenerator {
         // 2. Write Course Message (metadata)
         try writeCourseMessage(encoder: encoder, courseName: courseName, pacingPlan: pacingPlan)
         
-            // 3. Write Lap Message (single lap for the entire course)
-            try writeLapMessage(encoder: encoder, routePoints: routePoints, pacingPlan: pacingPlan)
-            
-            // 4. Write Course Points with Power Targets
-            try writeCoursePointsWithPowerAndTimeTargets(
+        // 3. Write Lap Message (single lap for the entire course)
+        try writeLapMessage(encoder: encoder, routePoints: routePoints, pacingPlan: pacingPlan)
+        
+        // 4. Write Course Points with Power Targets
+        try writeCoursePointsWithPowerAndTimeTargets(
+            encoder: encoder,
+            routePoints: routePoints,
+            pacingPlan: pacingPlan,
+            settings: settings
+        )
+        
+        // 5. Write Record Messages (GPS track with power at each point)
+        if includeRecordMessages { // <-- ADD THIS IF-STATEMENT
+            try writeRecordMessages(
                 encoder: encoder,
                 routePoints: routePoints,
-                pacingPlan: pacingPlan,
-                settings: settings
+                pacingPlan: pacingPlan
             )
-
-            // 5. Write Record Messages (GPS track with power at each point)
-            if includeRecordMessages { // <-- ADD THIS IF-STATEMENT
-                try writeRecordMessages(
-                    encoder: encoder,
-                    routePoints: routePoints,
-                    pacingPlan: pacingPlan
-                )
-            }
-            
-            // 6. Finalize and return data
-            let fitData = encoder.close()
-            print("✅ Course FIT file generated: \(fitData.count) bytes")
-            
-            return fitData
         }
+        
+        // 6. Finalize and return data
+        let fitData = encoder.close()
+        print("✅ Course FIT file generated: \(fitData.count) bytes")
+        
+        return fitData
+    }
     
     // MARK: - Message Writers
     
@@ -218,7 +218,7 @@ struct GarminCourseFitGenerator {
         
         print("✅ Wrote \(messageIndex) total course points (segments + checkpoints)")
     }
-
+    
     private func writeRecordMessages(
         encoder: Encoder,
         routePoints: [EnhancedRoutePoint],
@@ -318,17 +318,17 @@ struct GarminCourseFitGenerator {
         
         print("⏱️ Writing time checkpoint course points...")
         
-        let totalDistance = routePoints.last?.distance ?? 0
-        let checkpointIntervalKm = settings.timeCheckpointIntervalKm
+        let totalDistance = routePoints.last?.distance ?? 0  // in meters
+        let checkpointIntervalMeters = settings.timeCheckpointIntervalKm * 1000  // Convert km to meters
         
-        var checkpointDistance = checkpointIntervalKm
+        var checkpointDistance = checkpointIntervalMeters
         
         while checkpointDistance < totalDistance {
             // Find the route point closest to this checkpoint distance
             guard let checkpointPoint = routePoints.min(by: { point1, point2 in
                 abs(point1.distance - checkpointDistance) < abs(point2.distance - checkpointDistance)
             }) else {
-                checkpointDistance += checkpointIntervalKm
+                checkpointDistance += checkpointIntervalMeters
                 continue
             }
             
@@ -349,13 +349,12 @@ struct GarminCourseFitGenerator {
             try coursePointMesg.setPositionLat(latSemi)
             try coursePointMesg.setPositionLong(lonSemi)
             
-            // Distance in kilometers
+            // Distance in METERS (not kilometers!)
             try coursePointMesg.setDistance(checkpointDistance)
             
-            // Format checkpoint name with distance and time (hh:mm:ss)
-            let distanceMiles = checkpointDistance * 0.621371
+            // Format checkpoint name with distance and time
             let checkpointName = formatCheckpointName(
-                distance: checkpointDistance,
+                distance: checkpointDistance / 1000,  // Convert back to km for display
                 elapsedTime: elapsedTime,
                 units: settings.units
             )
@@ -367,48 +366,23 @@ struct GarminCourseFitGenerator {
             
             encoder.write(mesg: coursePointMesg)
             
-            checkpointDistance += checkpointIntervalKm
+            checkpointDistance += checkpointIntervalMeters
         }
         
         print("✅ Wrote time checkpoints")
     }
-
-    /// Formats checkpoint name with distance and time in hh:mm:ss format
-    private func formatCheckpointName(
-        distance: Double,
-        elapsedTime: Double,
-        units: UnitSystem
-    ) -> String {
-        let displayDistance: Double
-        let unitSymbol: String
-        
-        if units == .metric {
-            displayDistance = distance
-            unitSymbol = "km"
-        } else {
-            displayDistance = distance * 0.621371
-            unitSymbol = "mi"
-        }
-        
-        let hours = Int(elapsedTime / 3600)
-        let minutes = Int((elapsedTime.truncatingRemainder(dividingBy: 3600)) / 60)
-        let seconds = Int(elapsedTime.truncatingRemainder(dividingBy: 60))
-        
-        // Format: "5.0km 00:15:30" or "3.1mi 00:15:30"
-        return String(format: "%.1f%@\n%02d:%02d:%02d", displayDistance, unitSymbol, hours, minutes, seconds)
-    }
-
+    
     /// Calculates the elapsed time to reach a specific distance in the route
     private func calculateElapsedTime(
-        toDistance: Double,
+        toDistance: Double,  // in meters
         pacingPlan: PacingPlan
     ) -> Double {
         
         var elapsedTime: Double = 0
         
         for segment in pacingPlan.segments {
-            let segmentStart = segment.originalSegment.startPoint.distance
-            let segmentEnd = segment.originalSegment.endPoint.distance
+            let segmentStart = segment.originalSegment.startPoint.distance  // in meters
+            let segmentEnd = segment.originalSegment.endPoint.distance      // in meters
             
             if toDistance <= segmentStart {
                 // Checkpoint is before this segment starts
@@ -429,6 +403,32 @@ struct GarminCourseFitGenerator {
         }
         
         return elapsedTime
+    }
+    
+    /// Formats checkpoint name with distance and time in hh:mm:ss format
+    private func formatCheckpointName(
+        distance: Double,  // in kilometers
+        elapsedTime: Double,
+        units: UnitSystem
+    ) -> String {
+        let displayDistance: Double
+        let unitSymbol: String
+        
+        if units == .metric {
+            displayDistance = distance
+            unitSymbol = "km"
+        } else {
+            displayDistance = distance * 0.621371
+            unitSymbol = "mi"
+        }
+        
+        let hours = Int(elapsedTime / 3600)
+        let minutes = Int((elapsedTime.truncatingRemainder(dividingBy: 3600)) / 60)
+        let seconds = Int(elapsedTime.truncatingRemainder(dividingBy: 60))
+        
+        // Format: "5.0km 00:15:30" or "3.1mi 00:15:30"
+        return String(format: "%.1f%@ %02d:%02d:%02d", displayDistance, unitSymbol, hours, minutes, seconds)
+//        return String(format: "%.1f%@\n%02d:%02d:%02d", displayDistance, unitSymbol, hours, minutes, seconds) if Garmin needs multi-line course points
     }
 }
 

@@ -982,8 +982,9 @@ struct OptimizedPacingPlanTab: View {
                     pacing: pacing,
                     controller: controller,
                     onGoToExportTab: {
-                        // Set the selected tab to 2 (the Export tab)
-                        selectedTab = 2
+                        // Close sheet and switch to correct tab (3)
+                        showingDetails = false
+                        selectedTab = 3 // Export Tab is 3, AI Insights is 2
                     }
                 )
             }
@@ -1417,8 +1418,8 @@ struct UpdatedOptimizedExportTab: View {
             
             VStack(alignment: .leading, spacing: 8) {
                 ExportStatusRow(
-                    title: "Garmin Course Sync", // <-- RENAME
-                    status: garminService.isAuthenticated ? .available : .unavailable, // <-- UPDATE
+                    title: "Garmin Course Sync",
+                    status: garminService.isAuthenticated ? .available : .unavailable,
                     description: garminService.isAuthenticated ? "Push route directly to your Garmin account" : "Connect Garmin in Settings to enable"
                 )
                 
