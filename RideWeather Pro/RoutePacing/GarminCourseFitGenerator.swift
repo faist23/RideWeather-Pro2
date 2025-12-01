@@ -395,7 +395,7 @@ struct GarminCourseFitGenerator {
         let seconds = Int(elapsedTime.truncatingRemainder(dividingBy: 60))
         
         // Format: "5.0km 00:15:30" or "3.1mi 00:15:30"
-        return String(format: "%.1f%s\n%02d:%02d:%02d", displayDistance, unitSymbol, hours, minutes, seconds)
+        return String(format: "%.1f%@\n%02d:%02d:%02d", displayDistance, unitSymbol, hours, minutes, seconds)
     }
 
     /// Calculates the elapsed time to reach a specific distance in the route
