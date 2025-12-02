@@ -937,9 +937,9 @@ struct OptimizedPacingPlanTab: View {
                             message: error,
                             retryAction: { await generatePlan() }
                         )
-                    } else if let pacing = adjustedPacingPlan { // <-- Use the ADJUSTED plan
+                    } else if let pacing = adjustedPacingPlan {
                         OptimizedPacingPlanCard(
-                            pacing: pacing, // <-- Now it gets the tweaked version
+                            pacing: pacing,
                             settings: viewModel.settings,
                             controller: viewModel.advancedController!, // Use ! because we know it exists if adjustedPacingPlan isn't nil
                             onViewDetails: { showingDetails = true },
@@ -951,7 +951,14 @@ struct OptimizedPacingPlanTab: View {
                             }
                         )
                     } else {
-                        EmptyPacingPlanCard()
+
+                        NoPacingPlanView(
+                            icon: "speedometer",
+                            iconColor: .white.opacity(0.6),
+                            title: "No Pacing Plan",
+                            primaryMessage: "Generate a power-based pacing plan to optimize your ride performance",
+                            secondaryMessage: nil 
+                        )
                     }
                 }
             }
@@ -1304,40 +1311,6 @@ struct PacingPlanLoadingCard: View {
     }
 }
 
-struct EmptyPacingPlanCard: View {
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "speedometer")
-                .font(.system(size: 48))
-                .foregroundStyle(.white.opacity(0.6)) // Changed for dark background
-            
-            Text("No Pacing Plan")
-                .font(.headline)
-                .foregroundStyle(.white) // Changed for dark background
-            
-            Text("Generate a power-based pacing plan to optimize your ride performance")
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.8)) // Changed for dark background
-                .multilineTextAlignment(.center)
-        }
-        .padding(32)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(0.4),
-                    Color.black.opacity(0.3)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            ),
-            in: RoundedRectangle(cornerRadius: 16)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(.white.opacity(0.2), lineWidth: 1)
-        )
-    }
-}
 
 // MARK: - Optimized Export Tab
 
@@ -1547,36 +1520,14 @@ struct UpdatedOptimizedExportTab: View {
     }
     
     private var exportUnavailableCard: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "square.and.arrow.up.trianglebadge.exclamationmark")
-                .font(.system(size: 48))
-                .foregroundStyle(.white.opacity(0.6)) // Changed for dark background
-            
-            Text("No Workout to Export")
-                .font(.headline)
-                .foregroundStyle(.white) // Changed for dark background
-            
-            Text("Generate a pacing plan first to create exportable workout files")
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.8)) // Changed for dark background
-                .multilineTextAlignment(.center)
-        }
-        .padding(32)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(0.4),
-                    Color.black.opacity(0.3)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            ),
-            in: RoundedRectangle(cornerRadius: 16)
+        NoPacingPlanView(
+            icon: "square.and.arrow.up.trianglebadge.exclamationmark",
+            iconColor: .orange.opacity(0.7), // Warning orange color
+            title: "No Workout to Export",
+            primaryMessage: "Generate a pacing plan first to create exportable workout files",
+            secondaryMessage: nil
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(.white.opacity(0.2), lineWidth: 1)
-        )
+        .padding(.vertical, 40)
     }
     
     private var exportTipsCard: some View {

@@ -47,17 +47,23 @@ struct FuelingPlanTab: View {
                     .padding(.horizontal, 20)
                     
                 } else if viewModel.isGeneratingAdvancedPlan {
-                    ProgressView("Generating fueling strategy...")
-                        .frame(maxWidth: .infinity, maxHeight: 100)
+                    ProcessingOverlay.generating(
+                        "Fueling Strategy",
+                        subtitle: "Calculating nutrition needs"
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 300)
                 } else {
-
-                    noPacingPlanView
-/*
-                    EmptyStateView(
-                        title: "No Fueling Strategy",
-                        message: "Generate a pacing plan first to see your personalized fueling strategy",
-                        systemImage: "drop"
-                    )*/
+                        RouteInfoCardView(viewModel: viewModel)
+                        
+                        NoPacingPlanView(
+                            icon: "drop.fill",
+                            iconColor: .blue.opacity(0.7),
+                            title: "Fueling Plan Requires Pacing Plan",
+                            primaryMessage: "The fueling strategy will be generated after analyzing your pacing plan's power requirements",
+                            secondaryMessage: "Generate a pacing plan first to see your personalized fueling strategy"
+                        )
+                    .padding()
                 }
             }
             .padding()
@@ -72,33 +78,6 @@ struct FuelingPlanTab: View {
             ShareSheet(activityItems: [exportText])
         }
     }
-    
-    private var noPacingPlanView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "drop")
-                .font(.system(size: 64))
-                .foregroundStyle(.blue.opacity(0.5))
-            
-            Text("Pacing Plan Required")
-                .font(.title2)
-                .fontWeight(.semibold)
-            
-            Text("The fueling plan will be generated after analyzing your pacing plan's power requirements")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-            
-            Text("Generate a pacing plan first to see your personalized fueling strategy")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-        }
-        .frame(maxHeight: .infinity)
-    }
-
-    
 }
 
 // MARK: - Detailed Pacing Plan View
@@ -883,3 +862,52 @@ struct RouteInfoCardView: View {
     }
 }
 
+// MARK: - Shared No Pacing Plan View
+
+struct NoPacingPlanView: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let primaryMessage: String
+    let secondaryMessage: String?
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 48))
+                .foregroundStyle(iconColor)
+            
+            Text(title)
+                .font(.headline)
+                .fontWeight(.semibold)
+            
+            Text(primaryMessage)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            
+            if let secondaryMessage = secondaryMessage {
+                Text(secondaryMessage)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(20)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.4),
+                    Color.black.opacity(0.3)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            ),
+            in: RoundedRectangle(cornerRadius: 16)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(.white.opacity(0.2), lineWidth: 1)
+        )
+    }
+}

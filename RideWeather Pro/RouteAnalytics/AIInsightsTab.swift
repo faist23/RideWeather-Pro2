@@ -363,28 +363,20 @@ struct AIInsightsTab: View {
     }
     
     private var noPacingPlanView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.system(size: 64))
-                .foregroundStyle(.blue.opacity(0.5))
-            
-            Text("Pacing Plan Required")
-                .font(.title2)
-                .fontWeight(.semibold)
-            
-            Text("AI insights analyze your pacing plan's power distribution and strategic opportunities")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-            
-            Text("Generate a pacing plan first to see AI-powered strategic insights")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
+        ScrollView {
+            VStack(spacing: 20) {
+                RouteInfoCardView(viewModel: viewModel)
+                
+                NoPacingPlanView(
+                    icon: "sparkles",
+                    iconColor: .blue.opacity(0.7),
+                    title: "AI Insights Require Pacing Plan",
+                    primaryMessage: "AI insights analyze your pacing plan's power distribution and strategic opportunities",
+                    secondaryMessage: "Generate a pacing plan first to see AI-powered strategic insights"
+                )
+            }
+            .padding()
         }
-        .frame(maxHeight: .infinity)
     }
     
     // MARK: - Helper Methods
