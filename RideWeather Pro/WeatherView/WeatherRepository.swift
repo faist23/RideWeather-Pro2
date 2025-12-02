@@ -37,6 +37,7 @@ struct WeatherRepository {
         }
     }
     
+    
     // NEW: Air pollution fetching - delegates to service layer
     func fetchAirPollution(lat: Double, lon: Double) async throws -> AirPollutionResponse {
         return try await service.fetchAirPollution(lat: lat, lon: lon)
@@ -65,6 +66,15 @@ struct WeatherRepository {
             current: current,
             forecast: fcst,
             airPollution: pollution
+        )
+    }
+
+    // MARK: - NEW: Daily Forecast Wrapper
+    func fetchDailyForecast(for location: CLLocation, units: String) async throws -> [DailyItem] {
+        return try await service.fetchDailyForecast(
+            lat: location.coordinate.latitude,
+            lon: location.coordinate.longitude,
+            units: units
         )
     }
 

@@ -137,8 +137,33 @@ struct HourlyForecast: Identifiable, Equatable {
         self.humidity = humidity
         self.windSpeed = windSpeed
         self.windDeg = windDeg
-        self.uvIndex = uvIndex // Add to initializer
-        self.aqi = aqi         // Add to initializer
+        self.uvIndex = uvIndex
+        self.aqi = aqi    
+    }
+}
+
+// MARK: - NEW Daily Forecast UI Model
+struct DailyForecast: Identifiable, Equatable {
+    let id = UUID()
+    let date: Date
+    let dayName: String
+    let iconName: String
+
+    let pop: Double
+    let high: Double
+    let low: Double
+
+    let windSpeed: Double
+    let windDeg: Int
+
+    var windDirection: String {
+        WeatherMapper.mapWindDirection(degrees: Double(windDeg))
+    }
+
+    // NEW: Direction the wind is BLOWING TO (not from)
+    var blowingDirection: String {
+        let adjusted = Double((windDeg + 180) % 360)
+        return WeatherMapper.mapWindDirection(degrees: adjusted)
     }
 }
 
@@ -149,12 +174,17 @@ struct CurrentWeatherResponse: Codable {
     let weather: [Weather]
     let main: MainDetails
     let wind: Wind
-    let visibility: Int? // Add this - visibility in meters
+    let visibility: Int? // visibility in meters
     let name: String
 }
 
 struct OneCallResponse: Codable {
     let hourly: [HourlyItem]
+}
+
+// MARK: - NEW: Daily Forecast API Models
+struct DailyResponse: Codable {
+    let daily: [DailyItem]
 }
 
 struct HourlyItem: Codable {
@@ -205,6 +235,27 @@ struct HourlyItem: Codable {
         default: return "N/A"
         }
     }
+}
+
+struct DailyItem: Codable {
+    let dt: TimeInterval
+    let temp: DailyTemp
+    let pop: Double
+    let weather: [Weather]
+    let windSpeed: Double
+    let windDeg: Int
+
+    enum CodingKeys: String, CodingKey {
+        case dt, temp, pop, weather
+        case windSpeed = "wind_speed"
+        case windDeg = "wind_deg"
+    }
+}
+
+
+struct DailyTemp: Codable {
+    let min: Double
+    let max: Double
 }
 
 // MARK: - Shared API Model Components

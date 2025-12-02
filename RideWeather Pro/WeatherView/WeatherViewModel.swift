@@ -13,6 +13,7 @@ class WeatherViewModel: ObservableObject {
     @Published var displayWeather: DisplayWeatherModel?
     @Published var hourlyForecast: [HourlyForecast] = []
     @Published var allHourlyData: [HourlyForecast] = []
+    @Published var dailyForecast: [DailyForecast] = []
     @Published var rideDate: Date = Date()
     @Published var enhancedInsights: EnhancedWeatherInsights?
     @Published var settings: AppSettings {
@@ -278,6 +279,17 @@ class WeatherViewModel: ObservableObject {
             )
             await processWeatherData(current: completeData.current, forecast: completeData.forecast)
             self.enhancedInsights = completeData.enhancedInsights
+ 
+            // Fetch daily separately (Option B)
+            do {
+                let dailyItems = try await weatherRepo.fetchDailyForecast(for: location, units: settings.units.rawValue)
+                self.dailyForecast = dailyItems.prefix(7).map { WeatherMapper.mapDailyItem($0) }
+            } catch {
+                // Non-fatal - log and continue
+                print("⚠️ Failed to fetch daily forecast: \(error.localizedDescription)")
+                self.dailyForecast = []
+            }
+
             uiState = .loaded
         } catch {
             uiState = .error("Failed to fetch weather: \(error.localizedDescription)")
@@ -302,6 +314,16 @@ class WeatherViewModel: ObservableObject {
             await processWeatherData(current: completeData.current, forecast: completeData.forecast)
             self.enhancedInsights = completeData.enhancedInsights
             try await fetchExtendedHourlyData()
+
+            // Fetch daily separately 
+             do {
+                 let dailyItems = try await weatherRepo.fetchDailyForecast(for: location, units: settings.units.rawValue)
+                 self.dailyForecast = dailyItems.prefix(7).map { WeatherMapper.mapDailyItem($0) }
+             } catch {
+                 print("⚠️ Failed loading daily forecast: \(error.localizedDescription)")
+                 self.dailyForecast = []
+             }
+
             uiState = .loaded
             hapticsManager.triggerSuccess()
 

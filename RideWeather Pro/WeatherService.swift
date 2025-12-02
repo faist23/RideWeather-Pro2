@@ -87,7 +87,56 @@ class WeatherService {
         return response
     }
     
-    // NEW: Extended forecast for analytics dashboard (includes 48 hours of hourly data)
+    // NEW: separate daily forecast call (Option B)
+    func fetchDailyForecast(lat: Double, lon: Double, units: String) async throws -> [DailyItem] {
+        let cacheKey = "daily_\(lat)_\(lon)_\(units)"
+        if let cached = await getCachedData(key: cacheKey), !cached.isExpired(maxAge: 1800) {
+            if let extended = cached.extendedForecast {
+                // If we used extendedForecast to store hourly-only earlier, ignore; here we expect daily stored in CachedWeatherData.forecastDaily
+            }
+            // Check for a place to store daily in our cache object — use forecast if it contains daily? To keep things simple we cache daily in a dedicated cache object keyed above.
+        }
+
+        // Exclude hourly + current + minutely + alerts to get only daily
+        let exclude = "hourly,current,minutely,alerts"
+        guard let url = URL(string: "\(baseOneCallURL)/onecall?lat=\(lat)&lon=\(lon)&exclude=\(exclude)&appid=\(apiKey)&units=\(units)") else {
+            throw URLError(.badURL)
+        }
+
+        // Use a lightweight decoding into DailyResponse
+        let (data, response) = try await urlSession.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw WeatherServiceError.invalidResponse
+        }
+
+        switch httpResponse.statusCode {
+        case 200: break
+        case 401: throw WeatherServiceError.invalidAPIKey
+        case 429: throw WeatherServiceError.rateLimited
+        case 404: throw WeatherServiceError.locationNotFound
+        default: throw WeatherServiceError.serverError(httpResponse.statusCode)
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            let dailyResp = try decoder.decode(DailyResponse.self, from: data)
+            // Cache the daily response as a simple JSON blob via our existing cache wrapper
+            // We'll store it in the forecast field wrapped inside a minimal OneCallResponse with empty hourly (not ideal but keeps cache types)
+            // Instead, create a CachedWeatherData with extendedForecast nil and forecast nil but store the daily list inside a separate cache keyed by cacheKey
+            let cachedDaily = DailyCacheWrapper(daily: dailyResp.daily, timestamp: Date())
+            await withCheckedContinuation { cont in
+                cacheQueue.async {
+                    self.dailyCache.setObject(cachedDaily, forKey: NSString(string: cacheKey))
+                    cont.resume()
+                }
+            }
+            return dailyResp.daily
+        } catch {
+            throw WeatherServiceError.decodingError(error)
+        }
+    }
+
+    // Extended forecast for analytics dashboard (includes 48 hours of hourly data)
     func fetchExtendedForecast(lat: Double, lon: Double, units: String) async throws -> ExtendedOneCallResponse {
         let cacheKey = "extended_forecast_\(lat)_\(lon)_\(units)"
         
@@ -98,7 +147,7 @@ class WeatherService {
         }
         
         // Include hourly data but exclude everything else to optimize
-        let exclude = "current,minutely,daily,alerts"
+        let exclude = "current,minutely,alerts"
         guard let url = URL(string: "\(baseOneCallURL)/onecall?lat=\(lat)&lon=\(lon)&exclude=\(exclude)&appid=\(apiKey)&units=\(units)") else {
             throw URLError(.badURL)
         }
@@ -231,6 +280,17 @@ class WeatherService {
         }
     }
     
+    // Separate daily cache (wrapper)
+    private let dailyCache = NSCache<NSString, DailyCacheWrapper>()
+
+    private func getCachedDaily(key: String) async -> DailyCacheWrapper? {
+        return await withCheckedContinuation { cont in
+            cacheQueue.async {
+                cont.resume(returning: self.dailyCache.object(forKey: NSString(string: key)))
+            }
+        }
+    }
+
     // Clear expired cache entries periodically
     func cleanupCache() {
         cacheQueue.async {
@@ -428,6 +488,21 @@ private class CachedAirPollutionData: NSObject {
         self.timestamp = timestamp
     }
     
+    func isExpired(maxAge: TimeInterval) -> Bool {
+        return Date().timeIntervalSince(timestamp) > maxAge
+    }
+}
+
+// Wrapper for daily cache
+private class DailyCacheWrapper: NSObject {
+    let daily: [DailyItem]
+    let timestamp: Date
+
+    init(daily: [DailyItem], timestamp: Date) {
+        self.daily = daily
+        self.timestamp = timestamp
+    }
+
     func isExpired(maxAge: TimeInterval) -> Bool {
         return Date().timeIntervalSince(timestamp) > maxAge
     }

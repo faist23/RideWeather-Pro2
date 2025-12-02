@@ -1,5 +1,3 @@
-
-
 //
 // LiveWeatherView.swift (Updated with Analytics)
 // RideWeather Pro
@@ -54,6 +52,13 @@ struct LiveWeatherView: View {
                                 ModernHourlyForecastView(hourlyData: viewModel.hourlyForecast)
                                     .environmentObject(viewModel)
                                 
+                                // NEW: 7-day forecast card
+                                 if !viewModel.dailyForecast.isEmpty {
+                                     DailyForecastView(daily: viewModel.dailyForecast)
+                                         .environmentObject(viewModel)
+                                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                                 }
+
                                 if viewModel.shouldShowAnalytics {
                                     ModernAnalyticsPreviewCard()
                                         .environmentObject(viewModel)

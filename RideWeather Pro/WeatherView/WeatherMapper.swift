@@ -1,4 +1,5 @@
 
+
 //
 //  WeatherMapper.swift
 //  RideWeather Pro
@@ -14,25 +15,11 @@ struct WeatherMapper {
     static func mapCurrentToDisplayModel(_ current: CurrentWeatherResponse) -> DisplayWeatherModel {
         let temp = current.main.temp
         let humidity = Double(current.main.humidity)
-        // Start with the API's feelsLike value
         var finalFeelsLike = current.main.feelsLike
-        
-        // Check if conditions warrant Heat Index calculation (e.g., > 80F and > 40% humidity)
-        // Convert temp to F if necessary for the check
-/*        let tempInF = temp > 40 ? temp : (temp * 9/5) + 32 // Rough check if temp is already F
-        let heatIndexThresholdTempF: Double = 80.0
-        let heatIndexThresholdHumidity: Double = 40.0
-        
-        if tempInF > heatIndexThresholdTempF && humidity > heatIndexThresholdHumidity {
-            let calculatedHeatIndexF = calculateHeatIndex(tempF: tempInF, humidity: humidity)
-            // Use the calculated heat index, converting back to C if original was C
-            finalFeelsLike = temp > 40 ? calculatedHeatIndexF : (calculatedHeatIndexF - 32) * 5/9
-        }*/
-        // If conditions don't meet the threshold, finalFeelsLike remains the API's value
-        
+                
         return DisplayWeatherModel(
             temp: temp,
-            feelsLike: finalFeelsLike, // Use the potentially adjusted value
+            feelsLike: finalFeelsLike,
             humidity: current.main.humidity,
             windSpeed: current.wind.speed,
             windDirection: current.wind.direction,
@@ -48,24 +35,11 @@ struct WeatherMapper {
     static func mapForecastItemToDisplayModel(_ forecastItem: HourlyItem) -> DisplayWeatherModel {
         let temp = forecastItem.temp
         let humidity = Double(forecastItem.humidity)
-        // Start with the API's feelsLike value
         var finalFeelsLike = forecastItem.feelsLike
-        
-        // Check if conditions warrant Heat Index calculation
-/*        let tempInF = temp > 40 ? temp : (temp * 9/5) + 32 // Rough check if temp is already F
-        let heatIndexThresholdTempF: Double = 80.0
-        let heatIndexThresholdHumidity: Double = 40.0
-        
-        if tempInF > heatIndexThresholdTempF && humidity > heatIndexThresholdHumidity {
-            let calculatedHeatIndexF = calculateHeatIndex(tempF: tempInF, humidity: humidity)
-            // Use the calculated heat index, converting back to C if original was C
-            finalFeelsLike = temp > 40 ? calculatedHeatIndexF : (calculatedHeatIndexF - 32) * 5/9
-        }*/
-        // If conditions don't meet the threshold, finalFeelsLike remains the API's value
-        
+               
         return DisplayWeatherModel(
             temp: temp,
-            feelsLike: finalFeelsLike, // Use the potentially adjusted value
+            feelsLike: finalFeelsLike,
             humidity: forecastItem.humidity,
             windSpeed: forecastItem.windSpeed,
             windDirection: mapWindDirection(degrees: Double(forecastItem.windDeg)),
@@ -105,6 +79,46 @@ struct WeatherMapper {
         return HourlyForecast(from: item)
     }
     
+    // MARK: - Daily Mapping
+
+    static func mapDailyItem(_ item: DailyItem) -> DailyForecast {
+        let date = Date(timeIntervalSince1970: item.dt)
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"   // e.g. "Mon"
+
+        return DailyForecast(
+            date: date,
+            dayName: formatter.string(from: date),
+            iconName: item.weather.first?.iconName ?? "cloud.fill",
+            pop: item.pop,
+            high: item.temp.max,
+            low: item.temp.min,
+            windSpeed: item.windSpeed,
+            windDeg: item.windDeg
+        )
+    }
+
+    // MARK: - Helpers
+
+    static func mapIcon(from iconString: String) -> String {
+        switch iconString {
+        case "01d": return "sun.max.fill"
+        case "01n": return "moon.fill"
+        case "02d": return "cloud.sun.fill"
+        case "02n": return "cloud.moon.fill"
+        case "03d", "03n": return "cloud.fill"
+        case "04d", "04n": return "smoke.fill"
+        case "09d", "09n": return "cloud.drizzle.fill"
+        case "10d": return "cloud.sun.rain.fill"
+        case "10n": return "cloud.moon.rain.fill"
+        case "11d", "11n": return "cloud.bolt.fill"
+        case "13d", "13n": return "snow"
+        case "50d", "50n": return "cloud.fog.fill"
+        default: return "questionmark.diamond.fill"
+        }
+    }
+
     static func mapWindDirection(degrees: Double) -> String {
         let dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE",
                     "S","SSW","SW","WSW","W","WNW","NW","NNW"]
