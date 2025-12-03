@@ -921,57 +921,69 @@ struct OptimizedPacingPlanTab: View {
     }
     
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 20) {
-                RouteInfoCardView(viewModel: viewModel)
-                // Strategy Selection Card
-                strategySelectionCard
-                
-                // Plan Content
-                Group {
-                    if isGenerating || viewModel.isGeneratingAdvancedPlan {
-                        PacingPlanLoadingCard()
-                    } else if let error = viewModel.advancedPlanError {
-                        ErrorStateCard(
-                            title: "Generation Failed",
-                            message: error,
-                            retryAction: { await generatePlan() }
-                        )
-                    } else if let pacing = adjustedPacingPlan {
-                        OptimizedPacingPlanCard(
-                            pacing: pacing,
-                            settings: viewModel.settings,
-                            controller: viewModel.advancedController!, // Use ! because we know it exists if adjustedPacingPlan isn't nil
-                            onViewDetails: { showingDetails = true },
-                            onExportPlan: {
-                                if let plan = adjustedPacingPlan {
-                                    exportText = viewModel.advancedController!.exportPacingPlanCSV(using: plan)
-                                    showingExport = true
+        ZStack { // ✅ Wrap in ZStack for overlay
+            ScrollView {
+                LazyVStack(spacing: 20) {
+                    RouteInfoCardView(viewModel: viewModel)
+                    
+                    // Strategy Selection Card
+                    strategySelectionCard
+                    
+                    // Plan Content
+                    Group {
+                        if let error = viewModel.advancedPlanError {
+                            ErrorStateCard(
+                                title: "Generation Failed",
+                                message: error,
+                                retryAction: { await generatePlan() }
+                            )
+                        } else if let pacing = adjustedPacingPlan {
+                            OptimizedPacingPlanCard(
+                                pacing: pacing,
+                                settings: viewModel.settings,
+                                controller: viewModel.advancedController!,
+                                onViewDetails: { showingDetails = true },
+                                onExportPlan: {
+                                    if let plan = adjustedPacingPlan {
+                                        exportText = viewModel.advancedController!.exportPacingPlanCSV(using: plan)
+                                        showingExport = true
+                                    }
                                 }
-                            }
-                        )
-                    } else {
-
-                        NoPacingPlanView(
-                            icon: "speedometer",
-                            iconColor: .white.opacity(0.6),
-                            title: "No Pacing Plan",
-                            primaryMessage: "Generate a power-based pacing plan to optimize your ride performance",
-                            secondaryMessage: nil 
-                        )
+                            )
+                        } else {
+                            NoPacingPlanView(
+                                icon: "speedometer",
+                                iconColor: .white.opacity(0.6),
+                                title: "No Pacing Plan",
+                                primaryMessage: "Generate a power-based pacing plan to optimize your ride performance",
+                                secondaryMessage: nil
+                            )
+                        }
                     }
                 }
+                .padding()
             }
-            .padding()
+            .animatedBackground(
+                gradient: .pacingPlanBackground,
+                showDecoration: true,
+                decorationColor: .white,
+                decorationIntensity: 0.06
+            )
+            // ✅ Remove the dimming effect that was causing issues
+            // .opacity((isGenerating || viewModel.isGeneratingAdvancedPlan) ? 0.6 : 1.0)
+            
+            // ✅ Add Processing Overlay
+            if isGenerating || viewModel.isGeneratingAdvancedPlan {
+                ProcessingOverlay.generating(
+                    "Pacing Plan",
+                    subtitle: viewModel.pacingGenerationStatus.isEmpty ?
+                        "Analyzing route segments and power distribution" :
+                        viewModel.pacingGenerationStatus
+                )
+                .zIndex(10)
+            }
         }
-        .animatedBackground(
-            gradient: .pacingPlanBackground,
-            showDecoration: true,
-            decorationColor: .white,
-            decorationIntensity: 0.06
-        )
         .onChange(of: viewModel.selectedPacingStrategy) { oldValue, newValue in
-            // Reset intensity adjustment when strategy changes
             viewModel.intensityAdjustment = 0
         }
         .refreshable {
@@ -987,9 +999,8 @@ struct OptimizedPacingPlanTab: View {
                     pacing: pacing,
                     controller: controller,
                     onGoToExportTab: {
-                        // Close sheet and switch to correct tab (3)
                         showingDetails = false
-                        selectedTab = 3 // Export Tab is 3, AI Insights is 2
+                        selectedTab = 3
                     }
                 )
             }
@@ -1274,7 +1285,7 @@ struct DifficultyBadge: View {
     }
 }
 
-struct PacingPlanLoadingCard: View {
+/*struct PacingPlanLoadingCard: View {
     var body: some View {
         VStack(spacing: 16) {
             HStack {
@@ -1309,7 +1320,7 @@ struct PacingPlanLoadingCard: View {
                 .stroke(.white.opacity(0.2), lineWidth: 1)
         )
     }
-}
+}*/
 
 
 // MARK: - Optimized Export Tab

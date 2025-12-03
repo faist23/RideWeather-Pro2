@@ -66,7 +66,7 @@ struct RouteForecastView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // 1. Main Content Content
+                // 1. Main Content
                 switch currentView {
                 case .empty:
                     emptyStateView
@@ -76,7 +76,7 @@ struct RouteForecastView: View {
                     analysisView
                 }
                 
-                // 2. Success Banner (Existing)
+                // 2. Success Banner
                 if showImportSuccess {
                     VStack {
                         importSuccessBanner
@@ -85,12 +85,12 @@ struct RouteForecastView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 
+                // 3. Smart Loading Overlay with Context
                 if viewModel.isLoading {
-                    ProcessingOverlay(message: "Importing route...", progress: nil)
-                        .zIndex(2)
+                    loadingOverlay
+                        .zIndex(100)
                 }
             }
- 
             .animatedBackground(
                 gradient: currentView == .empty ? .routeBackground :
                          LinearGradient(colors: [Color(.systemGroupedBackground)],
@@ -101,7 +101,6 @@ struct RouteForecastView: View {
                 decorationIntensity: 0.08
             )
             .animation(.smooth, value: currentView)
-            
             .navigationTitle("Route Forecast")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -122,11 +121,6 @@ struct RouteForecastView: View {
                     WahooRouteImportView(onDismiss: { activeSheet = nil })
                         .environmentObject(wahooService)
                         .environmentObject(viewModel)
-/*                case .garminImport:
-                    GarminImportExplainerView()
-                        .environmentObject(garminService)
-                        .environmentObject(stravaService)
-                        .environmentObject(viewModel) */
                 case .settings:
                     SettingsView()
                         .environmentObject(viewModel)
@@ -144,6 +138,42 @@ struct RouteForecastView: View {
             }
         }
     }
+    
+    
+     // MARK: - Smart Loading Overlay
+     
+     /// Context-aware loading overlay that shows appropriate messages
+     @ViewBuilder
+     private var loadingOverlay: some View {
+         Group {
+             if viewModel.routePoints.isEmpty {
+                 // Importing route file
+                 ProcessingOverlay.importing(
+                     "Route File",
+                     subtitle: viewModel.processingStatus.isEmpty ?
+                         "Reading GPS coordinates and elevation" :
+                         viewModel.processingStatus
+                 )
+             } else if viewModel.weatherDataForRoute.isEmpty {
+                 // Initial forecast generation
+                 let distance = formatRouteDistance()
+                 ProcessingOverlay.generating(
+                     "Route Forecast",
+                     subtitle: viewModel.processingStatus.isEmpty ?
+                         "Analyzing \(distance) of terrain and weather" :
+                         viewModel.processingStatus
+                 )
+             } else {
+                 // Updating existing forecast
+                 ProcessingOverlay.analyzing(
+                     "Updating Forecast",
+                     subtitle: viewModel.processingStatus.isEmpty ?
+                         "Fetching conditions for \(formattedTime)" :
+                         viewModel.processingStatus
+                 )
+             }
+         }
+     }
 
     // MARK: - Empty State View
     private var emptyStateView: some View {

@@ -148,6 +148,47 @@ extension ProcessingOverlay {
     }
 }
 
+extension ProcessingOverlay {
+    /// For FIT file parsing
+    static func parsingFIT(_ fileName: String) -> ProcessingOverlay {
+        ProcessingOverlay(
+            message: "Reading \(fileName)",
+            subtitle: "Parsing ride data",
+            icon: "doc.fill"
+        )
+    }
+    
+    /// For power analysis
+    static func analyzingPower(_ duration: String? = nil) -> ProcessingOverlay {
+        let subtitle = duration != nil ?
+            "Processing \(duration!) of power data" :
+            "Calculating normalized power and TSS"
+        return ProcessingOverlay(
+            message: "Analyzing Power Metrics",
+            subtitle: subtitle,
+            icon: "bolt.fill"
+        )
+    }
+    
+    /// For weather fetching
+    static func fetchingWeather(pointCount: Int) -> ProcessingOverlay {
+        ProcessingOverlay(
+            message: "Fetching Weather Data",
+            subtitle: "Getting conditions for \(pointCount) route points",
+            icon: "cloud.sun.fill"
+        )
+    }
+    
+    /// For route processing
+    static func processingRoute(_ distance: String) -> ProcessingOverlay {
+        ProcessingOverlay(
+            message: "Processing Route",
+            subtitle: "Analyzing \(distance) of terrain",
+            icon: "map.fill"
+        )
+    }
+}
+
 // MARK: - Preview
 
 #Preview("Standard Loading") {

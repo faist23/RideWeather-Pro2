@@ -84,8 +84,11 @@ struct StravaRoutesTab: View {
             
             // Consistent Processing Overlay
             if viewModel.isImporting {
-                ProcessingOverlay(message: "Importing Route...", progress: nil)
-                    .zIndex(1)
+                ProcessingOverlay.importing(
+                    "Strava Routes",
+                    subtitle: "Extracting GPS coordinates and elevation"
+                )
+                .zIndex(1)
             }
         }
         .onAppear {
@@ -194,8 +197,11 @@ struct StravaActivitiesTab: View {
             
             // ✅ Consistent Processing Overlay
             if viewModel.isImporting {
-                ProcessingOverlay(message: "Importing Activity...", progress: nil)
-                    .zIndex(1)
+                ProcessingOverlay.importing(
+                    "Strava Activity",
+                    subtitle: "Extracting GPS coordinates and elevation"
+                )
+                .zIndex(1)
             }
         }
         .onAppear {

@@ -35,10 +35,11 @@ struct RideAnalysisView: View {
                 }
                 if viewModel.isAnalyzing {
                     ProcessingOverlay.analyzing(
-                        "Analyzing Ride",
-                        subtitle: viewModel.analysisStatus.isEmpty ? nil : viewModel.analysisStatus
+                        "Analyzing Ride Performance",
+                        subtitle: viewModel.analysisStatus.isEmpty ?
+                            "Processing power and elevation data" :
+                            viewModel.analysisStatus
                     )
-                    .zIndex(100)
                 }
            }
             //            .navigationTitle("Ride Analysis")

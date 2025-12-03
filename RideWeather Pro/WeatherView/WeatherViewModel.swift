@@ -41,7 +41,10 @@ class WeatherViewModel: ObservableObject {
     @Published var locationName: String = "Loading location..."
     @Published var uiState: UIState = .loading
     @Published var currentLocation: CLLocation?
-    
+
+    @Published var processingStatus: String = ""
+    @Published var pacingGenerationStatus: String = ""
+
     // NEW: Filename tracking properties
     @Published var lastImportedFileName: String? = nil
     @Published var importedRouteDisplayName: String = ""
@@ -209,7 +212,8 @@ class WeatherViewModel: ObservableObject {
             // ✅ FIX: Use .loading immediately (Indeterminate Spinner)
             // This ensures we see "Working" the whole time, not a progress bar.
             uiState = .loading
-            
+            processingStatus = "Reading file..."
+
             weatherDataForRoute = []
             routePoints = []
             elevationAnalysis = nil
@@ -227,10 +231,13 @@ class WeatherViewModel: ObservableObject {
             
             do {
                 let fileData = try Data(contentsOf: url)
-                // Note: Removed intermediate .parsing updates to prevent UI flicker/progress ring
+                let fileExtension = url.pathExtension.lowercased()
+                
+                // Stage 1: Parsing
+                processingStatus = "Parsing \(fileExtension.uppercased()) data..."
+                await Task.yield() // Let UI update
                 
                 let result: (coordinates: [CLLocationCoordinate2D], elevationAnalysis: ElevationAnalysis?)
-                let fileExtension = url.pathExtension.lowercased()
                 
                 if fileExtension == "gpx" {
                     result = try parser.parseWithElevation(gpxData: fileData)
@@ -240,26 +247,36 @@ class WeatherViewModel: ObservableObject {
                     throw RouteParseError.unknownFileType
                 }
                 
+                // Stage 2: Processing coordinates
+                processingStatus = "Processing \(result.coordinates.count) GPS points..."
+                await Task.yield()
+                
                 self.routePoints = result.coordinates
                 self.elevationAnalysis = result.elevationAnalysis
                 self.authoritativeRouteDistanceMeters = self.calculateTotalDistance(result.coordinates)
                 self.powerAnalysisResult = nil
                 
-                // Heavy calculation (async) - Spinner continues spinning
-                await self.finalizeRouteImport()
-                
+                // Stage 3: Analyzing elevation
                 if let analysis = result.elevationAnalysis, analysis.hasActualData {
-                    print("✅ Successfully imported route with elevation data.")
+                    processingStatus = "Analyzing elevation profile..."
+                    await Task.yield()
                 }
                 
-                // Fetch weather - Spinner continues spinning
+                // Stage 4: Building route structure
+                processingStatus = "Building route structure..."
+                await self.finalizeRouteImport()
+                
+                // Stage 5: Fetching weather
+                processingStatus = "Fetching extended weather data..."
                 try await self.fetchExtendedHourlyData()
                 
+                processingStatus = ""
                 uiState = .loaded
                 hapticsManager.triggerSuccess()
             } catch {
                 self.lastImportedFileName = nil
                 self.importedRouteDisplayName = ""
+                processingStatus = ""
                 uiState = .error("Failed to parse route file: \(error.localizedDescription)")
             }
         }
@@ -373,12 +390,19 @@ class WeatherViewModel: ObservableObject {
     func calculateAndFetchWeather() async {
         guard !routePoints.isEmpty else { return }
         uiState = .loading
+        processingStatus = "Calculating route waypoints..."
         weatherDataForRoute = []
         
         let keyPointCoordinates = generateAdaptiveSamplePoints(from: self.routePoints)
         print("✅ Index-based sampling generated \(keyPointCoordinates.count) key points to fetch.")
         
+        processingStatus = "Analyzing terrain and elevation..."
+        await Task.yield()
+        
         let adjustedSpeed = calculateAdjustedSpeed(baseSpeed: averageSpeedMetersPerSecond)
+        
+        processingStatus = "Calculating arrival times..."
+        await Task.yield()
         
         let pointsWithETAs = await backgroundProcessor.calculateETAs(
             for: keyPointCoordinates,
@@ -390,7 +414,12 @@ class WeatherViewModel: ObservableObject {
         var fetchedPoints: [RouteWeatherPoint] = []
         var lastSuccessfulWeather: DisplayWeatherModel? = nil
 
-        for point in pointsWithETAs {
+        processingStatus = "Fetching weather for \(pointsWithETAs.count) route points..."
+        await Task.yield()
+
+        for (index, point) in pointsWithETAs.enumerated() {
+            processingStatus = "Fetching weather point \(index + 1) of \(pointsWithETAs.count)..."
+            
             if let weatherPoint = await weatherRepo.fetchWeatherForRoutePoint(
                 coordinate: point.coordinate,
                 time: point.eta,
@@ -410,13 +439,18 @@ class WeatherViewModel: ObservableObject {
                         )
                     )
                 } else {
+                    processingStatus = ""
                     uiState = .error("Failed to fetch initial weather data for the route.")
                     return
                 }
             }
         }
 
+        processingStatus = "Finalizing forecast..."
+        await Task.yield()
+        
         self.weatherDataForRoute = fetchedPoints.sorted { $0.distance < $1.distance }
+        self.processingStatus = ""
         self.uiState = .loaded
      }
     
@@ -523,7 +557,7 @@ class WeatherViewModel: ObservableObject {
     
     func generateAdvancedCyclingPlan(
         strategy: PacingStrategy = .balanced,
-        startTime: Date? = nil // Changed from 'Date = Date()' to 'Date? = nil'
+        startTime: Date? = nil
     ) async {
         await MainActor.run {
             guard !weatherDataForRoute.isEmpty else {
@@ -538,7 +572,11 @@ class WeatherViewModel: ObservableObject {
             
             isGeneratingAdvancedPlan = true
             advancedPlanError = nil
+            pacingGenerationStatus = "Analyzing route segments..."
         }
+        
+        // ✅ CRITICAL: Longer delay to ensure UI updates before heavy work
+        try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
         
         // Create controller if needed
         if advancedController == nil {
@@ -548,40 +586,52 @@ class WeatherViewModel: ObservableObject {
         }
         
         guard let controller = advancedController else {
-            await MainActor.run { isGeneratingAdvancedPlan = false }
+            await MainActor.run {
+                isGeneratingAdvancedPlan = false
+                pacingGenerationStatus = ""
+            }
             return
+        }
+        
+        await MainActor.run {
+            pacingGenerationStatus = "Calculating power requirements..."
         }
         
         guard let powerAnalysis = getPowerAnalysisResult() else {
             await MainActor.run {
                 advancedPlanError = "Could not generate power analysis for the route."
                 isGeneratingAdvancedPlan = false
+                pacingGenerationStatus = ""
             }
             return
         }
- 
+        
         self.lastPowerAnalysis = powerAnalysis
-
         debugPowerAnalysis(powerAnalysis)
         
-        // ✅ Determine the correct start time (default to user-selected ride date)
+        await MainActor.run {
+            pacingGenerationStatus = "Optimizing for \(strategy.description) strategy..."
+        }
+        
+        // Determine the correct start time
         let planStartTime = startTime ?? rideDate
-
-        // Use fueling preferences from settings
+        
+        // ✅ Do the heavy work here - this is what takes time
         await controller.generateAdvancedRacePlan(
             from: powerAnalysis,
             strategy: strategy,
             fuelingPreferences: settings.fuelingPreferences,
-            startTime: planStartTime, // Pass the correct time,
+            startTime: planStartTime,
             routeName: self.routeDisplayName
         )
         
         await MainActor.run {
             isGeneratingAdvancedPlan = false
-            print("Plan generated with \(controller.pacingPlan?.segments.count ?? 0) segments")
+            pacingGenerationStatus = ""
+            print("✅ Plan generated with \(controller.pacingPlan?.segments.count ?? 0) segments")
         }
     }
-
+    
     private func debugPowerAnalysis(_ analysis: PowerRouteAnalysisResult) {
         print("🔍 POWER ANALYSIS DEBUG:")
         print("   Total segments: \(analysis.segments.count)")
