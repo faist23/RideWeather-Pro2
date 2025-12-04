@@ -366,6 +366,8 @@ struct BodyMetricsSection: View {
     let bodyFat: Double?
     let leanMass: Double?
     
+    @EnvironmentObject var viewModel: WeatherViewModel
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -380,7 +382,7 @@ struct BodyMetricsSection: View {
                 if let mass = mass {
                     BodyMetricItem(
                         label: "Weight",
-                        value: String(format: "%.1f kg", mass),
+                        value: formatWeight(mass), // Use unit-aware formatter
                         color: .blue
                     )
                 }
@@ -396,7 +398,7 @@ struct BodyMetricsSection: View {
                 if let leanMass = leanMass {
                     BodyMetricItem(
                         label: "Lean Mass",
-                        value: String(format: "%.1f kg", leanMass),
+                        value: formatWeight(leanMass), // Use unit-aware formatter
                         color: .green
                     )
                 }
@@ -405,6 +407,12 @@ struct BodyMetricsSection: View {
         .padding()
         .background(Color(.systemGray6).opacity(0.5))
         .cornerRadius(12)
+    }
+    // Helper to format weight based on settings
+    private func formatWeight(_ kg: Double) -> String {
+        let units = viewModel.settings.units
+        let val = units == .metric ? kg : kg * 2.20462
+        return String(format: "%.1f %@", val, units.weightSymbol)
     }
 }
 
@@ -619,6 +627,7 @@ struct CombinedInsightCard: View {
             bodyFatPercentage: 0.145,
             leanBodyMass: 64.3
         ))
+        .environmentObject(WeatherViewModel()) // Inject mock VM for preview
         
         CombinedInsightCard(insight: CombinedInsight(
             title: "Inactive Recovery Detected",
