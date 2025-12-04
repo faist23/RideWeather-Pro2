@@ -52,6 +52,10 @@ struct ProcessingOverlay: View {
                                 .font(.system(size: 24, weight: .medium))
                                 .foregroundStyle(.blue.gradient)
                                 .symbolEffect(.pulse, options: .repeating)
+
+                            ProgressView()
+                                .controlSize(.large)
+                                .tint(.white)
                         }
                     } else {
                         // Indeterminate Spinner
