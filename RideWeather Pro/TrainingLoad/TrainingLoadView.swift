@@ -973,3 +973,511 @@ class TrainingLoadViewModel: ObservableObject {
     }
 }
 
+struct TrainingLoadViewEnhanced: View {
+    @StateObject private var viewModel = TrainingLoadViewModel()
+    @StateObject private var syncManager = TrainingLoadSyncManager()
+    @StateObject private var wellnessManager = WellnessManager.shared
+    @StateObject private var aiInsightsManager = AIInsightsManager()
+    
+    @EnvironmentObject private var stravaService: StravaService
+    @EnvironmentObject private var weatherViewModel: WeatherViewModel
+    @EnvironmentObject private var healthManager: HealthKitManager
+    
+    @State private var selectedPeriod: TrainingLoadPeriod = .month
+    @State private var showingExplanation = false
+    @State private var showingAIDebug = false
+    @State private var isSyncingWellness = false
+    
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    
+                    if let summary = viewModel.summary {
+                        // Sync Status Banner
+                        if stravaService.isAuthenticated || healthManager.isAuthorized {
+                            SyncStatusBannerEnhanced(
+                                stravaSyncManager: syncManager,
+                                wellnessManager: wellnessManager,
+                                isSyncingWellness: $isSyncingWellness,
+                                onStravaSync: {
+                                    Task {
+                                        let startDate = viewModel.summary == nil
+                                        ? Calendar.current.date(byAdding: .day, value: -365, to: Date())
+                                        : nil
+                                        
+                                        await syncManager.syncFromStrava(
+                                            stravaService: stravaService,
+                                            userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                                            userLTHR: nil,
+                                            startDate: startDate
+                                        )
+                                        viewModel.refresh(readiness: healthManager.readiness)
+                                    }
+                                },
+                                onWellnessSync: {
+                                    Task {
+                                        isSyncingWellness = true
+                                        await wellnessManager.syncFromHealthKit(healthManager: healthManager, days: 7)
+                                        isSyncingWellness = false
+                                    }
+                                }
+                            )
+                        }
+                        
+                        // Current Status Card
+                        CurrentFormCard(summary: summary)
+                        
+                        // Daily Readiness Card (Enhanced with Wellness)
+                        if healthManager.isAuthorized && (viewModel.readiness?.latestHRV != nil || viewModel.readiness?.latestRHR != nil || viewModel.readiness?.sleepDuration != nil) {
+                            DailyReadinessCard(readiness: viewModel.readiness!)
+                                .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
+                        }
+                        
+                        // NEW: Daily Wellness Card
+                        if let latestWellness = wellnessManager.dailyMetrics.last {
+                            DailyWellnessCard(metrics: latestWellness)
+                                .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
+                        }
+                        
+                        // NEW: Combined Insights (Training + Wellness)
+                        let combinedInsights = wellnessManager.getCombinedInsights(trainingLoadSummary: summary)
+                        if !combinedInsights.isEmpty {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Health & Training Insights")
+                                    .font(.headline)
+                                    .padding(.horizontal)
+                                
+                                ForEach(combinedInsights) { insight in
+                                    CombinedInsightCard(insight: insight)
+                                }
+                            }
+                        }
+                        
+                        // AI Insights
+                        if aiInsightsManager.isLoading {
+                            AIInsightLoadingCard()
+                                .transition(.opacity)
+                        } else if let aiInsight = aiInsightsManager.currentInsight {
+                            AIInsightCard(insight: aiInsight)
+                                .transition(.asymmetric(
+                                    insertion: .opacity.combined(with: .move(edge: .top)),
+                                    removal: .opacity
+                                ))
+                        }
+                        
+                        // NEW: Wellness Summary
+                        if let wellnessSummary = wellnessManager.currentSummary {
+                            WellnessSummaryCard(summary: wellnessSummary)
+                        }
+                        
+                        // Full History Sync Button
+                        if stravaService.isAuthenticated && viewModel.totalDaysInStorage < 200 {
+                            Button {
+                                Task {
+                                    let startDate = Calendar.current.date(byAdding: .day, value: -365, to: Date())
+                                    await syncManager.syncFromStrava(
+                                        stravaService: stravaService,
+                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                                        userLTHR: nil,
+                                        startDate: startDate
+                                    )
+                                    viewModel.refresh(readiness: healthManager.readiness)
+                                }
+                            } label: {
+                                HStack {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                    Text("Sync Full History (Last Year)")
+                                }
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(
+                                    LinearGradient(
+                                        colors: [.orange, .red],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .cornerRadius(12)
+                            }
+                            .disabled(syncManager.isSyncing)
+                            
+                            Text("You have \(viewModel.totalDaysInStorage) days of data. Sync more to see long-term trends.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        
+                        // Standard Insights
+                        TrainingLoadInsightsSection(insights: viewModel.insights)
+                        
+                        // Training Load Chart
+                        TrainingLoadChart(
+                            dailyLoads: viewModel.dailyLoads,
+                            period: selectedPeriod
+                        )
+                        
+                        // Period Selector
+                        periodSelector
+                        
+                        // Key Metrics
+                        MetricsGrid(summary: summary)
+                        
+                    } else {
+                        // Empty state
+                        if !healthManager.isAuthorized && !stravaService.isAuthenticated {
+                            emptyStateView
+                        } else if healthManager.isAuthorized && !stravaService.isAuthenticated {
+                            healthOnlyEmptyState
+                        } else {
+                            emptyStateView
+                        }
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Fitness & Wellness")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItemGroup(placement: .navigationBarLeading) {
+                    if stravaService.isAuthenticated && !syncManager.isSyncing {
+                        Menu {
+                            Button {
+                                Task {
+                                    let startDate = Calendar.current.date(byAdding: .day, value: -30, to: Date())
+                                    await syncManager.syncFromStrava(
+                                        stravaService: stravaService,
+                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                                        userLTHR: nil,
+                                        startDate: startDate
+                                    )
+                                    viewModel.refresh(readiness: healthManager.readiness)
+                                }
+                            } label: {
+                                Label("Last 30 Days", systemImage: "calendar")
+                            }
+                            
+                            Button {
+                                Task {
+                                    let startDate = Calendar.current.date(byAdding: .day, value: -90, to: Date())
+                                    await syncManager.syncFromStrava(
+                                        stravaService: stravaService,
+                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                                        userLTHR: nil,
+                                        startDate: startDate
+                                    )
+                                    viewModel.refresh(readiness: healthManager.readiness)
+                                }
+                            } label: {
+                                Label("Last 90 Days", systemImage: "calendar")
+                            }
+                            
+                            Button {
+                                Task {
+                                    let startDate = Calendar.current.date(byAdding: .day, value: -365, to: Date())
+                                    await syncManager.syncFromStrava(
+                                        stravaService: stravaService,
+                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                                        userLTHR: nil,
+                                        startDate: startDate
+                                    )
+                                    viewModel.refresh(readiness: healthManager.readiness)
+                                }
+                            } label: {
+                                Label("Last Year", systemImage: "calendar.badge.clock")
+                            }
+                            
+                            Divider()
+                            
+                            Button {
+                                Task {
+                                    await syncManager.syncFromStrava(
+                                        stravaService: stravaService,
+                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                                        userLTHR: nil,
+                                        startDate: nil
+                                    )
+                                    viewModel.refresh(readiness: healthManager.readiness)
+                                }
+                            } label: {
+                                Label("Incremental Sync", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                        } label: {
+                            Label("Sync", systemImage: syncManager.needsSync ? "exclamationmark.arrow.triangle.2.circlepath" : "arrow.triangle.2.circlepath")
+                                .foregroundColor(syncManager.needsSync ? .orange : .blue)
+                        }
+                    }
+                }
+                
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button {
+                        showingExplanation = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                }
+            }
+            .overlay {
+                if syncManager.isSyncing {
+                    ProcessingOverlay.syncing("Strava", subtitle: syncManager.syncStatus)
+                        .zIndex(100)
+                }
+                if isSyncingWellness {
+                    ProcessingOverlay.syncing("Health", subtitle: "Fetching wellness data...")
+                        .zIndex(100)
+                }
+            }
+            .animatedBackground(
+                gradient: .rideAnalysisBackground,
+                showDecoration: true,
+                decorationColor: .white,
+                decorationIntensity: 0.06
+            )
+            .sheet(isPresented: $showingExplanation) {
+                TrainingLoadExplanationView()
+            }
+            .sheet(isPresented: $showingAIDebug) {
+                AIInsightsDebugView(manager: aiInsightsManager)
+            }
+            .onAppear {
+                syncManager.loadSyncDate()
+                viewModel.refresh(readiness: healthManager.readiness)
+                viewModel.loadPeriod(selectedPeriod)
+                
+                Task {
+                    // Sync Strava if needed
+                    if syncManager.needsSync && stravaService.isAuthenticated {
+                        await syncManager.syncFromStrava(
+                            stravaService: stravaService,
+                            userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                            userLTHR: nil,
+                            startDate: nil
+                        )
+                        viewModel.refresh(readiness: healthManager.readiness)
+                        viewModel.loadPeriod(selectedPeriod)
+                    }
+                    
+                    // Sync Wellness if needed
+                    if wellnessManager.needsSync && healthManager.isAuthorized {
+                        await wellnessManager.syncFromHealthKit(healthManager: healthManager, days: 7)
+                    }
+                    
+                    // Generate AI insights
+                    await aiInsightsManager.analyzeIfNeeded(
+                        summary: viewModel.summary,
+                        readiness: healthManager.readiness,
+                        recentLoads: viewModel.dailyLoads
+                    )
+                }
+            }
+            .onChange(of: selectedPeriod) { oldValue, newValue in
+                viewModel.loadPeriod(newValue)
+            }
+            .onChange(of: healthManager.readiness) {
+                viewModel.refresh(readiness: healthManager.readiness)
+            }
+        }
+    }
+    
+    private var periodSelector: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(TrainingLoadPeriod.allPeriods, id: \.days) { period in
+                    TrainingLoadView.PeriodButton(
+                        period: period,
+                        isSelected: selectedPeriod.days == period.days,
+                        action: {
+                            if selectedPeriod.days != period.days {
+                                selectedPeriod = period
+                                viewModel.loadPeriod(period)
+                            }
+                        }
+                    )
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+    
+    private var emptyStateView: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .font(.system(size: 70))
+                .foregroundColor(.secondary)
+            
+            Text("No Training Data Yet")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            if stravaService.isAuthenticated {
+                Text("Sync your activities from Strava to start tracking your fitness, fatigue, and form.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                
+                Button {
+                    Task {
+                        let startDate = Calendar.current.date(byAdding: .day, value: -365, to: Date())
+                        await syncManager.syncFromStrava(
+                            stravaService: stravaService,
+                            userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+                            userLTHR: nil,
+                            startDate: startDate
+                        )
+                        viewModel.refresh(readiness: healthManager.readiness)
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text("Sync from Strava")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.orange)
+                    .cornerRadius(12)
+                }
+                .padding(.horizontal, 40)
+                .disabled(syncManager.isSyncing)
+            } else {
+                Text("Connect to Strava in Settings to track training load, or use Apple Health for wellness tracking.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+            }
+            
+            Spacer()
+        }
+    }
+    
+    private var healthOnlyEmptyState: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            
+            Image(systemName: "heart.text.square.fill")
+                .font(.system(size: 70))
+                .foregroundColor(.red)
+            
+            Text("Health Connected!")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            Text("Connect Strava to combine wellness data with training load metrics for complete insights.")
+                .font(.body)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+            
+            Spacer()
+        }
+    }
+}
+
+// MARK: - Enhanced Sync Status Banner
+
+struct SyncStatusBannerEnhanced: View {
+    @ObservedObject var stravaSyncManager: TrainingLoadSyncManager
+    @ObservedObject var wellnessManager: WellnessManager
+    @Binding var isSyncingWellness: Bool
+    let onStravaSync: () -> Void
+    let onWellnessSync: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Strava Sync Status
+            if stravaSyncManager.lastSyncDate != nil || stravaSyncManager.needsSync {
+                HStack(spacing: 12) {
+                    Image(systemName: stravaSyncManager.needsSync ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .foregroundColor(stravaSyncManager.needsSync ? .orange : .green)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Image("strava_logo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 16, height: 16)
+                            Text(stravaSyncManager.needsSync ? "Training Load Sync Needed" : "Training Load Synced")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        }
+                        
+                        if let lastSync = stravaSyncManager.lastSyncDate {
+                            Text("Last sync: \(lastSync.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    if stravaSyncManager.needsSync {
+                        Button(action: onStravaSync) {
+                            Text("Sync")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.orange)
+                                .cornerRadius(8)
+                        }
+                        .disabled(stravaSyncManager.isSyncing)
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(12)
+            }
+            
+            // Wellness Sync Status
+            if wellnessManager.lastSyncDate != nil || wellnessManager.needsSync {
+                HStack(spacing: 12) {
+                    Image(systemName: wellnessManager.needsSync ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .foregroundColor(wellnessManager.needsSync ? .orange : .green)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Image(systemName: "heart.fill")
+                                .foregroundColor(.red)
+                            Text(wellnessManager.needsSync ? "Wellness Sync Needed" : "Wellness Synced")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        }
+                        
+                        if let lastSync = wellnessManager.lastSyncDate {
+                            Text("Last sync: \(lastSync.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    if wellnessManager.needsSync {
+                        Button(action: onWellnessSync) {
+                            Text("Sync")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.red)
+                                .cornerRadius(8)
+                        }
+                        .disabled(isSyncingWellness)
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(12)
+            }
+        }
+    }
+}

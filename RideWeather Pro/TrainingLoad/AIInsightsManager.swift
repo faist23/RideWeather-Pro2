@@ -459,3 +459,234 @@ enum AIInsightError: Error {
         }
     }
 }
+
+extension AIInsightsManager {
+    
+    /// Enhanced analysis that includes wellness metrics
+    func analyzeWithWellness(
+        summary: TrainingLoadSummary?,
+        readiness: PhysiologicalReadiness?,
+        recentLoads: [DailyTrainingLoad],
+        wellnessMetrics: [DailyWellnessMetrics]
+    ) async {
+        guard Self.isEnabled else {
+            print("🤖 AI Insights: Disabled")
+            return
+        }
+        
+        // Only analyze if there's something interesting OR we have wellness data
+        guard shouldAnalyze(summary: summary, readiness: readiness) || !wellnessMetrics.isEmpty else {
+            print("🤖 AI Insights: No analysis needed")
+            return
+        }
+        
+        // Rate limiting: Don't analyze more than once per 6 hours
+        if let lastAnalysis = lastAnalysisDate,
+           Date().timeIntervalSince(lastAnalysis) < 6 * 3600 {
+            print("🤖 AI Insights: Too soon since last analysis")
+            return
+        }
+        
+        await generateWellnessEnhancedInsight(
+            summary: summary,
+            readiness: readiness,
+            recentLoads: recentLoads,
+            wellnessMetrics: wellnessMetrics
+        )
+    }
+    
+    private func generateWellnessEnhancedInsight(
+        summary: TrainingLoadSummary?,
+        readiness: PhysiologicalReadiness?,
+        recentLoads: [DailyTrainingLoad],
+        wellnessMetrics: [DailyWellnessMetrics]
+    ) async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            let prompt = buildWellnessEnhancedPrompt(
+                summary: summary,
+                readiness: readiness,
+                recentLoads: recentLoads,
+                wellnessMetrics: wellnessMetrics
+            )
+            
+            let response = try await callClaudeAPI(prompt: prompt)
+            
+            if let insight = parseInsightResponse(response) {
+                currentInsight = insight
+                lastAnalysisDate = Date()
+                cacheInsight(insight)
+                print("🤖 AI Insights: Generated wellness-enhanced insight")
+            }
+            
+        } catch {
+            print("🤖 AI Insights Error: \(error.localizedDescription)")
+        }
+    }
+    
+    private func buildWellnessEnhancedPrompt(
+        summary: TrainingLoadSummary?,
+        readiness: PhysiologicalReadiness?,
+        recentLoads: [DailyTrainingLoad],
+        wellnessMetrics: [DailyWellnessMetrics]
+    ) -> String {
+        var prompt = """
+        You are an expert cycling coach with expertise in sports science and recovery optimization.
+        Analyze training data AND lifestyle/wellness data together for holistic insights.
+        
+        CRITICAL: Your response must be a single JSON object with this exact structure:
+        {
+          "priority": "critical" | "warning" | "info",
+          "title": "Brief title (max 50 chars)",
+          "insight": "Main insight (2-3 sentences, max 200 chars)",
+          "explanation": "Why this matters (2-3 sentences, max 250 chars)",
+          "recommendation": "Specific action to take (1-2 sentences, max 200 chars)",
+          "confidence": "high" | "moderate" | "low"
+        }
+        
+        Current Training Load:
+        """
+        
+        if let summary = summary {
+            prompt += """
+            
+            - Fitness (CTL): \(String(format: "%.1f", summary.currentCTL))
+            - Fatigue (ATL): \(String(format: "%.1f", summary.currentATL))
+            - Form (TSB): \(String(format: "%.1f", summary.currentTSB))
+            - Ramp Rate: \(String(format: "%.1f", summary.rampRate)) TSS/week
+            - Weekly TSS: \(String(format: "%.0f", summary.weeklyTSS))
+            """
+        }
+        
+        if let readiness = readiness {
+            prompt += """
+            
+            
+            Physiological Readiness:
+            """
+            
+            if let hrv = readiness.latestHRV, let avgHRV = readiness.averageHRV {
+                let hrvChange = ((hrv - avgHRV) / avgHRV) * 100
+                prompt += "\n- HRV: \(Int(hrv))ms (7d avg: \(Int(avgHRV))ms, \(String(format: "%+.1f", hrvChange))%)"
+            }
+            
+            if let rhr = readiness.latestRHR, let avgRHR = readiness.averageRHR {
+                let rhrChange = rhr - avgRHR
+                prompt += "\n- Resting HR: \(Int(rhr))bpm (7d avg: \(Int(avgRHR))bpm, \(String(format: "%+.1f", rhrChange))bpm)"
+            }
+            
+            if let sleep = readiness.sleepDuration {
+                let hours = Int(sleep) / 3600
+                let minutes = (Int(sleep) % 3600) / 60
+                prompt += "\n- Last night's sleep: \(hours)h \(minutes)m"
+            }
+        }
+        
+        // Add wellness metrics for last 7 days
+        if !wellnessMetrics.isEmpty {
+            prompt += """
+            
+            
+            Lifestyle & Wellness (Last 7 Days):
+            """
+            
+            let avgSteps = wellnessMetrics.compactMap { $0.steps }.reduce(0, +) / max(1, wellnessMetrics.compactMap { $0.steps }.count)
+            prompt += "\n- Average daily steps: \(avgSteps)"
+            
+            let avgSleepHours = wellnessMetrics.compactMap { $0.totalSleep }.reduce(0, +) / max(1, Double(wellnessMetrics.compactMap { $0.totalSleep }.count))
+            prompt += "\n- Average sleep duration: \(String(format: "%.1f", avgSleepHours / 3600))h"
+            
+            let avgSleepEfficiency = wellnessMetrics.compactMap { $0.computedSleepEfficiency }.reduce(0, +) / max(1, Double(wellnessMetrics.compactMap { $0.computedSleepEfficiency }.count))
+            prompt += "\n- Average sleep efficiency: \(String(format: "%.0f", avgSleepEfficiency))%"
+            
+            let avgActiveCalories = wellnessMetrics.compactMap { $0.activeEnergyBurned }.reduce(0, +) / max(1, Double(wellnessMetrics.compactMap { $0.activeEnergyBurned }.count))
+            prompt += "\n- Average active calories: \(Int(avgActiveCalories)) kcal/day"
+            
+            // Add yesterday's specific data for context
+            if let yesterday = wellnessMetrics.last {
+                prompt += "\n\nYesterday's Activity:"
+                if let steps = yesterday.steps {
+                    prompt += "\n- Steps: \(steps)"
+                }
+                if let sleep = yesterday.totalSleep {
+                    prompt += "\n- Sleep: \(String(format: "%.1f", sleep / 3600))h"
+                }
+                if let deep = yesterday.sleepDeep, let rem = yesterday.sleepREM {
+                    prompt += "\n- Sleep stages: \(String(format: "%.1f", deep / 3600))h deep, \(String(format: "%.1f", rem / 3600))h REM"
+                }
+            }
+        }
+        
+        // Add recent training
+        let recent = recentLoads.prefix(7)
+        if !recent.isEmpty {
+            prompt += """
+            
+            
+            Last 7 Days Training:
+            """
+            for load in recent {
+                let dateStr = load.date.formatted(date: .abbreviated, time: .omitted)
+                prompt += "\n- \(dateStr): \(String(format: "%.0f", load.tss)) TSS"
+            }
+        }
+        
+        prompt += """
+        
+        
+        Analyze ALL the data together - training load, physiological signals, AND lifestyle factors.
+        Look for:
+        1. Conflicts between training math and real-world recovery (e.g., positive TSB but poor sleep/low activity)
+        2. Lifestyle factors undermining training (e.g., high TSS but inadequate daily movement)
+        3. Recovery opportunities (e.g., good sleep + low activity = ready for hard session)
+        4. Warning signs (e.g., low steps on rest days = not truly recovering)
+        
+        Be specific and actionable. Connect the dots between training load and lifestyle.
+        Respond ONLY with the JSON object, no other text.
+        """
+        
+        return prompt
+    }
+}
+
+// MARK: - Wellness Summary Helper
+
+extension WellnessManager {
+    
+    /// Get a quick text summary of wellness trends for AI context
+    func getWeekSummaryText() -> String {
+        guard let summary = currentSummary else {
+            return "No wellness data available"
+        }
+        
+        var text = ""
+        
+        if let avgSteps = summary.averageSteps {
+            text += "Avg steps: \(Int(avgSteps))/day. "
+        }
+        
+        if let avgSleep = summary.averageSleepHours {
+            text += "Avg sleep: \(String(format: "%.1f", avgSleep))h/night. "
+        }
+        
+        if let efficiency = summary.averageSleepEfficiency {
+            text += "Sleep efficiency: \(Int(efficiency))%. "
+        }
+        
+        if let debt = summary.sleepDebt, abs(debt) > 2 {
+            text += "Sleep debt: \(abs(Int(debt)))h. "
+        }
+        
+        if let trend = summary.activityTrend {
+            if trend > 10 {
+                text += "Activity trending up. "
+            } else if trend < -10 {
+                text += "Activity declining. "
+            }
+        }
+        
+        return text.isEmpty ? "No wellness trends detected" : text
+    }
+}
