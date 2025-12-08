@@ -71,8 +71,8 @@ class AIInsightsManager: ObservableObject {
             print("🤖 AI Insights: ❌ Failed to parse plist as [String: String]")
             
             // Try to see what's actually in the file
-            if let rawDict = NSDictionary(contentsOfFile: path) {
- //               print("🤖 AI Insights: 📋 Raw plist contents: \(rawDict)")
+            if NSDictionary(contentsOfFile: path) != nil {
+                print("🤖 AI Insights: ❌ Failed to parse plist structure")
             }
             
             anthropicConfig = [:]

@@ -25,7 +25,9 @@ class HealthKitManager: ObservableObject {
             HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!,
             HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
             HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
-            HKObjectType.quantityType(forIdentifier: .bodyMass)!
+            HKObjectType.quantityType(forIdentifier: .bodyMass)!,
+
+            HKObjectType.workoutType()
         ]
         
         // NEW: Wellness types

@@ -13,11 +13,12 @@ struct SettingsView: View {
     @EnvironmentObject var healthManager: HealthKitManager
     @Environment(\.dismiss) private var dismiss
     
+    @StateObject private var dataSourceManager = DataSourceManager.shared
+    
     var body: some View {
         NavigationStack {
             Form {
                 // MARK: - Core Configuration
-                // Keep core app behavior at the top level
                 Section {
                     Picker("Unit System", selection: $viewModel.settings.units) {
                         ForEach(UnitSystem.allCases) { unit in
@@ -25,7 +26,6 @@ struct SettingsView: View {
                         }
                     }
                     .onChange(of: viewModel.settings.units) { _, newUnits in
-                        // Update checkpoint interval when units change
                         viewModel.settings.timeCheckpointIntervalKm = newUnits == .metric ? 10.0 : 8.05
                     }
                     Picker("Analysis Method", selection: $viewModel.settings.speedCalculationMethod) {
@@ -43,8 +43,7 @@ struct SettingsView: View {
                     }
                 }
                 
-                // MARK: - Rider Profile (Dynamic)
-                // This changes based on the selected method
+                // MARK: - Rider Profile
                 Section("Rider Profile") {
                     if viewModel.settings.speedCalculationMethod == .averageSpeed {
                         averageSpeedSettings
@@ -64,24 +63,27 @@ struct SettingsView: View {
                     }
                 }
                 
-                Section("Connections") {
+                // MARK: - NEW: Data Sources Section
+                Section("Data & Tracking") {
+                    NavigationLink(destination: DataSourceSettingsView()) {
+                        HStack {
+                            Label("Data Sources", systemImage: "chart.bar.doc.horizontal")
+                            Spacer()
+                            dataSourceBadges
+                        }
+                    }
+                    
                     NavigationLink(destination: IntegrationsSettingsView()) {
                         HStack {
                             Label("Integrations", systemImage: "link")
                             Spacer()
-                            // Show a little badge if connected
-                            HStack(spacing: 4) {
-                                if stravaService.isAuthenticated { ConnectionBadge(color: .orange) }
-                                if garminService.isAuthenticated { ConnectionBadge(color: .blue) }
-                                if wahooService.isAuthenticated { ConnectionBadge(color: .cyan) }
-                                if healthManager.isAuthorized { ConnectionBadge(color: .red) }
-                            }
+                            connectionBadges
                         }
                     }
                 }
                 
                 // MARK: - Data Management
-                Section("Data & Storage") {
+                Section("Storage") {
                     NavigationLink {
                         TrainingLoadView()
                     } label: {
@@ -89,19 +91,27 @@ struct SettingsView: View {
                     }
                     
                     HStack {
-                        Text("Storage Used")
+                        Text("Training Data")
                         Spacer()
                         Text(TrainingLoadManager.shared.getStorageInfo())
                             .foregroundStyle(.secondary)
                     }
                     
+                    HStack {
+                        Text("Wellness Data")
+                        Spacer()
+                        Text(WellnessManager.shared.getStorageInfo())
+                            .foregroundStyle(.secondary)
+                    }
+                    
                     Button(role: .destructive) {
                         TrainingLoadManager.shared.clearAll()
-                        // Clear sync date from UserDefaults
+                        WellnessManager.shared.clearAll()
                         UserDefaults.standard.removeObject(forKey: "lastTrainingLoadSync")
-                        print("🗑️ Cleared all training load data and sync date")
+                        UserDefaults.standard.removeObject(forKey: "wellnessLastSync")
+                        print("🗑️ Cleared all training and wellness data")
                     } label: {
-                        Label("Reset Training Load Data", systemImage: "trash")
+                        Label("Reset All Data", systemImage: "trash")
                             .foregroundStyle(.red)
                     }
                 }
@@ -123,7 +133,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            .scrollContentBackground(.hidden) // Hide default background for custom styling
+            .scrollContentBackground(.hidden)
             .animatedBackground(
                 gradient: .settingsBackground,
                 showDecoration: true,
@@ -135,17 +145,74 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
-                        // Save settings and trigger recalculation if needed
                         viewModel.recalculateWithNewSettings()
                         dismiss()
                     }
                     .fontWeight(.semibold)
                 }
             }
+            .onAppear {
+                // Auto-configure data sources on first launch if needed
+                let status = dataSourceManager.validateConfiguration(
+                    stravaConnected: stravaService.isAuthenticated,
+                    healthConnected: healthManager.isAuthorized,
+                    garminConnected: garminService.isAuthenticated
+                )
+                
+                if !status.isValid {
+                    dataSourceManager.autoConfigureFromConnections(
+                        stravaConnected: stravaService.isAuthenticated,
+                        healthConnected: healthManager.isAuthorized,
+                        garminConnected: garminService.isAuthenticated
+                    )
+                }
+            }
         }
     }
     
-    // MARK: - Inline Sub-Views for Dynamic Content
+    // MARK: - Data Source Badges
+    
+    private var dataSourceBadges: some View {
+        HStack(spacing: 4) {
+            // Training load badge
+            Image(systemName: "figure.run.circle.fill")
+                .foregroundColor(trainingLoadColor)
+                .font(.caption)
+            
+            // Wellness badge
+            Image(systemName: "heart.circle.fill")
+                .foregroundColor(wellnessColor)
+                .font(.caption)
+        }
+    }
+    
+    private var trainingLoadColor: Color {
+        switch dataSourceManager.configuration.trainingLoadSource {
+        case .strava: return stravaService.isAuthenticated ? .orange : .gray
+        case .appleHealth: return healthManager.isAuthorized ? .red : .gray
+        case .garmin: return garminService.isAuthenticated ? .blue : .gray
+        case .manual: return .purple
+        }
+    }
+    
+    private var wellnessColor: Color {
+        switch dataSourceManager.configuration.wellnessSource {
+        case .appleHealth: return healthManager.isAuthorized ? .red : .gray
+        case .garmin: return garminService.isAuthenticated ? .blue : .gray
+        case .none: return .gray
+        }
+    }
+    
+    private var connectionBadges: some View {
+        HStack(spacing: 4) {
+            if stravaService.isAuthenticated { ConnectionBadge(color: .orange) }
+            if garminService.isAuthenticated { ConnectionBadge(color: .blue) }
+            if wahooService.isAuthenticated { ConnectionBadge(color: .cyan) }
+            if healthManager.isAuthorized { ConnectionBadge(color: .red) }
+        }
+    }
+    
+    // MARK: - Inline Sub-Views
     
     private var averageSpeedSettings: some View {
         Group {
@@ -156,7 +223,6 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             
-            // 2. A Stepper is much better for precise adjustments
             Stepper(
                 "Average Speed",
                 value: $viewModel.settings.averageSpeed,
@@ -207,18 +273,15 @@ struct SettingsView: View {
                     in: viewModel.settings.units == .metric ? 40...150 : 90...330,
                     step: 0.1
                 )
-                // Disable manual slider if a sync source is active
                 .disabled(viewModel.settings.weightSource != .manual)
                 .opacity(viewModel.settings.weightSource != .manual ? 0.6 : 1.0)
                 
-                // ✅ Weight Source Picker with Auto-Update
                 Picker("Update from", selection: $viewModel.settings.weightSource) {
                     ForEach(AppSettings.WeightSource.allCases) { source in
                         Text(source.rawValue).tag(source)
                     }
                 }
                 .pickerStyle(.segmented)
-                // Trigger sync immediately when source changes
                 .onChange(of: viewModel.settings.weightSource) { _, newSource in
                     Task {
                         await performWeightSync(source: newSource)
@@ -236,7 +299,6 @@ struct SettingsView: View {
                 }
             }
             .padding(.vertical, 4)
-            // Ensure weight is fresh when viewing settings
             .task {
                 await performWeightSync(source: viewModel.settings.weightSource)
             }
@@ -289,12 +351,13 @@ struct SettingsView: View {
         if let weight = newWeight, weight > 0 {
             await MainActor.run {
                 viewModel.settings.bodyWeight = weight
-                // Access computed property to trigger any necessary UI updates
                 let _ = viewModel.settings.bodyWeightInUserUnits
             }
         }
     }
 }
+
+
 
 // MARK: - Sub-View: Preferences
 struct PreferencesSettingsView: View {

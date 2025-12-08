@@ -155,7 +155,8 @@ struct DailyForecast: Identifiable, Equatable {
 
     let windSpeed: Double
     let windDeg: Int
-
+    let summary: String
+    
     var windDirection: String {
         WeatherMapper.mapWindDirection(degrees: Double(windDeg))
     }
@@ -244,11 +245,13 @@ struct DailyItem: Codable {
     let weather: [Weather]
     let windSpeed: Double
     let windDeg: Int
-
+    let summary: String?
+    
     enum CodingKeys: String, CodingKey {
         case dt, temp, pop, weather
         case windSpeed = "wind_speed"
         case windDeg = "wind_deg"
+        case summary
     }
 }
 
@@ -480,3 +483,4 @@ struct EnhancedWeatherInsights {
         }
     }
 }
+

@@ -53,6 +53,23 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         loadAthleteNameFromKeychain()
     }
     
+    /// This persists across app launches but resets if the app is uninstalled
+    private var appUserId: String {
+        if let vendorId = UIDevice.current.identifierForVendor?.uuidString {
+            return vendorId
+        }
+        
+        // Fallback: Create and store a UUID if vendorId is unavailable
+        let fallbackKey = "app_user_id_fallback"
+        if let stored = UserDefaults.standard.string(forKey: fallbackKey) {
+            return stored
+        }
+        
+        let newId = UUID().uuidString
+        UserDefaults.standard.set(newId, forKey: fallbackKey)
+        return newId
+    }
+    
     private func loadConfig() {
         guard let path = Bundle.main.path(forResource: "GarminConfig", ofType: "plist"),
               let dict = NSDictionary(contentsOfFile: path) as? [String: String] else {
@@ -86,8 +103,9 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             URLQueryItem(name: "client_id", value: clientId),
             URLQueryItem(name: "redirect_uri", value: redirectUri),
             URLQueryItem(name: "code_challenge", value: pkce.challenge),
-            URLQueryItem(name: "code_challenge_method", value: "S256")  
-        ]
+            URLQueryItem(name: "code_challenge_method", value: "S256"),
+            URLQueryItem(name: "scope", value: "WELLNESS_READ ACTIVITY_READ")
+       ]
         
         guard let authURL = components.url else { return }
         
@@ -204,6 +222,20 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                     self.currentPkceVerifier = nil
                     print("GarminService: ✅ Token exchange successful!")
                     await self.fetchUserName()
+                    
+                    // Link to Supabase
+                    // You need to provide your app's user ID here
+                    // This could come from your authentication system
+                    let appUserId = "c3ac0dc459d0f73055ebb2c9ab7d6fbd" // TODO: Replace with actual user ID
+                    
+                    do {
+                        try await self.linkToSupabase(appUserId: self.appUserId)
+                        print("GarminService: ✅ Linked to Supabase successfully")
+                    } catch {
+                        print("GarminService: ⚠️ Failed to link to Supabase: \(error.localizedDescription)")
+                        // Don't fail the whole auth flow if Supabase linking fails
+                    }
+
                 } catch {
                     print("GarminService: Token decoding error: \(error)")
                     self.errorMessage = "Token exchange failed. Please try again."
@@ -338,6 +370,58 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         }
     }
     
+    // MARK: - Supabase Integration (Add this section to GarminService.swift)
+
+    /// Link the Garmin user to your app user in Supabase after successful OAuth
+    func linkToSupabase(appUserId: String) async throws {
+        // Get the Garmin user ID from the wellness API
+        guard let garminUserId = try await fetchGarminUserId() else {
+            throw GarminError.apiError(statusCode: 0, message: "Could not retrieve Garmin user ID")
+        }
+        
+        print("GarminService: Linking Garmin user \(garminUserId) to app user \(appUserId)")
+        
+        // Store the mapping in Supabase
+        let wellnessService = WellnessDataService()
+        try await wellnessService.linkGarminUser(appUserId: appUserId, garminUserId: garminUserId)
+        
+        print("GarminService: ✅ Successfully linked to Supabase")
+    }
+
+    /// Fetch the Garmin user ID from the wellness API
+    private func fetchGarminUserId() async throws -> String? {
+        try await refreshTokenIfNeededAsync()
+        
+        guard let token = currentTokens?.accessToken else {
+            throw GarminError.notAuthenticated
+        }
+        
+        guard let url = URL(string: "https://apis.garmin.com/wellness-api/rest/user/id") else {
+            throw GarminError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GarminError.invalidResponse
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            throw GarminError.apiError(statusCode: httpResponse.statusCode, message: "Failed to get user ID")
+        }
+        
+        // Parse the response to get user ID
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let userId = json["userId"] as? String {
+            return userId
+        }
+        
+        return nil
+    }
+
     func uploadCourse(
         routePoints: [EnhancedRoutePoint],
         courseName: String,
@@ -753,6 +837,9 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let window = windowScene.windows.first(where: { $0.isKeyWindow }) else {
+            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                return scene.windows.first ?? UIWindow()
+            }
             return UIWindow()
         }
         return window
@@ -872,3 +959,108 @@ struct GarminTokenResponse: Decodable {
     let expiresIn: TimeInterval
 }
 
+// MARK: - Activity & Wellness Data Extensions
+
+extension GarminService {
+    
+    // MARK: - Properties for Data Access
+    
+    var athleteId: String? {
+        // Garmin doesn't expose athlete ID directly in OAuth
+        // Use "me" or store from wellness API response
+        return "me"
+    }
+    
+    var accessToken: String {
+        return currentTokens?.accessToken ?? ""
+    }
+    
+    // MARK: - Activity Fetching
+    
+    /// Fetches activities from Garmin Connect
+    func fetchActivities(startDate: Date) async throws -> [GarminActivity] {
+        try await refreshTokenIfNeededAsync()
+        
+        guard let token = currentTokens?.accessToken else {
+            throw GarminError.notAuthenticated
+        }
+        
+        let formatter = ISO8601DateFormatter()
+        let startString = formatter.string(from: startDate)
+        
+        // Garmin Connect API endpoint for activities
+        let urlString = "https://apis.garmin.com/wellness-api/rest/activityDetails?uploadStartTimeInSeconds=\(Int(startDate.timeIntervalSince1970))&uploadEndTimeInSeconds=\(Int(Date().timeIntervalSince1970))"
+        
+        guard let url = URL(string: urlString) else {
+            throw GarminError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GarminError.invalidResponse
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let errorMsg = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw GarminError.apiError(statusCode: httpResponse.statusCode, message: errorMsg)
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let activities = try decoder.decode([GarminActivity].self, from: data)
+        
+        print("GarminService: Fetched \(activities.count) activities")
+        return activities
+    }
+
+}
+
+// MARK: - Garmin Activity Model
+
+struct GarminActivity: Codable {
+    let activityId: Int
+    let activityName: String
+    let activityType: String
+    let startTime: Date
+    let duration: Int // seconds
+    let distance: Double // meters
+    let avgPower: Double?
+    let avgHeartRate: Double?
+    let maxHeartRate: Double?
+    let calories: Double?
+    
+    enum CodingKeys: String, CodingKey {
+        case activityId
+        case activityName
+        case activityType
+        case startTime = "startTimeInSeconds"
+        case duration = "durationInSeconds"
+        case distance = "distanceInMeters"
+        case avgPower = "averagePowerInWatts"
+        case avgHeartRate = "averageHeartRateInBeatsPerMinute"
+        case maxHeartRate = "maxHeartRateInBeatsPerMinute"
+        case calories = "activeKilocalories"
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        activityId = try container.decode(Int.self, forKey: .activityId)
+        activityName = try container.decode(String.self, forKey: .activityName)
+        activityType = try container.decode(String.self, forKey: .activityType)
+        
+        // Decode timestamp
+        let timestamp = try container.decode(TimeInterval.self, forKey: .startTime)
+        startTime = Date(timeIntervalSince1970: timestamp)
+        
+        duration = try container.decode(Int.self, forKey: .duration)
+        distance = try container.decode(Double.self, forKey: .distance)
+        avgPower = try container.decodeIfPresent(Double.self, forKey: .avgPower)
+        avgHeartRate = try container.decodeIfPresent(Double.self, forKey: .avgHeartRate)
+        maxHeartRate = try container.decodeIfPresent(Double.self, forKey: .maxHeartRate)
+        calories = try container.decodeIfPresent(Double.self, forKey: .calories)
+    }
+}

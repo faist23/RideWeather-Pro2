@@ -10,20 +10,32 @@ import SwiftUI
 struct DailyForecastView: View {
     let daily: [DailyForecast]
 
+    // Track which day is expanded
+    @State private var selectedDayId: UUID?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("7-Day Forecast")
                 .font(.title3.weight(.semibold))
                 .padding(.horizontal)
 
-            VStack(spacing: 8) {
-           ForEach(daily) { day in
-                DailyForecastRow(day: day)
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-            }
+            VStack(spacing: 12) {
+                ForEach(daily) { day in
+                    DailyForecastRow(
+                        day: day,
+                        isExpanded: selectedDayId == day.id
+                    )
+                    .onTapGesture {
+                        // Fluid spring animation for the toggle
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                            if selectedDayId == day.id {
+                                selectedDayId = nil
+                            } else {
+                                selectedDayId = day.id
+                            }
+                        }
+                    }
+                }
             }
             .padding(.top, 4)
         }
@@ -39,58 +51,91 @@ struct DailyForecastView: View {
 
 struct DailyForecastRow: View {
     let day: DailyForecast
+    let isExpanded: Bool // Pass this in
 
     var body: some View {
-        HStack(spacing: 8) {
-
-            // Day label
-            Text(day.dayName)
-                .font(.body.weight(.medium))
-                .frame(width: 42, alignment: .leading)
-
-            // Weather icon
-            Image(systemName: day.iconName)
-                .font(.title2)
-                .frame(width: 30, alignment: .leading)
-
-            // Temps aligned
-            HStack(spacing: 6) {
-                Text("\(Int(day.high))°")
-                    .font(.body.weight(.semibold))
-
-                Text("\(Int(day.low))°")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 70, alignment: .leading)
-
-            if day.pop > 0.05 {
-                Text("\(Int(day.pop * 100))%")
+        VStack(alignment: .leading, spacing: 0) {
+            // MARK: - Header (Always Visible)
+            HStack(spacing: 8) {
+                // Day label
+                Text(day.dayName)
                     .font(.body.weight(.medium))
-                    .foregroundStyle(.blue)
+                    .frame(width: 42, alignment: .leading)
+
+                // Weather icon
+                Image(systemName: day.iconName)
+                    .font(.title2)
+                    .symbolRenderingMode(.multicolor) // Ensure multicolor for better icons
+                    .frame(width: 30, alignment: .leading)
+
+                // Temps aligned
+                HStack(spacing: 6) {
+                    Text("\(Int(day.high))°")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white)
+                    
+                    Text("\(Int(day.low))°")
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.7))
+
+                }
+                .frame(width: 70, alignment: .leading)
+
+                if day.pop > 0.05 {
+                    Text("\(Int(day.pop * 100))%")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.blue)
+                        .padding(4)
+                        .background(.blue.opacity(0.1), in: Capsule())
+                }
+                
+                Spacer()
+
+                // Wind
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up")
+                        .font(.caption)
+                        .rotationEffect(.degrees(blowingDegrees(for: day)))
+
+                    Text("\(Int(day.windSpeed))")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                
+                // Chevron to indicate expandability
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
             }
-            
-            Spacer()
+            .padding() // Apply padding to the header content
+            .contentShape(Rectangle()) // Tappable area
 
-            // Wind: arrow rotated to the *blowing direction*
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.up")
-                    .font(.body)
-                    .rotationEffect(.degrees(blowingDegrees(for: day)))
-
-                Text("\(Int(day.windSpeed))")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.secondary)
+            // MARK: - Expanded Summary
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    Divider()
+                        .background(.white.opacity(0.2))
+                    
+                    Text(day.summary)
+                        .font(.system(.subheadline, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                .padding([.horizontal, .bottom])
             }
         }
+        .background(
+            // Highlight the selected row slightly
+            RoundedRectangle(cornerRadius: 14)
+                .fill(isExpanded ? Color.white.opacity(0.15) : Color.white.opacity(0.05))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
-    // MARK: - Wind Direction (Blowing To)
     private func blowingDegrees(for day: DailyForecast) -> Double {
-        // Convert windDeg (where it's coming FROM)
-        // into the arrow direction it's blowing TO
-        let blowingDeg = Double((day.windDeg + 180) % 360)
-        return blowingDeg
+        Double((day.windDeg + 180) % 360)
     }
 }
-

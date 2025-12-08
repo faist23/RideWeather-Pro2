@@ -95,7 +95,8 @@ struct WeatherMapper {
             high: item.temp.max,
             low: item.temp.min,
             windSpeed: item.windSpeed,
-            windDeg: item.windDeg
+            windDeg: item.windDeg,
+            summary: item.summary ?? "Weather data unavailable." 
         )
     }
 

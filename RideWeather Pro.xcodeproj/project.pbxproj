@@ -9,6 +9,11 @@
 /* Begin PBXBuildFile section */
 		7E5B80E92E4CCAE8005D114F /* CoreGPX in Frameworks */ = {isa = PBXBuildFile; productRef = 7E5B80E82E4CCAE8005D114F /* CoreGPX */; };
 		7E6A9AC62EA8812E0038B160 /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = 7E6A9AC52EA881220038B160 /* .gitignore */; };
+		7E79A4762EE480DB0082A94C /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 7E79A4752EE480DB0082A94C /* Auth */; };
+		7E79A4782EE480DB0082A94C /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = 7E79A4772EE480DB0082A94C /* PostgREST */; };
+		7E79A47A2EE480DB0082A94C /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = 7E79A4792EE480DB0082A94C /* Realtime */; };
+		7E79A47C2EE480DB0082A94C /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = 7E79A47B2EE480DB0082A94C /* Storage */; };
+		7E79A47E2EE480DB0082A94C /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 7E79A47D2EE480DB0082A94C /* Supabase */; };
 		7E96CD292E7F7A2F009475FA /* FITSwiftSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 7E96CD282E7F7A2F009475FA /* FITSwiftSDK */; };
 		7EAE7C3A2E6F35EE006C9634 /* Solar in Frameworks */ = {isa = PBXBuildFile; productRef = 7EAE7C392E6F35EE006C9634 /* Solar */; };
 		7EB9FF512E5CBFE000157204 /* FitFileParser in Frameworks */ = {isa = PBXBuildFile; productRef = 7EB9FF502E5CBFE000157204 /* FitFileParser */; };
@@ -45,9 +50,14 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7E79A47A2EE480DB0082A94C /* Realtime in Frameworks */,
+				7E79A4782EE480DB0082A94C /* PostgREST in Frameworks */,
 				7EAE7C3A2E6F35EE006C9634 /* Solar in Frameworks */,
 				7E96CD292E7F7A2F009475FA /* FITSwiftSDK in Frameworks */,
+				7E79A47C2EE480DB0082A94C /* Storage in Frameworks */,
+				7E79A47E2EE480DB0082A94C /* Supabase in Frameworks */,
 				7E5B80E92E4CCAE8005D114F /* CoreGPX in Frameworks */,
+				7E79A4762EE480DB0082A94C /* Auth in Frameworks */,
 				7EB9FF512E5CBFE000157204 /* FitFileParser in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -96,6 +106,11 @@
 				7EB9FF502E5CBFE000157204 /* FitFileParser */,
 				7EAE7C392E6F35EE006C9634 /* Solar */,
 				7E96CD282E7F7A2F009475FA /* FITSwiftSDK */,
+				7E79A4752EE480DB0082A94C /* Auth */,
+				7E79A4772EE480DB0082A94C /* PostgREST */,
+				7E79A4792EE480DB0082A94C /* Realtime */,
+				7E79A47B2EE480DB0082A94C /* Storage */,
+				7E79A47D2EE480DB0082A94C /* Supabase */,
 			);
 			productName = "RideWeather Pro";
 			productReference = 7E5B80AB2E4C3B2D005D114F /* RideWeather Pro.app */;
@@ -130,6 +145,7 @@
 				7EB9FF4F2E5CBFE000157204 /* XCRemoteSwiftPackageReference "FitFileParser" */,
 				7EAE7C382E6F35EE006C9634 /* XCRemoteSwiftPackageReference "Solar" */,
 				7E96CD272E7F7A2F009475FA /* XCRemoteSwiftPackageReference "fit-swift-sdk" */,
+				7E79A4742EE480DB0082A94C /* XCRemoteSwiftPackageReference "supabase-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7E5B80AC2E4C3B2D005D114F /* Products */;
@@ -392,6 +408,14 @@
 				minimumVersion = 0.9.3;
 			};
 		};
+		7E79A4742EE480DB0082A94C /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
 		7E96CD272E7F7A2F009475FA /* XCRemoteSwiftPackageReference "fit-swift-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/garmin/fit-swift-sdk.git";
@@ -423,6 +447,31 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7E5B80E72E4CCAE8005D114F /* XCRemoteSwiftPackageReference "CoreGPX" */;
 			productName = CoreGPX;
+		};
+		7E79A4752EE480DB0082A94C /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7E79A4742EE480DB0082A94C /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+		7E79A4772EE480DB0082A94C /* PostgREST */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7E79A4742EE480DB0082A94C /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = PostgREST;
+		};
+		7E79A4792EE480DB0082A94C /* Realtime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7E79A4742EE480DB0082A94C /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Realtime;
+		};
+		7E79A47B2EE480DB0082A94C /* Storage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7E79A4742EE480DB0082A94C /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Storage;
+		};
+		7E79A47D2EE480DB0082A94C /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7E79A4742EE480DB0082A94C /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
 		};
 		7E96CD282E7F7A2F009475FA /* FITSwiftSDK */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -49,8 +49,8 @@ struct MainView: View {
                     .tag(2)
             }
             
-//            TrainingLoadView()
-            TrainingLoadViewEnhanced()
+            TrainingLoadView()
+//            TrainingLoadViewEnhanced()
                 .environmentObject(viewModel)  // Pass the WeatherViewModel
                 .tabItem {
                     Label("Fitness", systemImage: "chart.line.uptrend.xyaxis")
