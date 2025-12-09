@@ -235,9 +235,11 @@ class WellnessDataService {
             connected_at: Date().ISO8601Format()
         )
         
+        // Explicitly state "user_id" as the conflict column
+        // This ensures the DB knows exactly which row to update if it exists
         try await supabase
             .from("user_garmin_mapping")
-            .upsert(mapping)
+            .upsert(mapping, onConflict: "user_id")
             .execute()
     }
 }

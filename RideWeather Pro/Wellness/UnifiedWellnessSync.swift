@@ -92,27 +92,43 @@ class UnifiedWellnessSync: ObservableObject {
     ) async {
         guard !isSyncing else { return }
         
-        isSyncing = true
-        syncStatus = "Starting wellness sync..."
+        // 1. Fetch the Source of Truth
+        let config = DataSourceManager.shared.configuration
         
+        // 2. UX: Immediate feedback
+        isSyncing = true
         defer {
             isSyncing = false
             saveSyncDate()
         }
         
         do {
-            // Determine which source to use based on what's connected
-            if garminService.isAuthenticated {
-                syncStatus = "Syncing from Garmin..."
-                // Use device-based user ID
+            // 3. Switch based on CONFIGURATION, not just authentication status
+            switch config.wellnessSource {
+            case .garmin:
+                guard garminService.isAuthenticated else {
+                    syncStatus = "Garmin selected but not connected."
+                    return
+                }
+                syncStatus = "Syncing wellness from Garmin..."
                 try await syncWellnessData(source: .garmin, userId: appUserId)
-            } else if healthManager.isAuthorized {
-                syncStatus = "Syncing from Apple Health..."
+                
+            case .appleHealth:
+                guard healthManager.isAuthorized else {
+                    syncStatus = "Apple Health selected but permissions missing."
+                    return
+                }
+                syncStatus = "Syncing wellness from Apple Health..."
                 try await syncWellnessData(source: .appleHealth, userId: "")
+                
+            case .none:
+                syncStatus = "Wellness sync disabled."
+                return
             }
             
             syncStatus = "Wellness sync complete!"
-            print("✅ Wellness sync completed successfully")
+            print("✅ Wellness sync completed using source: \(config.wellnessSource.rawValue)")
+            
         } catch {
             syncStatus = "Sync failed: \(error.localizedDescription)"
             print("❌ Wellness sync failed: \(error)")

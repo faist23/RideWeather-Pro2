@@ -8,55 +8,68 @@ import CoreLocation
 
 struct MainView: View {
     @StateObject private var viewModel = WeatherViewModel()
+    // ✅ OBSERVE THE DATA SOURCE MANAGER
+    @ObservedObject private var dataSourceManager = DataSourceManager.shared
+    
     @State private var selectedTab = 0
     @State private var lastLiveWeatherTap = Date()
     @EnvironmentObject var wahooService: WahooService // Inherited from App
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            LiveWeatherView()
-                .environmentObject(viewModel)
-                .tabItem {
-                    Label("Live Weather", systemImage: "sun.max.fill")
-                }
-                .tag(0)
-                .onAppear {
-                    // Only refresh if it's been more than 30 seconds since last tap
-                    // or if this is the first time appearing
-                    let now = Date()
-                    if now.timeIntervalSince(lastLiveWeatherTap) > 30 {
-                        Task {
-                            await viewModel.refreshWeather()
-                        }
-                        lastLiveWeatherTap = now
-                    }
-                }
-            
-            RouteForecastView()
-                .environmentObject(viewModel)
-                .tabItem {
-                    Label("Route Forecast", systemImage: "map.fill")
-                }
-                .tag(1)
-
-            // MARK: - Conditional Analysis Tab
-            // Only accessible if Power-Based Analysis is enabled in Settings
-            if viewModel.settings.speedCalculationMethod == .powerBased {
-                RideAnalysisView(weatherViewModel: viewModel)
+        ZStack(alignment: .topTrailing) { // ✅ WRAP IN ZSTACK
+            TabView(selection: $selectedTab) {
+                LiveWeatherView()
+                    .environmentObject(viewModel)
                     .tabItem {
-                        Label("Analysis", systemImage: "stopwatch.fill")
+                        Label("Live Weather", systemImage: "sun.max.fill")
                     }
-                    .tag(2)
-            }
-            
-            TrainingLoadView()
-//            TrainingLoadViewEnhanced()
-                .environmentObject(viewModel)  // Pass the WeatherViewModel
-                .tabItem {
-                    Label("Fitness", systemImage: "chart.line.uptrend.xyaxis")
+                    .tag(0)
+                    .onAppear {
+                        // Only refresh if it's been more than 30 seconds since last tap
+                        // or if this is the first time appearing
+                        let now = Date()
+                        if now.timeIntervalSince(lastLiveWeatherTap) > 30 {
+                            Task {
+                                await viewModel.refreshWeather()
+                            }
+                            lastLiveWeatherTap = now
+                        }
+                    }
+                
+                RouteForecastView()
+                    .environmentObject(viewModel)
+                    .tabItem {
+                        Label("Route Forecast", systemImage: "map.fill")
+                    }
+                    .tag(1)
+                
+                // MARK: - Conditional Analysis Tab
+                // Only accessible if Power-Based Analysis is enabled in Settings
+                if viewModel.settings.speedCalculationMethod == .powerBased {
+                    RideAnalysisView(weatherViewModel: viewModel)
+                        .tabItem {
+                            Label("Analysis", systemImage: "stopwatch.fill")
+                        }
+                        .tag(2)
                 }
-                .tag(3)
-            
+                
+                TrainingLoadView()
+                //            TrainingLoadViewEnhanced()
+                    .environmentObject(viewModel)  // Pass the WeatherViewModel
+                    .tabItem {
+                        Label("Fitness", systemImage: "chart.line.uptrend.xyaxis")
+                    }
+                    .tag(3)
+                
+            }
+            // ✅ THE "SOURCE ACTIVE" BADGE
+            // Only show on relevant tabs (Analysis or Fitness)
+            if selectedTab == 2 || selectedTab == 3 {
+                DataSourceBadge(source: dataSourceManager.configuration.trainingLoadSource)
+                    .padding(.top, 50) // Adjust for safe area
+                    .padding(.trailing, 16)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
         .environmentObject(wahooService)
         .onChange(of: selectedTab) { oldValue, newValue in
@@ -92,5 +105,39 @@ struct MainView: View {
                 }
             }
         }
+    }
+}
+
+// ✅ NEW SUBVIEW FOR THE BADGE
+struct DataSourceBadge: View {
+    let source: DataSourceConfiguration.TrainingLoadSource
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            // Icon
+            if source.icon.contains("_logo") {
+                Image(source.icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 14, height: 14)
+            } else {
+                Image(systemName: source.icon)
+                    .font(.caption2)
+            }
+            
+            // Text
+            Text(source.rawValue)
+                .font(.caption2.weight(.bold))
+                .textCase(.uppercase)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
     }
 }

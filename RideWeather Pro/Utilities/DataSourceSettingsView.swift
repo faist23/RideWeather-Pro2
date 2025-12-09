@@ -16,6 +16,7 @@ struct DataSourceSettingsView: View {
     
     @State private var showingRecommendations = false
     @State private var recommendedConfig: RecommendedConfiguration?
+    @State private var verifyingSource: DataSourceConfiguration.TrainingLoadSource? = nil
     
     var body: some View {
         Form {
@@ -168,33 +169,56 @@ struct DataSourceSettingsView: View {
     private var trainingLoadSourceSection: some View {
         Section {
             ForEach(DataSourceConfiguration.TrainingLoadSource.allCases) { source in
-                DataSourceOptionRow(
-                    source: source,
-                    isSelected: dataSourceManager.configuration.trainingLoadSource == source,
-                    isAvailable: isTrainingSourceAvailable(source),
-                    onSelect: {
-                        dataSourceManager.configuration.trainingLoadSource = source
-                        dataSourceManager.saveConfiguration()
-
-                        // Request permissions if switching to Apple Health
-                        if source == .appleHealth && !healthManager.isAuthorized {
-                            Task {
-                                await healthManager.requestAuthorization()
-                            }
+                HStack { // Wrap in HStack to add the spinner
+                    DataSourceOptionRow(
+                        source: source,
+                        isSelected: dataSourceManager.configuration.trainingLoadSource == source,
+                        isAvailable: isTrainingSourceAvailable(source),
+                        onSelect: {
+                            handleSourceChange(to: source)
                         }
-                        
-                        // Trigger immediate sync
-                        Task {
-                            await performInitialSync(for: source)
-                        }
+                    )
+                    
+                    // ✅ SHOW SPINNER IF VERIFYING THIS SOURCE
+                    if verifyingSource == source {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(.leading, 8)
                     }
-                )
+                }
             }
         } header: {
             Text("Training Load Source")
         } footer: {
             Text(dataSourceManager.configuration.trainingLoadSource.description)
                 .font(.caption)
+        }
+    }
+    
+    // ✅ NEW HELPER FUNCTION TO HANDLE THE TRANSITION
+    private func handleSourceChange(to source: DataSourceConfiguration.TrainingLoadSource) {
+        // 1. Set Transition State
+        withAnimation { verifyingSource = source }
+        
+        Task {
+            // 2. Perform the logic
+            dataSourceManager.configuration.trainingLoadSource = source
+            dataSourceManager.saveConfiguration()
+            
+            if source == .appleHealth && !healthManager.isAuthorized {
+                _ = await healthManager.requestAuthorization()
+            }
+            
+            // Simulate a short "check" or perform actual sync
+            // This small delay feels "pro" - like the app is actually checking connections
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+            await performInitialSync(for: source)
+            
+            // 3. Clear Transition State
+            await MainActor.run {
+                withAnimation { verifyingSource = nil }
+                NotificationCenter.default.post(name: .dataSourceChanged, object: nil)
+            }
         }
     }
     

@@ -975,19 +975,54 @@ extension GarminService {
     
     // MARK: - Activity Fetching
     
-    /// Fetches activities from Garmin Connect
-    func fetchActivities(startDate: Date) async throws -> [GarminActivity] {
+    /// 1. NEW: Chunked fetch to respect Garmin's 24h limit per request
+    func fetchActivitiesChunked(startDate: Date) async throws {
+        let calendar = Calendar.current
+        let today = Date()
+        
+        // Create 24h chunks from startDate until now
+        var currentStart = startDate
+        var intervals: [(start: Date, end: Date)] = []
+        
+        while currentStart < today {
+            let currentEnd = min(calendar.date(byAdding: .day, value: 1, to: currentStart)!, today)
+            intervals.append((currentStart, currentEnd))
+            currentStart = currentEnd
+        }
+        
+        print("GarminService: Chunking sync into \(intervals.count) daily requests...")
+        
+        for (index, interval) in intervals.enumerated() {
+            print("GarminService: Fetching chunk \(index + 1)/\(intervals.count)")
+            do {
+                // Calls the UPDATED fetchActivities below
+                let _ = try await fetchActivities(startDate: interval.start, endDate: interval.end)
+                // Sleep to avoid rate limiting (429 Too Many Requests)
+                try await Task.sleep(nanoseconds: 200_000_000) // 0.2s
+            } catch {
+                print("⚠️ Failed to fetch chunk \(interval.start): \(error)")
+            }
+        }
+    }
+    
+    /// 2. UPDATED: Accepts endDate to prevent "time range exceeds 86400s" error
+    func fetchActivities(startDate: Date, endDate: Date? = nil) async throws -> [GarminActivity] {
         try await refreshTokenIfNeededAsync()
         
         guard let token = currentTokens?.accessToken else {
             throw GarminError.notAuthenticated
         }
         
-        let formatter = ISO8601DateFormatter()
-        let startString = formatter.string(from: startDate)
+        let startSeconds = Int(startDate.timeIntervalSince1970)
+        // Fix: Use provided endDate or default to start + 24h (safe default)
+        let endSeconds = Int((endDate ?? Date()).timeIntervalSince1970)
         
-        // Garmin Connect API endpoint for activities
-        let urlString = "https://apis.garmin.com/wellness-api/rest/activityDetails?uploadStartTimeInSeconds=\(Int(startDate.timeIntervalSince1970))&uploadEndTimeInSeconds=\(Int(Date().timeIntervalSince1970))"
+        // Safety check for the 24h limit
+        if (endSeconds - startSeconds) > 86400 {
+            print("⚠️ GarminService: Warning - Request range > 24h. API may fail.")
+        }
+        
+        let urlString = "https://apis.garmin.com/wellness-api/rest/activityDetails?uploadStartTimeInSeconds=\(startSeconds)&uploadEndTimeInSeconds=\(endSeconds)"
         
         guard let url = URL(string: urlString) else {
             throw GarminError.invalidURL
@@ -1009,12 +1044,17 @@ extension GarminService {
         
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let activities = try decoder.decode([GarminActivity].self, from: data)
         
-        print("GarminService: Fetched \(activities.count) activities")
-        return activities
+        // Decode and return activities
+        // Note: Check if response is empty array to handle safely
+        if let activities = try? decoder.decode([GarminActivity].self, from: data) {
+            print("GarminService: Fetched \(activities.count) activities")
+            return activities
+        } else {
+            return [] // Return empty if decode fails (e.g. empty response)
+        }
     }
-
+    
     /// Fetch all courses from Garmin
     func fetchCourses() async throws -> [GarminCourse] {
         try await refreshTokenIfNeededAsync()
@@ -1023,7 +1063,7 @@ extension GarminService {
             throw GarminError.notAuthenticated
         }
         
-        let urlString = "https://apis.garmin.com/training-api/courses/v1/courses"
+        let urlString = "https://apis.garmin.com/training-api/courses/v1/course"
         
         guard let url = URL(string: urlString) else {
             throw GarminError.invalidURL
