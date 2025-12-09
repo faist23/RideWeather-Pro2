@@ -1,56 +1,80 @@
+//
+//  GarminRouteImportView.swift
+//  RideWeather Pro
+//
+
 import SwiftUI
-import CoreLocation
 
 struct GarminRouteImportView: View {
-    @Environment(\.dismiss) var dismiss
     @EnvironmentObject var garminService: GarminService
+    @EnvironmentObject var viewModel: WeatherViewModel
+    @Environment(\.dismiss) private var dismiss
     
-    // Callbacks to pass data back to parent
-    var onImport: ([EnhancedRoutePoint], String) -> Void
-    
-    @State private var courses: [GarminCourseSummary] = []
+    @State private var courses: [GarminCourse] = []
     @State private var isLoading = false
-    @State private var errorMsg: String?
-    @State private var selectedCourseId: Int?
+    @State private var errorMessage: String?
+    @State private var searchText = ""
+    
+    var filteredCourses: [GarminCourse] {
+        if searchText.isEmpty {
+            return courses
+        }
+        return courses.filter { $0.courseName.localizedCaseInsensitiveContains(searchText) }
+    }
     
     var body: some View {
         NavigationStack {
-            ZStack {
-                Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
-                
-                if isLoading && courses.isEmpty {
-                    ProgressView("Connecting to Garmin...")
-                } else if let error = errorMsg {
+            Group {
+                if isLoading {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .controlSize(.large)
+                        Text("Loading your Garmin courses...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if let error = errorMessage {
                     VStack(spacing: 16) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.largeTitle)
+                            .font(.system(size: 50))
                             .foregroundStyle(.orange)
+                        Text("Unable to load courses")
+                            .font(.headline)
                         Text(error)
-                            .multilineTextAlignment(.center)
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        Button("Try Again") { loadCourses() }
-                            .buttonStyle(.borderedProminent)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                        Button("Retry") {
+                            Task { await loadCourses() }
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .padding()
+                } else if courses.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "map.fill")
+                            .font(.system(size: 50))
+                            .foregroundStyle(.blue)
+                        Text("No Courses Found")
+                            .font(.headline)
+                        Text("Create courses in Garmin Connect to import them here")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
                 } else {
                     List {
-                        if courses.isEmpty {
-                            ContentUnavailableView(
-                                "No Courses Found",
-                                systemImage: "map",
-                                description: Text("Create courses in Garmin Connect to see them here.")
-                            )
-                        } else {
-                            Section("Recent Courses") {
-                                ForEach(courses) { course in
-                                    CourseRow(course: course, isSelected: selectedCourseId == course.courseId) {
-                                        importCourse(course)
-                                    }
+                        ForEach(filteredCourses) { course in
+                            CourseRow(course: course) {
+                                Task {
+                                    await importCourse(course)
                                 }
                             }
                         }
                     }
-                    .refreshable { await loadCourses() }
+                    .searchable(text: $searchText, prompt: "Search courses")
+                    .listStyle(.insetGrouped)
                 }
             }
             .navigationTitle("Import from Garmin")
@@ -68,92 +92,112 @@ struct GarminRouteImportView: View {
     
     private func loadCourses() async {
         isLoading = true
-        errorMsg = nil
+        errorMessage = nil
+        
         do {
             courses = try await garminService.fetchCourses()
+            if courses.isEmpty {
+                errorMessage = nil // Show empty state instead of error
+            }
         } catch {
-            errorMsg = error.localizedDescription
+            errorMessage = error.localizedDescription
         }
+        
         isLoading = false
     }
     
-    private func importCourse(_ course: GarminCourseSummary) {
-        selectedCourseId = course.courseId
+    private func importCourse(_ course: GarminCourse) async {
         isLoading = true
+        errorMessage = nil
         
-        Task {
-            do {
-                let details = try await garminService.fetchCourseDetails(courseId: String(course.courseId))
-                
-                // Convert to EnhancedRoutePoint
-                let routePoints = details.geoPoints.map { geo -> EnhancedRoutePoint in
-                    // Note: Garmin GeoPoints might not have distance calculated between them
-                    // You might need to run a pass to calculate cumulative distance
-                    return EnhancedRoutePoint(
-                        coordinate: CLLocationCoordinate2D(latitude: geo.latitude, longitude: geo.longitude),
-                        elevation: geo.elevation,
-                        distance: 0 // Will need recalculation
-                    )
-                }
-                
-                // Recalculate distances for the route points
-                let processedPoints = RouteProcessor.recalculateDistances(for: routePoints)
-                
-                await MainActor.run {
-                    onImport(processedPoints, course.courseName)
-                    dismiss()
-                }
-            } catch {
-                errorMsg = "Failed to import: \(error.localizedDescription)"
-                selectedCourseId = nil
+        do {
+            // Fetch the full course details with GPS points
+            let routePoints = try await garminService.fetchCourseDetails(courseId: course.courseId)
+            
+            // Convert RoutePoint to CLLocationCoordinate2D
+            let coordinates = routePoints.map { $0.coordinate }
+            
+            await MainActor.run {
+                viewModel.routePoints = coordinates
+                viewModel.routeDisplayName = course.courseName
+                viewModel.authoritativeRouteDistanceMeters = course.distance
+                dismiss()
             }
-            isLoading = false
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to import course: \(error.localizedDescription)"
+                isLoading = false
+            }
         }
     }
 }
 
-// Subview for List Row
 struct CourseRow: View {
-    let course: GarminCourseSummary
-    let isSelected: Bool
-    let action: () -> Void
+    let course: GarminCourse
+    let onImport: () -> Void
     
     var body: some View {
-        Button(action: action) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(course.courseName)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(course.courseName)
+                    .font(.headline)
+                
+                HStack(spacing: 16) {
+                    Label(formatDistance(course.distance), systemImage: "arrow.left.and.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     
-                    HStack(spacing: 12) {
-                        Label(
-                            String(format: "%.1f km", course.distanceMeters / 1000.0),
-                            systemImage: "ruler"
-                        )
-                        if let gain = course.elevationGainMeters {
-                            Label(
-                                String(format: "%.0f m", gain),
-                                systemImage: "arrow.up.right"
-                            )
-                        }
+                    if let elevGain = course.elevationGain {
+                        Label(formatElevation(elevGain), systemImage: "arrow.up.forward")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                if isSelected {
-                    ProgressView()
-                } else {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.blue)
                 }
             }
-            .padding(.vertical, 4)
+            
+            Spacer()
+            
+            Button {
+                onImport()
+            } label: {
+                Text("Import")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.blue, in: Capsule())
+            }
+            .buttonStyle(.plain)
         }
-        .disabled(isSelected)
+        .padding(.vertical, 4)
+    }
+    
+    private func formatDistance(_ meters: Double) -> String {
+        let km = meters / 1000
+        return String(format: "%.1f km", km)
+    }
+    
+    private func formatElevation(_ meters: Double) -> String {
+        return String(format: "%.0f m", meters)
+    }
+}
+
+// MARK: - Models
+
+struct GarminCourse: Identifiable, Codable {
+    let courseId: Int
+    let courseName: String
+    let distance: Double // meters
+    let elevationGain: Double?
+    let elevationLoss: Double?
+    
+    var id: Int { courseId }
+    
+    enum CodingKeys: String, CodingKey {
+        case courseId
+        case courseName
+        case distance
+        case elevationGain
+        case elevationLoss
     }
 }

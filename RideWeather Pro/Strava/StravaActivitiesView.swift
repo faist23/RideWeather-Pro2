@@ -85,7 +85,7 @@ struct StravaActivitiesView: View {
                     )
                 }) {
                     HStack {
-                        ActivityRow(activity: activity)
+                        StravaRideActivityRow(activity: activity)
                             .environmentObject(weatherViewModel)
                         
                         Spacer()
@@ -188,7 +188,7 @@ struct StravaActivitiesView: View {
     }
 }
 
-struct ActivityRow: View {
+struct StravaRideActivityRow: View {
     let activity: StravaActivity
     @EnvironmentObject var weatherViewModel: WeatherViewModel
     

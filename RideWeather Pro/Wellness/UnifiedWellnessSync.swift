@@ -58,6 +58,10 @@ class UnifiedWellnessSync: ObservableObject {
         case .manual:
             print("⚠️ Manual entry not implemented for wellness")
             
+        case .strava:
+            print("⚠️ Strava entry not implemented for wellness")
+        case .wahoo:
+            print("⚠️ Wahoo entry not implemented for wellness")
         }
     }
     

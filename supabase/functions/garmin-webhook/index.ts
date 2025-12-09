@@ -15,18 +15,19 @@ interface GarminSummary {
 }
 
 interface GarminPing {
-  dailies?: GarminSummary[]
-  sleeps?: GarminSummary[]
-  stressDetails?: GarminSummary[]
-  epochs?: GarminSummary[]
-  bodyComps?: GarminSummary[]
-  userMetrics?: GarminSummary[]
-  pulseox?: GarminSummary[]
-  allDayRespiration?: GarminSummary[]
-  healthSnapshot?: GarminSummary[]
-  hrv?: GarminSummary[]
-  bloodPressures?: GarminSummary[]
-  skinTemp?: GarminSummary[]
+    dailies?: GarminSummary[]
+    sleeps?: GarminSummary[]
+    stressDetails?: GarminSummary[]
+    epochs?: GarminSummary[]
+    bodyComps?: GarminSummary[]
+    userMetrics?: GarminSummary[]
+    pulseox?: GarminSummary[]
+    allDayRespiration?: GarminSummary[]
+    healthSnapshot?: GarminSummary[]
+    hrv?: GarminSummary[]
+    bloodPressures?: GarminSummary[]
+    skinTemp?: GarminSummary[]
+    activities?: GarminSummary[]
 }
 
 serve(async (req) => {
@@ -94,22 +95,24 @@ serve(async (req) => {
             console.log(`✅ Received ${summaryType} data for ${calendarDate || 'unknown date'}`)
           }
 
-          // Store in database
-          const recordToInsert = {
-            garmin_user_id: userId,
-            user_id: userId, // Will be mapped to actual user later via user_garmin_mapping
-            data_type: summaryType,
-            data: data,
-            calendar_date: calendarDate,
-            synced_at: new Date().toISOString()
-          }
-
-          console.log(`💾 Storing ${summaryType} data...`)
-
-          const { error: insertError } = await supabase
-            .from('garmin_wellness')
+            // Store in database (Unified storage or separate table)
+            // Ideally, you'd want a specific 'garmin_activities' table for rich query capabilities
+            const tableName = summaryType === 'activities' ? 'garmin_activities' : 'garmin_wellness'
+            
+            const recordToInsert = {
+                garmin_user_id: userId,
+                user_id: userId, // Mapping handled by your DB triggers/logic
+                data_type: summaryType,
+                data: data, // Stores the full JSON (power, HR, distance, etc.)
+                // Garmin activities use 'startTimeInSeconds' usually, check payload
+                calendar_date: calendarDate || (data.startTimeInSeconds ? new Date(data.startTimeInSeconds * 1000).toISOString().split('T')[0] : null),
+                synced_at: new Date().toISOString()
+            }
+            
+            const { error: insertError } = await supabase
+            .from(tableName)
             .insert(recordToInsert)
-
+            
           if (insertError) {
             console.error(`❌ Database insert error for ${summaryType}:`, insertError)
             errorCount++

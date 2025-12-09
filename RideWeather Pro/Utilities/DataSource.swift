@@ -8,10 +8,12 @@
 
 import Foundation
 
-// MARK: - Data Source Enum
+/*// MARK: - Data Source Enum
 // Add this to your project - it's the only missing piece!
 enum DataSource: String, Codable {
     case appleHealth = "Apple Health"
     case garmin = "Garmin"
+    case strava = "Strava"
+    case wahoo = "Wahoo"
     case manual = "Manual Entry"
-}
+}*/

@@ -542,3 +542,41 @@ class TrainingLoadManager {
         return projectedLoads
     }
 }
+
+extension TrainingLoadManager {
+    func updateDailyLoad(
+        date: Date,
+        tss: Double,
+        rideCount: Int,
+        distance: Double,
+        duration: TimeInterval
+    ) {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: date)
+        
+        var dailyLoads = loadAllDailyLoads()
+        
+        if let existingIndex = dailyLoads.firstIndex(where: {
+            calendar.isDate($0.date, inSameDayAs: dayStart)
+        }) {
+            dailyLoads[existingIndex].tss = tss
+            dailyLoads[existingIndex].rideCount = rideCount
+            dailyLoads[existingIndex].totalDistance = distance
+            dailyLoads[existingIndex].totalDuration = duration
+        } else {
+            dailyLoads.append(DailyTrainingLoad(
+                date: dayStart,
+                tss: tss,
+                rideCount: rideCount,
+                totalDistance: distance,
+                totalDuration: duration
+            ))
+        }
+        
+        dailyLoads.sort { $0.date < $1.date }
+        
+        // ADD THIS: Recalculate metrics after updating
+        let updatedLoads = recalculateMetrics(for: dailyLoads)
+        saveDailyLoads(updatedLoads)
+    }
+}

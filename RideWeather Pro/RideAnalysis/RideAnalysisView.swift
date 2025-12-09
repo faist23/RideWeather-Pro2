@@ -5,6 +5,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import Combine
+import CoreLocation
 
 // MARK: - Main Analysis View
 
@@ -2435,3 +2436,129 @@ extension AnalysisStorageManager {
     }
 }
 
+extension RideAnalysisViewModel {
+    
+    /// Imports ride data from external sources (Garmin, Strava, etc.)
+    func importRideData(_ rideData: ImportedRideData) {
+        // Convert ImportedRideData to FITDataPoint format
+        let fitDataPoints = convertToFITDataPoints(rideData)
+        
+        // Get user settings for FTP
+        let userFTP = UserDefaults.standard.double(forKey: "userFTP")
+        let ftp = userFTP > 0 ? userFTP : Double(settings.functionalThresholdPower)
+
+        let userWeight = UserDefaults.standard.double(forKey: "userWeight")
+        let weight = userWeight > 0 ? userWeight : settings.bodyWeight
+
+        // Create analyzer with current settings
+        let analyzer = RideFileAnalyzer(settings: self.settings)
+
+        // Analyze the ride
+        let analysis = analyzer.analyzeRide(
+            dataPoints: fitDataPoints,
+            ftp: ftp,
+            weight: weight,
+            plannedRide: nil as PacingPlan?,
+            isPreFiltered: true, // Data is already clean from Garmin
+            elapsedTimeOverride: rideData.duration,
+            movingTimeOverride: rideData.duration,
+            averageHeartRate: rideData.averageHeartRate.map { Double($0) },
+            powerGraphData: nil as [GraphableDataPoint]?,
+            heartRateGraphData: nil as [GraphableDataPoint]?,
+            elevationGraphData: nil as [GraphableDataPoint]?
+        )
+        
+        // Create a mutable copy with the correct name
+        var finalAnalysis = analysis
+        finalAnalysis.rideName = rideData.activityName
+        
+        // Save to storage
+        let storageManager = AnalysisStorageManager()
+        storageManager.saveAnalysis(finalAnalysis)
+        
+        // Add to training load
+        TrainingLoadManager.shared.addRide(analysis: finalAnalysis)
+        
+        // Update UI state - use existing properties
+        self.currentAnalysis = finalAnalysis
+        self.analysisHistory.insert(finalAnalysis, at: 0)
+        
+        // Store source info
+        self.analysisSources[finalAnalysis.id] = RideSourceInfo(
+            type: .fitFile,
+            fileName: rideData.activityName
+        )
+        self.storage.saveSource(analysisSources[finalAnalysis.id]!, for: finalAnalysis.id)
+        
+        print("✅ Successfully imported ride: \(rideData.activityName)")
+    }
+    
+    /// Converts ImportedRideData to FITDataPoint array
+    private func convertToFITDataPoints(_ rideData: ImportedRideData) -> [FITDataPoint] {
+        var dataPoints: [FITDataPoint] = []
+        
+        // Create a map of timestamps to combine data from different sources
+        var timeMap: [Date: (power: Double?, hr: Int?, gps: GPSPoint?)] = [:]
+        
+        // Add power data
+        for powerPoint in rideData.powerData {
+            timeMap[powerPoint.timestamp] = (
+                power: powerPoint.watts,
+                hr: timeMap[powerPoint.timestamp]?.hr,
+                gps: timeMap[powerPoint.timestamp]?.gps
+            )
+        }
+        
+        // Add heart rate data
+        for hrPoint in rideData.heartRateData {
+            var existing = timeMap[hrPoint.timestamp] ?? (nil, nil, nil)
+            existing.hr = hrPoint.bpm
+            timeMap[hrPoint.timestamp] = existing
+        }
+        
+        // Add GPS data
+        for gpsPoint in rideData.gpsPoints {
+            var existing = timeMap[gpsPoint.timestamp] ?? (nil, nil, nil)
+            existing.gps = gpsPoint
+            timeMap[gpsPoint.timestamp] = existing
+        }
+        
+        // Convert to FITDataPoint array sorted by time
+        let sortedTimes = timeMap.keys.sorted()
+        
+        for timestamp in sortedTimes {
+            guard let data = timeMap[timestamp] else { continue }
+            
+            let coordinate = data.gps != nil ?
+                CLLocationCoordinate2D(
+                    latitude: data.gps!.latitude,
+                    longitude: data.gps!.longitude
+                ) : nil
+            
+            dataPoints.append(FITDataPoint(
+                timestamp: timestamp,
+                power: data.power,
+                heartRate: data.hr,
+                cadence: nil,
+                speed: data.gps?.speed,
+                distance: data.gps?.distance,
+                altitude: data.gps?.elevation,
+                position: coordinate
+            ))
+        }
+        
+        return dataPoints
+    }
+}
+
+/*// MARK: - Import Success State
+
+extension RideAnalysisViewModel {
+    var showingImportSuccess: Bool {
+        get { UserDefaults.standard.bool(forKey: "showingImportSuccess") }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "showingImportSuccess")
+            objectWillChange.send()
+        }
+    }
+}*/

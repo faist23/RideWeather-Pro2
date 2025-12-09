@@ -1,9 +1,7 @@
 //
-//  GarminService.swift (Simplified - Upload Only)
+//  GarminService.swift
 //  RideWeather Pro
 //
-//  NOTE: Activity import removed - Garmin uses push notifications to backend servers.
-//  This service only supports uploading courses TO Garmin.
 
 import Foundation
 import AuthenticationServices
@@ -1017,7 +1015,218 @@ extension GarminService {
         return activities
     }
 
+    /// Fetch all courses from Garmin
+    func fetchCourses() async throws -> [GarminCourse] {
+        try await refreshTokenIfNeededAsync()
+        
+        guard let token = currentTokens?.accessToken else {
+            throw GarminError.notAuthenticated
+        }
+        
+        let urlString = "https://apis.garmin.com/training-api/courses/v1/courses"
+        
+        guard let url = URL(string: urlString) else {
+            throw GarminError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GarminError.invalidResponse
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            let errorMsg = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw GarminError.apiError(statusCode: httpResponse.statusCode, message: errorMsg)
+        }
+        
+        let decoder = JSONDecoder()
+        let courses = try decoder.decode([GarminCourse].self, from: data)
+        
+        print("GarminService: Fetched \(courses.count) courses")
+        return courses
+    }
+    
+    /// Fetch detailed course data including GPS points
+    func fetchCourseDetails(courseId: Int) async throws -> [RoutePoint] {
+        try await refreshTokenIfNeededAsync()
+        
+        guard let token = currentTokens?.accessToken else {
+            throw GarminError.notAuthenticated
+        }
+        
+        let urlString = "https://apis.garmin.com/training-api/courses/v1/course/\(courseId)"
+        
+        guard let url = URL(string: urlString) else {
+            throw GarminError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GarminError.invalidResponse
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            let errorMsg = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw GarminError.apiError(statusCode: httpResponse.statusCode, message: errorMsg)
+        }
+        
+        // Parse the course details
+        let courseDetail = try JSONDecoder().decode(GarminCourseDetail.self, from: data)
+        
+        // Convert geoPoints to RoutePoints
+        var routePoints: [RoutePoint] = []
+        var cumulativeDistance: Double = 0
+        
+        for (index, geoPoint) in courseDetail.geoPoints.enumerated() {
+            if index > 0 {
+                let prevPoint = courseDetail.geoPoints[index - 1]
+                let loc1 = CLLocation(latitude: prevPoint.latitude, longitude: prevPoint.longitude)
+                let loc2 = CLLocation(latitude: geoPoint.latitude, longitude: geoPoint.longitude)
+                cumulativeDistance += loc1.distance(from: loc2)
+            }
+            
+            let routePoint = RoutePoint(
+                latitude: geoPoint.latitude,
+                longitude: geoPoint.longitude,
+                elevation: geoPoint.elevation,
+                distance: cumulativeDistance
+            )
+            routePoints.append(routePoint)
+        }
+        
+        print("GarminService: Fetched \(routePoints.count) GPS points for course \(courseId)")
+        return routePoints
+    }
+    
+    // MARK: - Activities API
+    
+    /// Fetch activities for training load sync
+    func fetchActivitiesForTraining(startDate: Date) async throws -> [GarminTrainingActivity] {
+        try await refreshTokenIfNeededAsync()
+        
+        guard let token = currentTokens?.accessToken else {
+            throw GarminError.notAuthenticated
+        }
+        
+        let startTimestamp = Int(startDate.timeIntervalSince1970)
+        let endTimestamp = Int(Date().timeIntervalSince1970)
+        
+        let urlString = "https://apis.garmin.com/wellness-api/rest/activityDetails?uploadStartTimeInSeconds=\(startTimestamp)&uploadEndTimeInSeconds=\(endTimestamp)"
+        
+        guard let url = URL(string: urlString) else {
+            throw GarminError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GarminError.invalidResponse
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            let errorMsg = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw GarminError.apiError(statusCode: httpResponse.statusCode, message: errorMsg)
+        }
+        
+        let decoder = JSONDecoder()
+        let activities = try decoder.decode([GarminTrainingActivity].self, from: data)
+        
+        print("GarminService: Fetched \(activities.count) activities for training")
+        return activities
+    }
+    
+    /// Fetch a specific activity for ride analysis
+    func fetchActivityDetails(activityId: Int) async throws -> GarminActivityDetail {
+        try await refreshTokenIfNeededAsync()
+        
+        guard let token = currentTokens?.accessToken else {
+            throw GarminError.notAuthenticated
+        }
+        
+        let urlString = "https://apis.garmin.com/wellness-api/rest/activityDetails/\(activityId)"
+        
+        guard let url = URL(string: urlString) else {
+            throw GarminError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GarminError.invalidResponse
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            let errorMsg = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw GarminError.apiError(statusCode: httpResponse.statusCode, message: errorMsg)
+        }
+        
+        let activity = try JSONDecoder().decode(GarminActivityDetail.self, from: data)
+        
+        print("GarminService: Fetched activity details for \(activityId)")
+        return activity
+    }
+    
+    /// Fetch activity list for ride analysis import
+    func fetchRecentActivities(limit: Int = 50) async throws -> [GarminActivitySummary] {
+        try await refreshTokenIfNeededAsync()
+        
+        guard let token = currentTokens?.accessToken else {
+            throw GarminError.notAuthenticated
+        }
+        
+        // Get activities from the last 30 days
+        let startDate = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
+        let startTimestamp = Int(startDate.timeIntervalSince1970)
+        let endTimestamp = Int(Date().timeIntervalSince1970)
+        
+        let urlString = "https://apis.garmin.com/wellness-api/rest/activityDetails?uploadStartTimeInSeconds=\(startTimestamp)&uploadEndTimeInSeconds=\(endTimestamp)"
+        
+        guard let url = URL(string: urlString) else {
+            throw GarminError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GarminError.invalidResponse
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            let errorMsg = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw GarminError.apiError(statusCode: httpResponse.statusCode, message: errorMsg)
+        }
+        
+        let decoder = JSONDecoder()
+        var activities = try decoder.decode([GarminActivitySummary].self, from: data)
+        
+        // Filter to cycling activities and limit
+        activities = activities
+            .filter { $0.activityType.lowercased().contains("cycling") || $0.activityType.lowercased().contains("bike") }
+            .prefix(limit)
+            .map { $0 }
+        
+        print("GarminService: Fetched \(activities.count) recent cycling activities")
+        return activities
+    }
 }
+
 
 // MARK: - Garmin Activity Model
 
@@ -1063,4 +1272,92 @@ struct GarminActivity: Codable {
         maxHeartRate = try container.decodeIfPresent(Double.self, forKey: .maxHeartRate)
         calories = try container.decodeIfPresent(Double.self, forKey: .calories)
     }
+}
+
+struct GarminCourseDetail: Codable {
+    let courseId: Int
+    let courseName: String
+    let distance: Double
+    let elevationGain: Double?
+    let elevationLoss: Double?
+    let geoPoints: [GarminGeoPoint]
+}
+
+struct GarminGeoPoint: Codable {
+    let latitude: Double
+    let longitude: Double
+    let elevation: Double?
+}
+
+// MARK: - Activity Models for Training Load
+
+struct GarminTrainingActivity: Codable, Identifiable {
+    let activityId: Int
+    let activityName: String?
+    let activityType: String
+    let startTimeInSeconds: Int
+    let durationInSeconds: Int
+    let distanceInMeters: Double?
+    let averageHeartRateInBeatsPerMinute: Int?
+    let maxHeartRateInBeatsPerMinute: Int?
+    let averagePowerInWatts: Double?
+    let normalizedPowerInWatts: Double?
+    let activeKilocalories: Double?
+    let elevationGainInMeters: Double?
+    
+    var id: Int { activityId }
+    
+    var startDate: Date {
+        Date(timeIntervalSince1970: TimeInterval(startTimeInSeconds))
+    }
+}
+
+// MARK: - Activity Models for Ride Analysis
+
+struct GarminActivitySummary: Codable, Identifiable {
+    let activityId: Int
+    let activityName: String?
+    let activityType: String
+    let startTimeInSeconds: Int
+    let durationInSeconds: Int
+    let distanceInMeters: Double?
+    let averageHeartRateInBeatsPerMinute: Int?
+    let averagePowerInWatts: Double?
+    let activeKilocalories: Double?
+    
+    var id: Int { activityId }
+    
+    var startDate: Date {
+        Date(timeIntervalSince1970: TimeInterval(startTimeInSeconds))
+    }
+}
+
+struct GarminActivityDetail: Codable {
+    let activityId: Int
+    let activityName: String?
+    let activityType: String
+    let startTimeInSeconds: Int
+    let durationInSeconds: Int
+    let distanceInMeters: Double?
+    let samples: [GarminActivitySample]?
+    
+    // Metrics
+    let averageHeartRateInBeatsPerMinute: Int?
+    let maxHeartRateInBeatsPerMinute: Int?
+    let averagePowerInWatts: Double?
+    let normalizedPowerInWatts: Double?
+    let activeKilocalories: Double?
+    let elevationGainInMeters: Double?
+    let elevationLossInMeters: Double?
+}
+
+struct GarminActivitySample: Codable {
+    let startTimeInSeconds: Int
+    let latitude: Double?
+    let longitude: Double?
+    let elevation: Double?
+    let heartRate: Int?
+    let power: Double?
+    let speed: Double?
+    let cadence: Int?
 }

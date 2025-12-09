@@ -1,3 +1,11 @@
+//
+//  RoutePoint.swift
+//  RideWeather Pro
+//
+//  Created by Craig Faist on 12/8/25.
+//
+
+
 import Foundation
 import CoreLocation
 

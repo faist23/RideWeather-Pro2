@@ -1,3 +1,11 @@
+//
+//  GarminActivityImportView.swift
+//  RideWeather Pro
+//
+//  Created by Craig Faist on 12/8/25.
+//
+
+
 import SwiftUI
 
 struct GarminActivityImportView: View {
@@ -64,7 +72,7 @@ struct GarminActivityImportView: View {
                 } else {
                     List {
                         ForEach(filteredActivities) { activity in
-                            ActivityRow(activity: activity) {
+                            GarminActivityRow(activity: activity) {
                                 Task {
                                     await importActivity(activity)
                                 }
@@ -142,7 +150,8 @@ struct GarminActivityImportView: View {
                         latitude: lat,
                         longitude: lon,
                         elevation: sample.elevation,
-                        speed: sample.speed
+                        speed: sample.speed,
+                        distance: nil 
                     ))
                 }
                 
@@ -183,7 +192,7 @@ struct GarminActivityImportView: View {
     }
 }
 
-struct ActivityRow: View {
+struct GarminActivityRow: View {
     let activity: GarminActivitySummary
     let onImport: () -> Void
     
@@ -281,6 +290,7 @@ struct GPSPoint {
     let longitude: Double
     let elevation: Double?
     let speed: Double?
+    let distance: Double?
 }
 
 struct PowerDataPoint {
