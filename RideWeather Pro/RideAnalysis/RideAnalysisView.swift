@@ -16,7 +16,7 @@ struct RideAnalysisView: View {
     
     private let trainingLoadManager = TrainingLoadManager.shared
 
-    init(weatherViewModel: WeatherViewModel) {
+    @MainActor init(weatherViewModel: WeatherViewModel) {
         self.weatherViewModel = weatherViewModel
         // Create the viewModel with settings
         self._viewModel = StateObject(wrappedValue: RideAnalysisViewModel(settings: weatherViewModel.settings))
@@ -2434,3 +2434,4 @@ extension AnalysisStorageManager {
         return sources
     }
 }
+
