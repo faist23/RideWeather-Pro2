@@ -10,10 +10,11 @@ import CoreLocation
 // MARK: - Main Analysis View
 
 struct RideAnalysisView: View {
-    @StateObject private var viewModel: RideAnalysisViewModel  // Change this
+    @StateObject private var viewModel: RideAnalysisViewModel
     @ObservedObject var weatherViewModel: WeatherViewModel
     @EnvironmentObject var stravaService: StravaService
-    @EnvironmentObject var wahooService: WahooService // Add this
+    @EnvironmentObject var wahooService: WahooService
+    @EnvironmentObject var garminService: GarminService
     
     private let trainingLoadManager = TrainingLoadManager.shared
 
@@ -63,6 +64,11 @@ struct RideAnalysisView: View {
                         if wahooService.isAuthenticated {
                             Button(action: { viewModel.showingWahooActivities = true }) {
                                 Label("Import from Wahoo", systemImage: "square.and.arrow.down.on.square")
+                            }
+                        }
+                        if garminService.isAuthenticated {
+                            Button(action: { viewModel.showingGarminActivities = true }) {
+                                Label("Import from Garmin", systemImage: "square.and.arrow.down.on.square")
                             }
                         }
                         Divider()
@@ -127,6 +133,11 @@ struct RideAnalysisView: View {
                     .environmentObject(wahooService)
                     .environmentObject(weatherViewModel)
             }
+            .sheet(isPresented: $viewModel.showingGarminActivities) {
+                GarminActivityImportView()
+                    .environmentObject(garminService)
+                    .environmentObject(viewModel)
+            }
             .sheet(isPresented: $viewModel.showingPlanComparison) {
                 if let analysis = viewModel.currentAnalysis {
                     ComparisonSelectionView(analysis: analysis)
@@ -135,15 +146,21 @@ struct RideAnalysisView: View {
             .sheet(isPresented: $viewModel.showingSavedPlans) {
                 SavedPlansView()
             }
-            // Listen for Strava imports
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NewAnalysisImported"))) { notification in
                 if let analysis = notification.object as? RideAnalysis {
                     viewModel.currentAnalysis = analysis
-                    if let source = notification.userInfo?["source"] as? String, source == "strava" {
-                        let sourceInfo = RideSourceInfo(
-                            type: .strava,
-                            fileName: nil
-                        )
+                    if let source = notification.userInfo?["source"] as? String {
+                        let sourceInfo: RideSourceInfo
+                        switch source {
+                        case "strava":
+                            sourceInfo = RideSourceInfo(type: .strava, fileName: nil)
+                        case "wahoo":
+                            sourceInfo = RideSourceInfo(type: .wahoo, fileName: nil)
+                        case "garmin":
+                            sourceInfo = RideSourceInfo(type: .garmin, fileName: nil)
+                        default:
+                            sourceInfo = RideSourceInfo(type: .fitFile, fileName: nil)
+                        }
                         viewModel.analysisSources[analysis.id] = sourceInfo
                         viewModel.storage.saveSource(sourceInfo, for: analysis.id)
                     }
@@ -218,6 +235,23 @@ struct RideAnalysisView: View {
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(Color.blue.opacity(0.8)) // Wahoo blue
+                    .cornerRadius(12)
+                }
+                .padding(.horizontal, 40)
+            }
+
+            if garminService.isAuthenticated {
+                Button(action: { viewModel.showingGarminActivities = true }) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "figure.outdoor.cycle")
+                            .font(.title3)
+                        Text("Import from Garmin")
+                            .font(.headline)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.black.opacity(0.8))
                     .cornerRadius(12)
                 }
                 .padding(.horizontal, 40)
@@ -624,6 +658,7 @@ struct CompactRideHeaderCard: View {
     enum RideSource {
         case strava
         case wahoo
+        case garmin
         case fitFile(fileName: String)
     }
     
@@ -681,6 +716,8 @@ struct CompactRideHeaderCard: View {
             return "figure.outdoor.cycle"
         case .wahoo:
             return "figure.outdoor.cycle"
+        case .garmin:
+            return "figure.outdoor.cycle"
         case .fitFile:
             return "doc.fill"
         }
@@ -689,11 +726,13 @@ struct CompactRideHeaderCard: View {
     private var sourceText: String {
         switch source {
         case .strava:
-            return "Strava"  // ✅ Shows "Strava"
+            return "Strava"
         case .wahoo:
-            return "Wahoo"  // ✅ Shows "Wahoo"
+            return "Wahoo"
+        case .garmin:
+            return "Garmin"
         case .fitFile(let fileName):
-            return fileName  // ✅ Shows full filename with .fit extension
+            return fileName
         }
     }
 }
@@ -2160,6 +2199,7 @@ struct RideSourceInfo: Codable {
     enum SourceType: String, Codable {
         case strava
         case wahoo
+        case garmin
         case fitFile
     }
 }
@@ -2178,6 +2218,7 @@ class RideAnalysisViewModel: ObservableObject {
     @Published var shareItem: ShareItem?
     @Published var showingStravaActivities = false
     @Published var showingWahooActivities = false 
+    @Published var showingGarminActivities = false
     @Published var showingSavedPlans = false
     
     @Published var showingPlanComparison = false
@@ -2212,6 +2253,8 @@ class RideAnalysisViewModel: ObservableObject {
                 return .strava
             case .wahoo:
                 return .wahoo
+            case .garmin:
+                return .garmin
             case .fitFile:
                 return .fitFile(fileName: sourceInfo.fileName ?? "Unknown File")
             }
@@ -2353,6 +2396,11 @@ class RideAnalysisViewModel: ObservableObject {
                analysis.rideName.contains("Evening Ride") {
                 analysisSources[analysis.id] = RideSourceInfo(
                     type: .strava,
+                    fileName: nil
+                )
+            } else if analysis.rideName.lowercased().contains("garmin") {  
+                analysisSources[analysis.id] = RideSourceInfo(
+                    type: .garmin,
                     fileName: nil
                 )
             } else {

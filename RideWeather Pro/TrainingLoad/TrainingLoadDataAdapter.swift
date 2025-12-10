@@ -140,291 +140,291 @@ class UnifiedTrainingLoadSync: ObservableObject {
         isSyncing = true
         
         // 1. Check the Source of Truth (Settings)
-                let configSource = DataSourceManager.shared.configuration.trainingLoadSource
-                print("🔄 Unified Sync: Using configured source: \(configSource.rawValue)")
+        let configSource = DataSourceManager.shared.configuration.trainingLoadSource
+        print("🔄 Unified Sync: Using configured source: \(configSource.rawValue)")
+        
+        do {
+            switch configSource {
+            case .strava:
+                guard stravaService.isAuthenticated else { throw SyncError.notConnected("Strava") }
+                await syncFromStrava(stravaService: stravaService, userFTP: userFTP, userLTHR: userLTHR, startDate: startDate)
                 
-                do {
-                    switch configSource {
-                    case .strava:
-                        guard stravaService.isAuthenticated else { throw SyncError.notConnected("Strava") }
-                        await syncFromStrava(stravaService: stravaService, userFTP: userFTP, userLTHR: userLTHR, startDate: startDate)
-                        
-                    case .garmin:
-                        guard garminService.isAuthenticated else { throw SyncError.notConnected("Garmin") }
-                        await syncFromGarmin(garminService: garminService, userFTP: userFTP, userLTHR: userLTHR, startDate: startDate)
-                        
-                    case .appleHealth:
-                        guard healthManager.isAuthorized else { throw SyncError.notConnected("Apple Health") }
-                        await syncFromAppleHealth(healthManager: healthManager, userFTP: userFTP, userLTHR: userLTHR, startDate: startDate)
-                        
-                    case .manual:
-                        syncStatus = "Manual mode active"
-                        try? await Task.sleep(nanoseconds: 1_000_000_000)
-                    }
-                    
-                    // Only update success if we didn't throw/fail inside the sub-functions
-                    if !syncStatus.contains("failed") {
-                        lastSyncDate = Date()
-                        UserDefaults.standard.set(lastSyncDate, forKey: "lastTrainingLoadSync")
-                        needsSync = false
-                    }
-                    
-                } catch {
-                    syncStatus = "Error: \(error.localizedDescription)"
-                    print("❌ Unified Sync Error: \(error)")
-                }
+            case .garmin:
+                guard garminService.isAuthenticated else { throw SyncError.notConnected("Garmin") }
+                await syncFromGarmin(garminService: garminService, userFTP: userFTP, userLTHR: userLTHR, startDate: startDate)
                 
-                isSyncing = false
+            case .appleHealth:
+                guard healthManager.isAuthorized else { throw SyncError.notConnected("Apple Health") }
+                await syncFromAppleHealth(healthManager: healthManager, userFTP: userFTP, userLTHR: userLTHR, startDate: startDate)
+                
+            case .manual:
+                syncStatus = "Manual mode active"
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
+            
+            // Only update success if we didn't throw/fail inside the sub-functions
+            if !syncStatus.contains("failed") {
+                lastSyncDate = Date()
+                UserDefaults.standard.set(lastSyncDate, forKey: "lastTrainingLoadSync")
+                needsSync = false
+            }
+            
+        } catch {
+            syncStatus = "Error: \(error.localizedDescription)"
+            print("❌ Unified Sync Error: \(error)")
+        }
+        
+        isSyncing = false
+    }
     
     // MARK: - 1. Strava Sync Implementation
-        private func syncFromStrava(
-            stravaService: StravaService,
-            userFTP: Double,
-            userLTHR: Double?,
-            startDate: Date?
-        ) async {
-            syncStatus = "Syncing from Strava..."
-            syncProgress = 0.1
-            
-            do {
-                let syncStart = startDate ?? lastSyncDate ?? Calendar.current.date(byAdding: .day, value: -90, to: Date())!
-                
-                let stravaActivities = try await stravaService.fetchAllActivitiesForTrainingLoad(startDate: syncStart)
-                
-                guard !stravaActivities.isEmpty else {
-                    syncStatus = "No new Strava activities"
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
-                    return
-                }
-                
-                syncProgress = 0.5
-                syncStatus = "Processing \(stravaActivities.count) activities..."
-                
-                let universalActivities = stravaActivities.map { activity -> UniversalActivity in
-                    UniversalActivity(
-                        id: "\(activity.id)",
-                        name: activity.name,
-                        type: mapStravaType(activity.type),
-                        startDate: activity.startDate,
-                        duration: TimeInterval(activity.movingTime),
-                        distance: activity.distance,
-                        averagePower: activity.averageWatts,
-                        averageHeartRate: activity.averageHeartrate,
-                        maxHeartRate: activity.maxHeartrate,
-                        calories: activity.kilojoules,
-                        source: .strava
-                    )
-                }
-                
-                await processActivities(universalActivities, userFTP: userFTP, userLTHR: userLTHR)
-                syncStatus = "✅ Synced \(stravaActivities.count) from Strava"
-                
-            } catch {
-                syncStatus = "Strava sync failed: \(error.localizedDescription)"
-            }
-        }
-    
-    // MARK: - 2. Garmin Sync Implementation (With Chunking Fix)
-        private func syncFromGarmin(
-            garminService: GarminService,
-            userFTP: Double,
-            userLTHR: Double?,
-            startDate: Date?
-        ) async {
-            syncStatus = "Syncing from Garmin..."
-            syncProgress = 0.1
-            
-            do {
-                // Default to 30 days if no date provided
-                let syncStart = startDate ?? Calendar.current.date(byAdding: .day, value: -30, to: Date())!
-                let today = Date()
-                let calendar = Calendar.current
-                
-                var allActivities: [GarminActivity] = []
-                
-                // Chunking Loop: Break request into daily chunks to avoid 400 Error
-                var currentStart = syncStart
-                while currentStart < today {
-                    let currentEnd = min(calendar.date(byAdding: .day, value: 1, to: currentStart)!, today)
-                    
-                    syncStatus = "Fetching Garmin data (\(currentStart.formatted(date: .abbreviated, time: .omitted)))..."
-                    
-                    // Call the API with explicit start/end
-                    if let activities = try? await garminService.fetchActivities(startDate: currentStart, endDate: currentEnd) {
-                        allActivities.append(contentsOf: activities)
-                    }
-                    
-                    currentStart = currentEnd
-                    // Tiny pause to be nice to the API
-                    try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
-                }
-                
-                guard !allActivities.isEmpty else {
-                    syncStatus = "No new Garmin activities"
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
-                    return
-                }
-                
-                syncProgress = 0.5
-                syncStatus = "Processing \(allActivities.count) activities..."
-                
-                let universalActivities = allActivities.map { activity -> UniversalActivity in
-                    UniversalActivity(
-                        id: "\(activity.activityId)",
-                        name: activity.activityName,
-                        type: mapGarminType(activity.activityType),
-                        startDate: activity.startTime,
-                        duration: TimeInterval(activity.duration),
-                        distance: activity.distance,
-                        averagePower: activity.avgPower,
-                        averageHeartRate: activity.avgHeartRate,
-                        maxHeartRate: activity.maxHeartRate,
-                        calories: activity.calories,
-                        source: .garmin
-                    )
-                }
-                
-                await processActivities(universalActivities, userFTP: userFTP, userLTHR: userLTHR)
-                syncStatus = "✅ Synced \(allActivities.count) from Garmin"
-                
-            } catch {
-                syncStatus = "Garmin sync failed: \(error.localizedDescription)"
-                print("Garmin Error: \(error)")
-            }
-        }
-    
-    // MARK: - 3. Apple Health Sync Implementation
-        private func syncFromAppleHealth(
-            healthManager: HealthKitManager,
-            userFTP: Double,
-            userLTHR: Double?,
-            startDate: Date?
-        ) async {
-            syncStatus = "Analyzing HealthKit..."
-            syncProgress = 0.1
-            
+    private func syncFromStrava(
+        stravaService: StravaService,
+        userFTP: Double,
+        userLTHR: Double?,
+        startDate: Date?
+    ) async {
+        syncStatus = "Syncing from Strava..."
+        syncProgress = 0.1
+        
+        do {
             let syncStart = startDate ?? lastSyncDate ?? Calendar.current.date(byAdding: .day, value: -90, to: Date())!
-            let syncEnd = Date()
             
-            let workouts = await healthManager.fetchWorkouts(startDate: syncStart, endDate: syncEnd)
+            let stravaActivities = try await stravaService.fetchAllActivitiesForTrainingLoad(startDate: syncStart)
             
-            guard !workouts.isEmpty else {
-                syncStatus = "No new HealthKit workouts"
+            guard !stravaActivities.isEmpty else {
+                syncStatus = "No new Strava activities"
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 return
             }
             
-            syncProgress = 0.3
-            var universalActivities: [UniversalActivity] = []
+            syncProgress = 0.5
+            syncStatus = "Processing \(stravaActivities.count) activities..."
             
-            for (index, workout) in workouts.enumerated() {
-                let avgHR = await healthManager.fetchAverageHeartRate(for: workout)
-                let maxHR = await healthManager.fetchMaxHeartRate(for: workout)
-                
-                let activity = UniversalActivity(
-                    id: workout.uuid.uuidString,
-                    name: workout.workoutActivityType.name,
-                    type: mapHealthKitType(workout.workoutActivityType),
-                    startDate: workout.startDate,
-                    duration: workout.duration,
-                    distance: workout.totalDistance?.doubleValue(for: .meter()) ?? 0,
-                    averagePower: nil,
-                    averageHeartRate: avgHR,
-                    maxHeartRate: maxHR,
-                    calories: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
-                    source: .appleHealth
+            let universalActivities = stravaActivities.map { activity -> UniversalActivity in
+                UniversalActivity(
+                    id: "\(activity.id)",
+                    name: activity.name,
+                    type: mapStravaType(activity.type),
+                    startDate: activity.startDate,
+                    duration: TimeInterval(activity.movingTime),
+                    distance: activity.distance,
+                    averagePower: activity.averageWatts,
+                    averageHeartRate: activity.averageHeartrate,
+                    maxHeartRate: activity.maxHeartrate,
+                    calories: activity.kilojoules,
+                    source: .strava
                 )
-                universalActivities.append(activity)
-                
-                // Update UI occasionally
-                if index % 5 == 0 {
-                    syncStatus = "Processing \(index)/\(workouts.count)..."
-                    syncProgress = 0.3 + (0.6 * Double(index) / Double(workouts.count))
-                }
             }
             
             await processActivities(universalActivities, userFTP: userFTP, userLTHR: userLTHR)
-            syncStatus = "✅ Synced \(workouts.count) from Health"
-        }
-        
-        // MARK: - Common Processing Logic
-        private func processActivities(
-            _ activities: [UniversalActivity],
-            userFTP: Double,
-            userLTHR: Double?
-        ) async {
-            syncStatus = "Updating metrics..."
-            var dailyData: [Date: (tss: Double, count: Int, distance: Double, duration: TimeInterval)] = [:]
+            syncStatus = "✅ Synced \(stravaActivities.count) from Strava"
             
-            for activity in activities {
-                let calendar = Calendar.current
-                let activityDate = calendar.startOfDay(for: activity.startDate)
-                let tss = activity.calculateTSS(userFTP: userFTP, userLTHR: userLTHR)
-                
-                if var existing = dailyData[activityDate] {
-                    existing.tss += tss
-                    existing.count += 1
-                    existing.distance += activity.distance
-                    existing.duration += activity.duration
-                    dailyData[activityDate] = existing
-                } else {
-                    dailyData[activityDate] = (tss, 1, activity.distance, activity.duration)
-                }
-            }
-            
-            for (date, data) in dailyData {
-                trainingLoadManager.updateDailyLoad(
-                    date: date,
-                    tss: data.tss,
-                    rideCount: data.count,
-                    distance: data.distance,
-                    duration: data.duration
-                )
-            }
-            
-            trainingLoadManager.fillMissingDays()
-            syncProgress = 1.0
-        }
-    
-    // MARK: - Mappers
-        private func mapStravaType(_ type: String) -> UniversalActivity.ActivityType {
-            switch type {
-            case "Ride": return .ride
-            case "VirtualRide": return .virtualRide
-            case "Run", "VirtualRun": return .run
-            case "Swim": return .swim
-            default: return .other
-            }
-        }
-        
-        private func mapGarminType(_ type: String) -> UniversalActivity.ActivityType {
-            let lower = type.lowercased()
-            if lower.contains("cycling") || lower.contains("bike") { return .ride }
-            if lower.contains("run") { return .run }
-            if lower.contains("swim") { return .swim }
-            return .other
-        }
-        
-        private func mapHealthKitType(_ type: HKWorkoutActivityType) -> UniversalActivity.ActivityType {
-            switch type {
-            case .cycling: return .ride
-            case .running: return .run
-            case .swimming: return .swim
-            default: return .other
-            }
-        }
-        
-        enum SyncError: LocalizedError {
-            case notConnected(String)
-            var errorDescription: String? {
-                switch self {
-                case .notConnected(let source): return "Please connect to \(source) in Settings > Data Sources."
-                }
-            }
+        } catch {
+            syncStatus = "Strava sync failed: \(error.localizedDescription)"
         }
     }
     
+    // MARK: - 2. Garmin Sync Implementation (With Chunking Fix)
+    private func syncFromGarmin(
+        garminService: GarminService,
+        userFTP: Double,
+        userLTHR: Double?,
+        startDate: Date?
+    ) async {
+        syncStatus = "Syncing from Garmin..."
+        syncProgress = 0.1
+        
+        do {
+            // Default to 30 days if no date provided
+            let syncStart = startDate ?? Calendar.current.date(byAdding: .day, value: -30, to: Date())!
+            let today = Date()
+            let calendar = Calendar.current
+            
+            var allActivities: [GarminActivity] = []
+            
+            // Chunking Loop: Break request into daily chunks to avoid 400 Error
+            var currentStart = syncStart
+            while currentStart < today {
+                let currentEnd = min(calendar.date(byAdding: .day, value: 1, to: currentStart)!, today)
+                
+                syncStatus = "Fetching Garmin data (\(currentStart.formatted(date: .abbreviated, time: .omitted)))..."
+                
+                // Call the API with explicit start/end
+                if let activities = try? await garminService.fetchActivities(startDate: currentStart, endDate: currentEnd) {
+                    allActivities.append(contentsOf: activities)
+                }
+                
+                currentStart = currentEnd
+                // Tiny pause to be nice to the API
+                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+            }
+            
+            guard !allActivities.isEmpty else {
+                syncStatus = "No new Garmin activities"
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                return
+            }
+            
+            syncProgress = 0.5
+            syncStatus = "Processing \(allActivities.count) activities..."
+            
+            let universalActivities = allActivities.map { activity -> UniversalActivity in
+                UniversalActivity(
+                    id: "\(activity.activityId)",
+                    name: activity.activityName,
+                    type: mapGarminType(activity.activityType),
+                    startDate: activity.startTime,
+                    duration: TimeInterval(activity.duration),
+                    distance: activity.distance,
+                    averagePower: activity.avgPower,
+                    averageHeartRate: activity.avgHeartRate,
+                    maxHeartRate: activity.maxHeartRate,
+                    calories: activity.calories,
+                    source: .garmin
+                )
+            }
+            
+            await processActivities(universalActivities, userFTP: userFTP, userLTHR: userLTHR)
+            syncStatus = "✅ Synced \(allActivities.count) from Garmin"
+            
+        } catch {
+            syncStatus = "Garmin sync failed: \(error.localizedDescription)"
+            print("Garmin Error: \(error)")
+        }
+    }
+    
+    // MARK: - 3. Apple Health Sync Implementation
+    private func syncFromAppleHealth(
+        healthManager: HealthKitManager,
+        userFTP: Double,
+        userLTHR: Double?,
+        startDate: Date?
+    ) async {
+        syncStatus = "Analyzing HealthKit..."
+        syncProgress = 0.1
+        
+        let syncStart = startDate ?? lastSyncDate ?? Calendar.current.date(byAdding: .day, value: -90, to: Date())!
+        let syncEnd = Date()
+        
+        let workouts = await healthManager.fetchWorkouts(startDate: syncStart, endDate: syncEnd)
+        
+        guard !workouts.isEmpty else {
+            syncStatus = "No new HealthKit workouts"
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            return
+        }
+        
+        syncProgress = 0.3
+        var universalActivities: [UniversalActivity] = []
+        
+        for (index, workout) in workouts.enumerated() {
+            let avgHR = await healthManager.fetchAverageHeartRate(for: workout)
+            let maxHR = await healthManager.fetchMaxHeartRate(for: workout)
+            
+            let activity = UniversalActivity(
+                id: workout.uuid.uuidString,
+                name: workout.workoutActivityType.name,
+                type: mapHealthKitType(workout.workoutActivityType),
+                startDate: workout.startDate,
+                duration: workout.duration,
+                distance: workout.totalDistance?.doubleValue(for: .meter()) ?? 0,
+                averagePower: nil,
+                averageHeartRate: avgHR,
+                maxHeartRate: maxHR,
+                calories: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
+                source: .appleHealth
+            )
+            universalActivities.append(activity)
+            
+            // Update UI occasionally
+            if index % 5 == 0 {
+                syncStatus = "Processing \(index)/\(workouts.count)..."
+                syncProgress = 0.3 + (0.6 * Double(index) / Double(workouts.count))
+            }
+        }
+        
+        await processActivities(universalActivities, userFTP: userFTP, userLTHR: userLTHR)
+        syncStatus = "✅ Synced \(workouts.count) from Health"
+    }
+    
+    // MARK: - Common Processing Logic
+    private func processActivities(
+        _ activities: [UniversalActivity],
+        userFTP: Double,
+        userLTHR: Double?
+    ) async {
+        syncStatus = "Updating metrics..."
+        var dailyData: [Date: (tss: Double, count: Int, distance: Double, duration: TimeInterval)] = [:]
+        
+        for activity in activities {
+            let calendar = Calendar.current
+            let activityDate = calendar.startOfDay(for: activity.startDate)
+            let tss = activity.calculateTSS(userFTP: userFTP, userLTHR: userLTHR)
+            
+            if var existing = dailyData[activityDate] {
+                existing.tss += tss
+                existing.count += 1
+                existing.distance += activity.distance
+                existing.duration += activity.duration
+                dailyData[activityDate] = existing
+            } else {
+                dailyData[activityDate] = (tss, 1, activity.distance, activity.duration)
+            }
+        }
+        
+        for (date, data) in dailyData {
+            trainingLoadManager.updateDailyLoad(
+                date: date,
+                tss: data.tss,
+                rideCount: data.count,
+                distance: data.distance,
+                duration: data.duration
+            )
+        }
+        
+        trainingLoadManager.fillMissingDays()
+        syncProgress = 1.0
+    }
+    
+    // MARK: - Mappers
+    private func mapStravaType(_ type: String) -> UniversalActivity.ActivityType {
+        switch type {
+        case "Ride": return .ride
+        case "VirtualRide": return .virtualRide
+        case "Run", "VirtualRun": return .run
+        case "Swim": return .swim
+        default: return .other
+        }
+    }
+    
+    private func mapGarminType(_ type: String) -> UniversalActivity.ActivityType {
+        let lower = type.lowercased()
+        if lower.contains("cycling") || lower.contains("bike") { return .ride }
+        if lower.contains("run") { return .run }
+        if lower.contains("swim") { return .swim }
+        return .other
+    }
+    
+    private func mapHealthKitType(_ type: HKWorkoutActivityType) -> UniversalActivity.ActivityType {
+        switch type {
+        case .cycling: return .ride
+        case .running: return .run
+        case .swimming: return .swim
+        default: return .other
+        }
+    }
+    
+    enum SyncError: LocalizedError {
+        case notConnected(String)
+        var errorDescription: String? {
+            switch self {
+            case .notConnected(let source): return "Please connect to \(source) in Settings > Data Sources."
+            }
+        }
+    }
+}
+
 
 
 // MARK: - Backwards Compatibility

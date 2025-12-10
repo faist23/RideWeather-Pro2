@@ -100,13 +100,23 @@ struct GarminActivityImportView: View {
         isLoading = true
         errorMessage = nil
         
+        print("📥 GarminActivityImportView: Starting to load activities...")
+        
         do {
             activities = try await garminService.fetchRecentActivities(limit: 50)
+            print("✅ GarminActivityImportView: Successfully loaded \(activities.count) activities")
             if activities.isEmpty {
                 errorMessage = nil // Show empty state instead of error
+                print("ℹ️ GarminActivityImportView: No cycling activities found")
             }
         } catch {
-            errorMessage = error.localizedDescription
+            let errorMsg = error.localizedDescription
+            errorMessage = errorMsg
+            print("❌ GarminActivityImportView: Failed to load activities")
+            print("   Error: \(errorMsg)")
+            if let garminError = error as? GarminService.GarminError {
+                print("   Garmin Error Type: \(garminError)")
+            }
         }
         
         isLoading = false
@@ -126,6 +136,16 @@ struct GarminActivityImportView: View {
             await MainActor.run {
                 // Import into ride analysis
                 rideViewModel.importRideData(rideData)
+                
+                // ✅ Send notification with Garmin source
+                if let currentAnalysis = rideViewModel.currentAnalysis {
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("NewAnalysisImported"),
+                        object: currentAnalysis,
+                        userInfo: ["source": "garmin"]
+                    )
+                }
+                
                 dismiss()
             }
         } catch {

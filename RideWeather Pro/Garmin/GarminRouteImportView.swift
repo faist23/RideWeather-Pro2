@@ -94,13 +94,22 @@ struct GarminRouteImportView: View {
         isLoading = true
         errorMessage = nil
         
+        print("📥 GarminRouteImportView: Starting to load courses...")
+        
         do {
             courses = try await garminService.fetchCourses()
+            print("✅ GarminRouteImportView: Successfully loaded \(courses.count) courses")
             if courses.isEmpty {
                 errorMessage = nil // Show empty state instead of error
             }
         } catch {
-            errorMessage = error.localizedDescription
+            let errorMsg = error.localizedDescription
+            errorMessage = errorMsg
+            print("❌ GarminRouteImportView: Failed to load courses")
+            print("   Error: \(errorMsg)")
+            if let garminError = error as? GarminService.GarminError {
+                print("   Garmin Error Type: \(garminError)")
+            }
         }
         
         isLoading = false
