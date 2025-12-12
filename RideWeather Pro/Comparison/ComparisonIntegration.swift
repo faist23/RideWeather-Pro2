@@ -1,9 +1,7 @@
 //
 //  ComparisonIntegration.swift
-//  RideWeather Pro - Integration Guide
+//  RideWeather Pro 
 //
-//  This file shows how to integrate the pacing comparison feature
-//  into your existing app structure.
 //
 
 import SwiftUI

@@ -1,4 +1,3 @@
-
 //
 //  SafetyAndDaylightAnalytics.swift
 //  RideWeather Pro
@@ -167,7 +166,7 @@ struct SafetyAnalyticsEngine {
         }
         return solar.sunrise ?? rideStartTime
     }
-
+    
     private func calculateSunset() -> Date {
         // Use the Solar library to get the real sunset time
         guard let solar = Solar(for: rideStartTime, coordinate: self.location) else {
@@ -279,19 +278,149 @@ struct SafetyAnalyticsEngine {
     }
     
     private func identifyDangerousWeatherSegments() -> [WeatherSafetySegment] {
-        // Implementation for identifying dangerous weather conditions
-        // This would analyze windSpeed, temperature, humidity, etc.
-        return []
+        return findWeatherSegments(check: { point in
+            let w = point.weather
+            
+            // 1. High Winds
+            let windLimit = units == .metric ? 45.0 : 28.0
+            if w.windSpeed >= windLimit {
+                return (
+                    hazard: .highWinds,
+                    title: "Dangerous Winds",
+                    desc: "Gusts exceeding \(Int(windLimit)) \(units.speedUnitAbbreviation). Crash risk high.",
+                    rec: "Grip bars firmly, avoid deep-section wheels.",
+                    icon: "wind"
+                )
+            }
+            
+            // 2. Extreme Heat
+            let heatLimit = units == .metric ? 38.0 : 100.0
+            if w.temp >= heatLimit {
+                return (
+                    hazard: .extremeTemperature,
+                    title: "Extreme Heat",
+                    desc: "Temps above \(Int(heatLimit))°. Heat stroke risk.",
+                    rec: "Hydrate aggressively. Stop if dizzy.",
+                    icon: "thermometer.sun.fill"
+                )
+            }
+            
+            // 3. Freezing / Ice
+            // Check temp + precipitation logic or snow icon
+            let freezeLimit = units == .metric ? -5.0 : 23.0
+            let isFreezing = w.temp <= (units == .metric ? 0 : 32)
+            
+            if w.temp <= freezeLimit {
+                return (
+                    hazard: .extremeTemperature,
+                    title: "Deep Freeze",
+                    desc: "Risk of frostbite on exposed skin.",
+                    rec: "Cover all skin. Limit exposure time.",
+                    icon: "thermometer.snowflake"
+                )
+            }
+            
+            if isFreezing && (w.iconName.contains("snow") || w.pop > 0.5) {
+                return (
+                    hazard: .ice,
+                    title: "Ice Risk",
+                    desc: "Freezing temps with precipitation.",
+                    rec: "Roads may be icy. Reduce speed/lean angle.",
+                    icon: "snowflake"
+                )
+            }
+            
+            // 4. Storms
+            if w.iconName.contains("bolt") {
+                return (
+                    hazard: .heavyRain,
+                    title: "Thunderstorms",
+                    desc: "Lightning detected in forecast.",
+                    rec: "Seek shelter immediately if lightning is seen.",
+                    icon: "cloud.bolt.rain.fill"
+                )
+            }
+            
+            return nil
+        }, severity: .high)
     }
     
     private func identifyCautionaryWeatherSegments() -> [WeatherSafetySegment] {
-        // Implementation for identifying cautionary weather conditions
-        return []
+        return findWeatherSegments(check: { point in
+            let w = point.weather
+            
+            // 1. Gusty Winds
+            let windLow = units == .metric ? 25.0 : 15.0
+            let windHigh = units == .metric ? 45.0 : 28.0
+            if w.windSpeed >= windLow && w.windSpeed < windHigh {
+                return (
+                    hazard: .highWinds,
+                    title: "Gusty Winds",
+                    desc: "Winds ~\(Int(w.windSpeed)) \(units.speedUnitAbbreviation) affect handling.",
+                    rec: "Be prepared for sudden gusts.",
+                    icon: "wind"
+                )
+            }
+            
+            // 2. High Heat
+            let heatLow = units == .metric ? 30.0 : 86.0
+            let heatHigh = units == .metric ? 38.0 : 100.0
+            if w.temp >= heatLow && w.temp < heatHigh {
+                return (
+                    hazard: .extremeTemperature,
+                    title: "High Heat",
+                    desc: "Temps ~\(Int(w.temp))°. Dehydration risk.",
+                    rec: "Increase fluid intake and wear sunscreen.",
+                    icon: "sun.max.fill"
+                )
+            }
+            
+            // 3. Rain Likely
+            // Check pop > 40% OR rain icon
+            if (w.pop >= 0.4 && w.pop <= 0.8) || (w.iconName.contains("rain") && !w.iconName.contains("bolt")) {
+                return (
+                    hazard: .heavyRain,
+                    title: "Rain Likely",
+                    desc: "Wet roads expected.",
+                    rec: "Increase braking distance. Watch cornering.",
+                    icon: "cloud.rain.fill"
+                )
+            }
+            
+            return nil
+        }, severity: .moderate)
     }
     
     private func identifyOptimalWeatherSegments() -> [WeatherSafetySegment] {
-        // Implementation for identifying optimal weather conditions
-        return []
+        return findWeatherSegments(check: { point in
+            let w = point.weather
+            
+            // Optimal Criteria:
+            // Temp: 15-25°C (59-77°F)
+            // Wind: < 15 km/h (9 mph)
+            // Rain: < 10%
+            
+            let tempMin = units == .metric ? 15.0 : 59.0
+            let tempMax = units == .metric ? 25.0 : 77.0
+            let windMax = units == .metric ? 15.0 : 9.0
+            
+            let isOptimalTemp = w.temp >= tempMin && w.temp <= tempMax
+            let isLowWind = w.windSpeed < windMax
+            let isDry = w.pop < 0.1
+            
+            if isOptimalTemp && isLowWind && isDry {
+                // Reuse 'lowVisibility' type as placeholder for 'Optimal' since we handle visual separately
+                return (
+                    hazard: .lowVisibility,
+                    title: "Perfect Conditions",
+                    desc: "Ideal riding weather.",
+                    rec: "Enjoy the ride!",
+                    icon: "star.fill"
+                )
+            }
+            
+            return nil
+        }, severity: .moderate) // Use moderate for positive feedback
     }
     
     private func calculateOverallSafetyRating(dangerous: [WeatherSafetySegment], cautionary: [WeatherSafetySegment]) -> WeatherSafetyRating {
@@ -316,6 +445,126 @@ struct SafetyAnalyticsEngine {
         }
         
         return factors
+    }
+    
+    // MARK: - Segment Builder Helper
+    
+    private func findWeatherSegments(
+        check: (RouteWeatherPoint) -> (hazard: WeatherHazard, title: String, desc: String, rec: String, icon: String)?,
+        severity: ConditionSeverity
+    ) -> [WeatherSafetySegment] {
+        var segments: [WeatherSafetySegment] = []
+        
+        var currentStart: RouteWeatherPoint?
+        var currentStartDist: Double = 0
+        var currentHazard: WeatherHazard?
+        
+        // Track details to create the Condition object later
+        var currentTitle = ""
+        var currentDesc = ""
+        var currentRec = ""
+        var currentIcon = ""
+        
+        for point in weatherPoints {
+            // Run the specific check for this point
+            if let result = check(point) {
+                // We have a match
+                if currentStart == nil {
+                    // Start new segment
+                    currentStart = point
+                    currentStartDist = point.distance
+                    currentHazard = result.hazard
+                    currentTitle = result.title
+                    currentDesc = result.desc
+                    currentRec = result.rec
+                    currentIcon = result.icon
+                } else if currentHazard != result.hazard {
+                    // Hazard type changed (e.g. from Wind to Rain). Close old, start new.
+                    let dist = point.distance - currentStartDist
+                    if dist > 500 { // Only save significant segments (>500m)
+                        segments.append(createSegment(
+                            startDist: currentStartDist,
+                            endDist: point.distance,
+                            dist: dist,
+                            hazard: currentHazard!,
+                            title: currentTitle,
+                            desc: currentDesc,
+                            rec: currentRec,
+                            icon: currentIcon,
+                            severity: severity
+                        ))
+                    }
+                    // Start new
+                    currentStart = point
+                    currentStartDist = point.distance
+                    currentHazard = result.hazard
+                    currentTitle = result.title
+                    currentDesc = result.desc
+                    currentRec = result.rec
+                    currentIcon = result.icon
+                }
+            } else {
+                // No hazard here. If we were tracking one, close it.
+                if let start = currentStart {
+                    let dist = point.distance - currentStartDist
+                    if dist > 500 {
+                        segments.append(createSegment(
+                            startDist: currentStartDist,
+                            endDist: point.distance,
+                            dist: dist,
+                            hazard: currentHazard!,
+                            title: currentTitle,
+                            desc: currentDesc,
+                            rec: currentRec,
+                            icon: currentIcon,
+                            severity: severity
+                        ))
+                    }
+                    currentStart = nil
+                    currentHazard = nil
+                }
+            }
+        }
+        
+        // Close final segment if active at end of ride
+        if let start = currentStart, let last = weatherPoints.last {
+            let dist = last.distance - currentStartDist
+            if dist > 500 {
+                segments.append(createSegment(
+                    startDist: currentStartDist,
+                    endDist: last.distance,
+                    dist: dist,
+                    hazard: currentHazard!,
+                    title: currentTitle,
+                    desc: currentDesc,
+                    rec: currentRec,
+                    icon: currentIcon,
+                    severity: severity
+                ))
+            }
+        }
+        
+        return segments
+    }
+    
+    private func createSegment(startDist: Double, endDist: Double, dist: Double, hazard: WeatherHazard, title: String, desc: String, rec: String, icon: String, severity: ConditionSeverity) -> WeatherSafetySegment {
+        // Convert distance to user units for start/end markers
+        let startUser = units == .metric ? startDist / 1000 : startDist / 1609.34
+        let endUser = units == .metric ? endDist / 1000 : endDist / 1609.34
+        
+        return WeatherSafetySegment(
+            startMile: startUser,
+            endMile: endUser,
+            distance: dist, // Keep this in meters for internal math
+            condition: DangerousCondition(
+                type: hazard,
+                title: title,
+                description: desc,
+                recommendation: rec,
+                icon: icon
+            ),
+            severity: severity
+        )
     }
 }
 

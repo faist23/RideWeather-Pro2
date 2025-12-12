@@ -726,7 +726,7 @@ struct IntegrationsSettingsView: View {
                          }
                      } else if !garminPermissions.isEmpty {
                          VStack(alignment: .leading, spacing: 8) {
-                             Text("Permissions:")
+/*                             Text("Permissions:")
                                  .font(.caption)
                                  .foregroundStyle(.secondary)
                              
@@ -739,7 +739,7 @@ struct IntegrationsSettingsView: View {
                                          .font(.caption2)
                                          .foregroundStyle(.secondary)
                                  }
-                             }
+                             }*/
                          }
                          .padding(.vertical, 4)
                      }
@@ -832,6 +832,8 @@ struct IntegrationsSettingsView: View {
                          .font(.caption)
                          .fontWeight(.semibold)
                      
+                     Text("• Upload weather-aware pacing plans directly to your Garmin device")
+                         .fontWeight(.medium) // Highlight the main feature
                      Text("• Import saved routes for weather forecasting")
                      Text("• Import completed rides for performance analysis")
                      Text("• Access your workout library")

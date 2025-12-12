@@ -782,8 +782,6 @@ struct StrategicGuidance: Identifiable {
 
 // MARK: - Smart Insight Generation (Non-Obvious Only)
 
-// Replace the entire generateSmartInsights() method in AIWeatherPacingInsights.swift
-
 extension AIWeatherPacingInsights {
     
     func generateSmartInsights() -> WeatherPacingInsightResult? {

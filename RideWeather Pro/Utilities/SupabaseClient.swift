@@ -133,12 +133,64 @@ enum JSONValue: Codable {
 class WellnessDataService {
     private let supabase = SupabaseManager.shared.client
     
+    // NEW: Get Garmin User ID from app user ID
+    func getGarminUserId(forAppUser appUserId: String) async throws -> String? {
+        print("   📡 Querying user_garmin_mapping table...")
+        print("   Looking for user_id: \(appUserId)")
+        
+        struct UserMapping: Codable {
+            let user_id: String
+            let garmin_user_id: String
+            let connected_at: String?
+            
+            enum CodingKeys: String, CodingKey {
+                case user_id
+                case garmin_user_id
+                case connected_at
+            }
+        }
+        
+        do {
+            let response: [UserMapping] = try await supabase
+                .from("user_garmin_mapping")
+                .select()
+                .eq("user_id", value: appUserId)
+                .limit(1)
+                .execute()
+                .value
+            
+            if let mapping = response.first {
+                print("   ✅ Found mapping:")
+                print("      app_user_id: \(mapping.user_id)")
+                print("      garmin_user_id: \(mapping.garmin_user_id)")
+                if let connected = mapping.connected_at {
+                    print("      connected_at: \(connected)")
+                }
+                return mapping.garmin_user_id
+            } else {
+                print("   ❌ No mapping found in user_garmin_mapping table")
+                print("   This means linkToSupabase() was never called or failed")
+                return nil
+            }
+            
+        } catch {
+            print("   ❌ Database query error: \(error)")
+            throw error
+        }
+    }
+    
     // Fetch recent wellness data
     func fetchWellnessData(
         forUser userId: String,
         dataType: String? = nil,
         daysBack: Int = 7
     ) async throws -> [GarminWellnessRow] {
+        print("   📡 Fetching from garmin_wellness table...")
+        print("      user_id: \(userId)")
+        if let type = dataType {
+            print("      data_type: \(type)")
+        }
+        
         var query = supabase
             .from("garmin_wellness")
             .select()
@@ -154,15 +206,27 @@ class WellnessDataService {
             .execute()
             .value
         
+        print("   ✅ Retrieved \(response.count) rows")
         return response
     }
     
     // Fetch dailies specifically
     func fetchDailySummaries(forUser userId: String, days: Int = 7) async throws -> [DailySummary] {
+        print("\n📊 Fetching daily summaries...")
         let rows = try await fetchWellnessData(forUser: userId, dataType: "dailies", daysBack: days)
         
-        return rows.compactMap { row -> DailySummary? in
-            guard let dict = row.data.dictionary else { return nil }
+        print("   Processing \(rows.count) daily summary rows...")
+        
+        let summaries = rows.compactMap { row -> DailySummary? in
+            guard let dict = row.data.dictionary else {
+                print("   ⚠️ Row \(row.id): Failed to parse data dictionary")
+                return nil
+            }
+            
+            // Log what we found
+            if let date = row.calendarDate {
+                print("   ✅ \(date): steps=\(dict["steps"] as? Int ?? 0), calories=\(dict["activeKilocalories"] as? Int ?? 0)")
+            }
             
             // Parse the Garmin daily summary format
             return DailySummary(
@@ -177,14 +241,31 @@ class WellnessDataService {
                 syncedAt: row.syncedAt
             )
         }
+        
+        print("   Parsed \(summaries.count) valid summaries")
+        return summaries
     }
     
     // Fetch sleep data
     func fetchSleepData(forUser userId: String, days: Int = 7) async throws -> [SleepSummary] {
+        print("\n😴 Fetching sleep data...")
         let rows = try await fetchWellnessData(forUser: userId, dataType: "sleeps", daysBack: days)
         
-        return rows.compactMap { row -> SleepSummary? in
-            guard let dict = row.data.dictionary else { return nil }
+        print("   Processing \(rows.count) sleep rows...")
+        
+        let summaries = rows.compactMap { row -> SleepSummary? in
+            guard let dict = row.data.dictionary else {
+                print("   ⚠️ Row \(row.id): Failed to parse data dictionary")
+                return nil
+            }
+            
+            // Log what we found
+            if let date = row.calendarDate {
+                let totalSleep = (dict["deepSleepDurationInSeconds"] as? Int ?? 0) +
+                                (dict["lightSleepDurationInSeconds"] as? Int ?? 0) +
+                                (dict["remSleepInSeconds"] as? Int ?? 0)
+                print("   ✅ \(date): total_sleep=\(String(format: "%.1f", Double(totalSleep) / 3600))h")
+            }
             
             return SleepSummary(
                 id: row.id,
@@ -198,6 +279,9 @@ class WellnessDataService {
                 syncedAt: row.syncedAt
             )
         }
+        
+        print("   Parsed \(summaries.count) valid sleep records")
+        return summaries
     }
     
     // Fetch stress details
@@ -223,6 +307,10 @@ class WellnessDataService {
     
     // Map Garmin user to app user
     func linkGarminUser(appUserId: String, garminUserId: String) async throws {
+        print("\n🔗 Linking Garmin user to app user...")
+        print("   app_user_id: \(appUserId)")
+        print("   garmin_user_id: \(garminUserId)")
+        
         struct UserMapping: Encodable {
             let user_id: String
             let garmin_user_id: String
@@ -235,12 +323,17 @@ class WellnessDataService {
             connected_at: Date().ISO8601Format()
         )
         
-        // Explicitly state "user_id" as the conflict column
-        // This ensures the DB knows exactly which row to update if it exists
-        try await supabase
-            .from("user_garmin_mapping")
-            .upsert(mapping, onConflict: "user_id")
-            .execute()
+        do {
+            try await supabase
+                .from("user_garmin_mapping")
+                .upsert(mapping, onConflict: "user_id")
+                .execute()
+            
+            print("   ✅ Mapping saved successfully")
+        } catch {
+            print("   ❌ Failed to save mapping: \(error)")
+            throw error
+        }
     }
 }
 

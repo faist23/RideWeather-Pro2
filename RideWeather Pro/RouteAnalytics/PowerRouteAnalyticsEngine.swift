@@ -24,7 +24,7 @@ struct PowerRouteSegment {
     let powerRequired: Double // watts
     let segmentType: PowerRouteSegment.SegmentType
 
-    enum SegmentType: String, Codable {  // ADD: String, Codable
+    enum SegmentType: String, Codable {
         case climb = "climb"
         case descent = "descent"
         case flat = "flat"
@@ -35,14 +35,14 @@ struct PowerRouteSegment {
             case .climb: return "Climb"
             case .descent: return "Descent"
             case .flat: return "Flat"
-            case .rolling: return "Rolling"  // ADD this
+            case .rolling: return "Rolling"
             }
         }
 
         static func from(grade: Double) -> SegmentType {
             if grade > 0.035 { return .climb }      // Steeper threshold for climb
             if grade < -0.025 { return .descent }   // Threshold for descent
-            if abs(grade) > 0.015 { return .rolling } // ADD: Rolling terrain
+            if abs(grade) > 0.015 { return .rolling } // Rolling terrain
             return .flat
         }
     }
@@ -157,7 +157,7 @@ final class PowerRouteAnalyticsEngine {
             // Loop to converge on a stable Normalized Power and time
             for i in 0..<3 {
                 let ftp = Double(settings.functionalThresholdPower)
-                // ✅ FIX: Capture totalGain here to pass it to the validation function later
+                // Capture totalGain here to pass it to the validation function later
                 let totalClimb = elevationAnalysis?.totalGain ?? 0.0
                 let totalDistanceKm = (last.distance - first.distance) / 1000.0
                 let targetIF = intensityFactor(for: estimatedDurationHours,
@@ -193,7 +193,7 @@ final class PowerRouteAnalyticsEngine {
             let totalEnergy = calculateTotalEnergyKilojoules(segments: segments)
             let comparison = compareWithTraditionalMethod(totalDistance: totalDistance, powerBasedTime: adjustedTotalTime)
 
-            // ✅ FIX: Pass the actual totalGain to the validation function
+            // Pass the actual totalGain to the validation function
             let validatedTime = validateTimeEstimate(
                 totalTimeSeconds: adjustedTotalTime,
                 totalDistanceMeters: totalDistance,
@@ -306,7 +306,7 @@ final class PowerRouteAnalyticsEngine {
         
         var targetPower: Double
 
-        // ✅ NEW, SMARTER LOGIC
+        // SMARTER LOGIC
         // Handle special cases first.
         if grade < -0.03 && headwindMps > 3.0 {
             // SPECIAL CASE: Descent WITH a moderate/strong headwind. You must pedal.
@@ -439,7 +439,7 @@ final class PowerRouteAnalyticsEngine {
                 let midAltitude = (startElev + endElev) / 2.0
                 let airDensityKgM3 = airDensity(atAltitudeMeters: midAltitude, temperatureC: tempC)
 
-                // ✅ REPLACED: Use the new intelligent power allocation model.
+                // Use the new intelligent power allocation model.
                 let segmentPower = adjustedSegmentPower(
                     baseTarget: targetNormalizedPower,
                     grade: grade,
@@ -808,7 +808,7 @@ final class PowerRouteAnalyticsEngine {
             // For descents, use MINIMUM power (most realistic for coasting)
             let minPower = descentBuffer.map { $0.powerRequired }.min() ?? 50.0
             
-            // 🔥 CRITICAL: Recalculate speed using descent physics
+            // Recalculate speed using descent physics
             let startElev = elevationAnalysis?.elevation(at: descentBuffer.first!.startPoint.distance) ?? 0
             let endElev = elevationAnalysis?.elevation(at: descentBuffer.last!.endPoint.distance) ?? 0
             let midAltitude = (startElev + endElev) / 2.0
@@ -1087,7 +1087,7 @@ final class PowerRouteAnalyticsEngine {
             return (endElev - startElev) / distance
         }
         
-        // 🔹 NEW APPROACH: Find the steepest concentrated section using sliding windows
+        // Find the steepest concentrated section using sliding windows
         
         // Define window sizes to check (in meters)
         let windowSizes = [200.0, 400.0, 800.0, 1500.0]
@@ -1410,7 +1410,7 @@ final class PowerRouteAnalyticsEngine {
         let ftp = Double(settings.functionalThresholdPower)
 
         var z1: Double = 0, z2: Double = 0, z3: Double = 0, z4: Double = 0, z5: Double = 0
-        var fourthSum: Double = 0
+//        var fourthSum: Double = 0
         var weightedSum: Double = 0
 
         for s in segments {
@@ -1499,7 +1499,7 @@ final class PowerRouteAnalyticsEngine {
         for s in segments {
             switch s.segmentType {
             case .flat: flat += s.distanceMeters
-            case .rolling:  // ADD THIS CASE
+            case .rolling:
                 flat += s.distanceMeters  // Treat rolling as flat for distance calculation
             case .climb:
                 climb += s.distanceMeters
@@ -1552,7 +1552,7 @@ final class PowerRouteAnalyticsEngine {
         private func validateTimeEstimate(
             totalTimeSeconds: Double,
             totalDistanceMeters: Double,
-            elevationGain: Double // ✅ FIX: Function now accepts elevationGain
+            elevationGain: Double // Function now accepts elevationGain
         ) -> Double {
             let hours = totalTimeSeconds / 3600.0
             let distanceKm = totalDistanceMeters / 1000.0
@@ -1563,7 +1563,7 @@ final class PowerRouteAnalyticsEngine {
             print("   Distance: \(String(format: "%.1f", distanceKm)) km")
             print("   Time: \(String(format: "%.2f", hours)) hours")
             print("   Average Speed: \(String(format: "%.1f", avgSpeedKph)) km/h")
-            // ✅ FIX: Use the passed-in elevationGain value
+            // Use the passed-in elevationGain value
             print("   Elevation Gain: \(Int(elevationGain)) m")
             
             // Calculate reasonable bounds based on conditions

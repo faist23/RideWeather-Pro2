@@ -26,7 +26,7 @@ struct SavedPlansView: View {
             }
             .navigationTitle("Saved Pacing Plans")
             .navigationBarTitleDisplayMode(.inline)
-            // --- UPDATED TOOLBAR ---
+
             .toolbar {
                 // 1. Top-left "Done" button (to dismiss the sheet)
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -74,7 +74,6 @@ struct SavedPlansView: View {
                     }
                 }
             }
-            // --- END UPDATED TOOLBAR ---
             .alert("Delete \(selectedPlanIDs.count) Plan(s)?", isPresented: $showingDeleteConfirmation) {
                 Button("Delete", role: .destructive) {
                     withAnimation {

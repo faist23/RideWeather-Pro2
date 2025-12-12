@@ -26,13 +26,17 @@ class UnifiedWellnessSync: ObservableObject {
     
     init() {
         loadSyncDate()
+        print("🔧 UnifiedWellnessSync: Initialized")
     }
     
     func loadSyncDate() {
         if let date = UserDefaults.standard.object(forKey: syncDateKey) as? Date {
             lastSyncDate = date
-            // Need sync if last sync was more than 12 hours ago
             needsSync = Date().timeIntervalSince(date) > 12 * 3600
+            print("📅 Last wellness sync: \(date.formatted(date: .abbreviated, time: .shortened))")
+            print("📊 Needs sync: \(needsSync)")
+        } else {
+            print("⚠️ No previous sync date found")
         }
     }
     
@@ -40,123 +44,294 @@ class UnifiedWellnessSync: ObservableObject {
         lastSyncDate = Date()
         UserDefaults.standard.set(lastSyncDate, forKey: syncDateKey)
         needsSync = false
+        print("✅ Sync date saved: \(lastSyncDate!.formatted(date: .abbreviated, time: .shortened))")
     }
-    
-    // MARK: - User Identification
-    
+
+    // MARK: - User Identification    
     private var appUserId: String {
         if let vendorId = UIDevice.current.identifierForVendor?.uuidString {
+            print("👤 Using vendor ID: \(vendorId)")
             return vendorId
         }
         let fallbackKey = "app_user_id_fallback"
         if let stored = UserDefaults.standard.string(forKey: fallbackKey) {
+            print("👤 Using stored fallback ID: \(stored)")
             return stored
         }
         let newId = UUID().uuidString
         UserDefaults.standard.set(newId, forKey: fallbackKey)
+        print("👤 Generated new fallback ID: \(newId)")
         return newId
     }
     
-    // New unified sync method
+    // MARK: - Unified Sync Method
+    
     func syncFromConfiguredSource(
         healthManager: HealthKitManager,
         garminService: GarminService,
         days: Int = 7
     ) async {
-        guard !isSyncing else { return }
+        print("\n" + String(repeating: "=", count: 60))
+        print("🔄 WELLNESS SYNC STARTED")
+        print(String(repeating: "=", count: 60))
+        
+        guard !isSyncing else {
+            print("⚠️ Sync already in progress, skipping")
+            return
+        }
         
         let config = DataSourceManager.shared.configuration
+        print("📋 Data source configuration:")
+        print("   - Wellness source: \(config.wellnessSource.rawValue)")
+        print("   - Training source: \(config.trainingLoadSource.rawValue)")
+        print("   - Days to sync: \(days)")
         
         isSyncing = true
         defer {
             isSyncing = false
             saveSyncDate()
+            print("\n" + String(repeating: "=", count: 60))
+            print("🏁 WELLNESS SYNC COMPLETED")
+            print(String(repeating: "=", count: 60) + "\n")
         }
         
         do {
             switch config.wellnessSource {
             case .garmin:
+                print("\n🟢 Garmin wellness sync selected")
+                print("   Checking authentication...")
+                
                 guard garminService.isAuthenticated else {
+                    let msg = "❌ Garmin selected but not authenticated"
+                    print(msg)
                     syncStatus = "Garmin selected but not connected."
                     return
                 }
+                
+                print("   ✅ Garmin authenticated")
+                print("   User ID: \(appUserId)")
+                
                 syncStatus = "Syncing wellness from Garmin..."
                 try await syncGarminWellnessFromSupabase(userId: appUserId)
                 
             case .appleHealth:
+                print("\n🟢 Apple Health wellness sync selected")
+                print("   Checking authorization...")
+                
                 guard healthManager.isAuthorized else {
+                    let msg = "❌ Apple Health permissions missing"
+                    print(msg)
                     syncStatus = "Apple Health permissions missing."
                     return
                 }
+                
+                print("   ✅ Apple Health authorized")
                 syncStatus = "Syncing wellness from Apple Health..."
                 try await syncAppleHealthWellness()
                 
             case .none:
+                print("\n⚪️ Wellness sync disabled in settings")
                 syncStatus = "Wellness sync disabled."
                 return
             }
             
             syncStatus = "Wellness sync complete!"
-            print("✅ Wellness sync completed using source: \(config.wellnessSource.rawValue)")
+            print("\n✅ Sync completed successfully")
+            print("   Source: \(config.wellnessSource.rawValue)")
             
         } catch {
-            syncStatus = "Sync failed: \(error.localizedDescription)"
-            print("❌ Wellness sync failed: \(error)")
+            let errorMsg = "Sync failed: \(error.localizedDescription)"
+            syncStatus = errorMsg
+            print("\n❌ SYNC FAILED")
+            print("   Error: \(error)")
+            print("   Localized: \(error.localizedDescription)")
+            
+            if let wellnessError = error as? WellnessError {
+                print("   Type: WellnessError")
+                print("   Details: \(wellnessError)")
+            }
         }
     }
     
     // MARK: - Garmin via Supabase
+    
     private func syncGarminWellnessFromSupabase(userId: String) async throws {
-        print("📥 Fetching Garmin wellness data from Supabase...")
+        print("\n📥 GARMIN SUPABASE SYNC")
+        print(String(repeating: "-", count: 40))
+        print("App User ID: \(userId)")
         
-        async let dailies = wellnessService.fetchDailySummaries(forUser: userId, days: 7)
-        async let sleep = wellnessService.fetchSleepData(forUser: userId, days: 7)
+        // Step 0: Get Garmin User ID from mapping table
+        print("\n🔍 Looking up Garmin User ID from user_garmin_mapping...")
         
-        let (dailyData, sleepData) = try await (dailies, sleep)
-        
-        print("✅ Fetched from Supabase: \(dailyData.count) daily, \(sleepData.count) sleep records")
-        
-        var metricsByDate: [Date: DailyWellnessMetrics] = [:]
-        let calendar = Calendar.current
-        let dateFormatter = ISO8601DateFormatter()
-        dateFormatter.formatOptions = [.withFullDate]
-        
-        // 1. Process Daily Summaries
-        for summary in dailyData {
-            guard let date = dateFormatter.date(from: summary.calendarDate) else { continue }
-            let startOfDay = calendar.startOfDay(for: date)
-            
-            var metric = metricsByDate[startOfDay] ?? DailyWellnessMetrics(date: startOfDay)
-            metric.steps = summary.steps
-            metric.activeEnergyBurned = summary.activeKilocalories.map { Double($0) }
-            metric.restingHeartRate = summary.restingHeartRate
-            metric.distance = summary.distanceInMeters
-            
-            metricsByDate[startOfDay] = metric
+        guard let garminUserId = try await wellnessService.getGarminUserId(forAppUser: userId) else {
+            print("❌ No Garmin user mapping found for app user: \(userId)")
+            print("\n⚠️ DIAGNOSIS:")
+            print("   The user_garmin_mapping table doesn't have an entry for this user.")
+            print("   This happens when:")
+            print("   1. User hasn't completed Garmin OAuth yet")
+            print("   2. linkToSupabase() wasn't called after OAuth")
+            print("   3. The mapping was deleted/cleared")
+            print("\n💡 SOLUTION:")
+            print("   Re-authenticate with Garmin to create the mapping.")
+            throw WellnessError.authenticationRequired
         }
         
-        // 2. Process Sleep Data
-        for summary in sleepData {
-            guard let date = dateFormatter.date(from: summary.calendarDate) else { continue }
-            let startOfDay = calendar.startOfDay(for: date)
-            
-            var metric = metricsByDate[startOfDay] ?? DailyWellnessMetrics(date: startOfDay)
-            metric.sleepDeep = TimeInterval(summary.deepSleepDurationInSeconds ?? 0)
-            metric.sleepREM = TimeInterval(summary.remSleepInSeconds ?? 0)
-            metric.sleepCore = TimeInterval(summary.lightSleepDurationInSeconds ?? 0)
-            metric.sleepAwake = TimeInterval(summary.awakeDurationInSeconds ?? 0)
-            metricsByDate[startOfDay] = metric
-        }
+        print("✅ Found Garmin User ID: \(garminUserId)")
         
-        let allMetrics = Array(metricsByDate.values)
-        if !allMetrics.isEmpty {
-            await MainActor.run {
-                WellnessManager.shared.updateBulkMetrics(allMetrics)
+        // Step 1: Fetch data from Supabase using GARMIN user ID
+        print("\n🔍 Fetching wellness data from Supabase...")
+        print("   Query: user_id=\(userId) AND garmin_user_id=\(garminUserId)")
+        
+        do {
+            async let dailies = wellnessService.fetchDailySummaries(forUser: userId, days: 7)
+            async let sleep = wellnessService.fetchSleepData(forUser: userId, days: 7)
+            
+            let (dailyData, sleepData) = try await (dailies, sleep)
+            
+            print("✅ Supabase fetch successful:")
+            print("   - Daily summaries: \(dailyData.count)")
+            print("   - Sleep records: \(sleepData.count)")
+            
+            if dailyData.isEmpty && sleepData.isEmpty {
+                print("\n⚠️ WARNING: No data returned from Supabase")
+                print("   garmin_user_id: \(garminUserId)")
+                print("   app_user_id: \(userId)")
+                print("\n   This could mean:")
+                print("   1. Garmin hasn't pushed any wellness data to your backend yet")
+                print("   2. The backend webhook isn't working")
+                print("   3. Data exists but for a different garmin_user_id")
+                print("\n💡 DEBUGGING STEPS:")
+                print("   1. Check Supabase garmin_wellness table directly")
+                print("   2. Verify webhook is receiving Garmin push notifications")
+                print("   3. Check if garmin_user_id matches what's in the table")
+                return
             }
-            print("✨ Garmin wellness sync complete. Saved \(allMetrics.count) days.")
+            
+            // Step 2: Process the data
+            print("\n🔨 Processing fetched data...")
+            
+            var metricsByDate: [Date: DailyWellnessMetrics] = [:]
+            let calendar = Calendar.current
+            let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withFullDate]
+            
+            // Process Daily Summaries
+            print("\n📊 Processing \(dailyData.count) daily summaries...")
+            for (index, summary) in dailyData.enumerated() {
+                print("   [\(index + 1)/\(dailyData.count)] Date: \(summary.calendarDate)")
+                
+                guard let date = dateFormatter.date(from: summary.calendarDate) else {
+                    print("      ❌ Failed to parse date: \(summary.calendarDate)")
+                    continue
+                }
+                
+                let startOfDay = calendar.startOfDay(for: date)
+                print("      📅 Parsed to: \(startOfDay.formatted(date: .abbreviated, time: .omitted))")
+                
+                var metric = metricsByDate[startOfDay] ?? DailyWellnessMetrics(date: startOfDay)
+                
+                // Log each field
+                if let steps = summary.steps {
+                    print("      👣 Steps: \(steps)")
+                    metric.steps = steps
+                }
+                
+                if let calories = summary.activeKilocalories {
+                    print("      🔥 Active calories: \(calories)")
+                    metric.activeEnergyBurned = Double(calories)
+                }
+                
+                if let hr = summary.restingHeartRate {
+                    print("      ❤️ Resting HR: \(hr) bpm")
+                    metric.restingHeartRate = hr
+                }
+                
+                if let distance = summary.distanceInMeters {
+                    print("      📏 Distance: \(String(format: "%.1f", distance / 1000)) km")
+                    metric.distance = distance
+                }
+                
+                metricsByDate[startOfDay] = metric
+                print("      ✅ Daily summary processed")
+            }
+            
+            // Process Sleep Data
+            print("\n😴 Processing \(sleepData.count) sleep records...")
+            for (index, summary) in sleepData.enumerated() {
+                print("   [\(index + 1)/\(sleepData.count)] Date: \(summary.calendarDate)")
+                
+                guard let date = dateFormatter.date(from: summary.calendarDate) else {
+                    print("      ❌ Failed to parse date: \(summary.calendarDate)")
+                    continue
+                }
+                
+                let startOfDay = calendar.startOfDay(for: date)
+                print("      📅 Parsed to: \(startOfDay.formatted(date: .abbreviated, time: .omitted))")
+                
+                var metric = metricsByDate[startOfDay] ?? DailyWellnessMetrics(date: startOfDay)
+                
+                if let deep = summary.deepSleepDurationInSeconds {
+                    let hours = Double(deep) / 3600
+                    print("      🌙 Deep sleep: \(String(format: "%.1f", hours))h")
+                    metric.sleepDeep = TimeInterval(deep)
+                }
+                
+                if let rem = summary.remSleepInSeconds {
+                    let hours = Double(rem) / 3600
+                    print("      💭 REM sleep: \(String(format: "%.1f", hours))h")
+                    metric.sleepREM = TimeInterval(rem)
+                }
+                
+                if let light = summary.lightSleepDurationInSeconds {
+                    let hours = Double(light) / 3600
+                    print("      ☁️ Light sleep: \(String(format: "%.1f", hours))h")
+                    metric.sleepCore = TimeInterval(light)
+                }
+                
+                if let awake = summary.awakeDurationInSeconds {
+                    let hours = Double(awake) / 3600
+                    print("      👀 Awake: \(String(format: "%.1f", hours))h")
+                    metric.sleepAwake = TimeInterval(awake)
+                }
+                
+                // Calculate total sleep
+                let totalSleep = (metric.sleepDeep ?? 0) + (metric.sleepREM ?? 0) + (metric.sleepCore ?? 0)
+                print("      📊 Total sleep: \(String(format: "%.1f", totalSleep / 3600))h")
+                
+                metricsByDate[startOfDay] = metric
+                print("      ✅ Sleep data processed")
+            }
+            
+            // Step 3: Save to WellnessManager
+            let allMetrics = Array(metricsByDate.values).sorted { $0.date < $1.date }
+            
+            print("\n💾 Saving \(allMetrics.count) days to WellnessManager...")
+            for (index, metric) in allMetrics.enumerated() {
+                print("   [\(index + 1)/\(allMetrics.count)] \(metric.date.formatted(date: .abbreviated, time: .omitted))")
+                print("      Steps: \(metric.steps ?? 0)")
+                if let sleep = metric.totalSleep {
+                    print("      Sleep: \(String(format: "%.1f", sleep / 3600))h")
+                }
+            }
+            
+            if !allMetrics.isEmpty {
+                await MainActor.run {
+                    WellnessManager.shared.updateBulkMetrics(allMetrics)
+                }
+                print("\n✅ Successfully saved \(allMetrics.count) days to WellnessManager")
+            } else {
+                print("\n⚠️ No metrics to save (all dates filtered out)")
+            }
+            
+        } catch {
+            print("\n❌ SUPABASE FETCH ERROR")
+            print("   Error: \(error)")
+            print("   Type: \(type(of: error))")
+            print("   Localized: \(error.localizedDescription)")
+            throw error
         }
     }
-    
+
     // MARK: - Apple Health
         private func syncAppleHealthWellness() async throws {
             print("🍎 Syncing from Apple Health...")

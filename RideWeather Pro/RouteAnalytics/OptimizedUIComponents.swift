@@ -174,6 +174,10 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
             ScrollView {
                 LazyVStack(spacing: 20) {
                     RouteInfoCardView(viewModel: viewModel)
+
+                    // Allows users to quickly check if their start time works with daylight
+                    SunTimesRow(daylight: analysis.daylightAnalysis)
+                    
                     OptimizedOverallScoreCard(analysis: analysis, settings: viewModel.settings)
                     
                     if let powerResult = analysis.powerAnalysis {
@@ -536,6 +540,44 @@ struct OptimizedOverallScoreCard: View {
         case 55..<70: return .yellow
         case 30..<55: return .orange
         default: return .red
+        }
+    }
+}
+
+struct SunTimesRow: View {
+    let daylight: DaylightAnalysis
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Sunrise
+            HStack(spacing: 6) {
+                Image(systemName: "sunrise.fill")
+                    .symbolRenderingMode(.multicolor)
+                    .font(.caption)
+                Text("Sunrise: \(daylight.sunrise.formatted(date: .omitted, time: .shortened))")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
+            
+            Spacer()
+            
+            // Sunset
+            HStack(spacing: 6) {
+                Image(systemName: "sunset.fill")
+                    .symbolRenderingMode(.multicolor)
+                    .font(.caption)
+                Text("Sunset: \(daylight.sunset.formatted(date: .omitted, time: .shortened))")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
         }
     }
 }
@@ -921,7 +963,7 @@ struct OptimizedPacingPlanTab: View {
     }
     
     var body: some View {
-        ZStack { // ✅ Wrap in ZStack for overlay
+        ZStack { // Wrap in ZStack for overlay
             ScrollView {
                 LazyVStack(spacing: 20) {
                     RouteInfoCardView(viewModel: viewModel)
@@ -969,10 +1011,10 @@ struct OptimizedPacingPlanTab: View {
                 decorationColor: .white,
                 decorationIntensity: 0.06
             )
-            // ✅ Remove the dimming effect that was causing issues
+            // Remove the dimming effect that was causing issues
             // .opacity((isGenerating || viewModel.isGeneratingAdvancedPlan) ? 0.6 : 1.0)
             
-            // ✅ Add Processing Overlay
+            // Processing Overlay
             if isGenerating || viewModel.isGeneratingAdvancedPlan {
                 ProcessingOverlay.generating(
                     "Pacing Plan",
@@ -1650,7 +1692,7 @@ struct UpdatedOptimizedExportTab: View {
                 routePoints: viewModel.enhancedRoutePoints,
                 courseName: courseName,
                 pacingPlan: pacingPlan, // Pass the pacing plan
-                settings: viewModel.settings, // ADD THIS
+                settings: viewModel.settings,
                 activityType: "ROAD_CYCLING"
             )
             
@@ -1668,7 +1710,7 @@ struct UpdatedOptimizedExportTab: View {
         }
     }
     
-    // MARK: - Updated exportToWahoo() in OptimizedUIComponents.swift
+    // MARK: - Updated exportToWahoo()
     private func exportToWahoo() async {
         print("📱 UI: exportToWahoo() called")
         exportingToWahoo = true

@@ -1,3 +1,8 @@
+//
+//  RideAnalysisCharts.swift
+//  RideWeather Pro
+//
+
 import SwiftUI
 import Charts
 
@@ -22,9 +27,9 @@ private func timeFormatter(seconds: Double) -> String {
 struct HeartRateGraphCard: View {
     let hrData: [GraphableDataPoint]
     let avgHR: Double
-    let elevationData: [GraphableDataPoint]? // <-- ADD THIS
+    let elevationData: [GraphableDataPoint]?
     
-    // --- MODIFIED: Calculate min/max for labels ---
+    // --- Calculate min/max for labels ---
     private var dataValues: [Double] { hrData.map { $0.value } }
     private var minHR: Double { dataValues.min() ?? 80 }
     private var maxHR: Double { dataValues.max() ?? 180 }
@@ -34,7 +39,6 @@ struct HeartRateGraphCard: View {
         // Add 10% padding
         (minHR * 0.9)...(maxHR * 1.1)
     }
-    // --- END MODIFIED ---
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -66,32 +70,29 @@ struct HeartRateGraphCard: View {
                     .foregroundStyle(.red)
                     .interpolationMethod(.monotone)
                     
-                    // --- START ADD ---
-                    // Add rule mark for the average
+                    // rule mark for the average
                     RuleMark(y: .value("Average", avgHR))
                         .foregroundStyle(.gray.opacity(0.7))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
                     
-                    // Add rule mark for the max
+                    // rule mark for the max
                     RuleMark(y: .value("Max", maxHR))
                         .foregroundStyle(.gray.opacity(0.4))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     
-                    // Add rule mark for the min
+                    // rule mark for the min
                     RuleMark(y: .value("Min", minHR))
                         .foregroundStyle(.gray.opacity(0.4))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                    // --- END ADD ---
                 }
                 .frame(height: 150)
                 .chartYScale(domain: yDomain)
                 .chartYAxis {
-                    // --- MODIFIED: Show labels for min, avg, and max ---
+                    // --- Show labels for min, avg, and max ---
                     AxisMarks(values: [minHR, avgHR, maxHR].sorted()) { value in
                         let val = value.as(Double.self) ?? 0
                         AxisValueLabel("\(Int(val))")
                     }
-                    // --- END MODIFIED ---
                 }
                 .chartXAxis {
                     // Show time labels
@@ -234,7 +235,7 @@ struct ElevationBackgroundChart: View {
                 x: .value("Time", dataPoint.time),
                 y: .value("Elevation", dataPoint.value)
             )
-            // Use a subtle gray fill like the screenshot
+            // Use a subtle gray fill
             .foregroundStyle(Color.gray.opacity(0.15))
             .interpolationMethod(.monotone)
         }

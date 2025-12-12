@@ -22,7 +22,7 @@ class SmartPlanMatcher {
         let rideElevation = analysis.metadata?.elevationGain ?? 0 // meters
         let rideDuration = analysis.duration // seconds
         
-        // 🔥 Extract route breadcrumbs
+        // Extract route breadcrumbs
         let rideBreadcrumbs = analysis.metadata?.routeBreadcrumbs ?? []
         
         print("🔍 Matching against ride:")
@@ -55,7 +55,7 @@ class SmartPlanMatcher {
         return matches
     }
     
-    // 🔥 Extract breadcrumbs from pacing plan
+    // Extract breadcrumbs from pacing plan
     private func extractPlanBreadcrumbs(from plan: StoredPacingPlan) -> [CLLocationCoordinate2D] {
         guard !plan.plan.segments.isEmpty else { return [] }
         
@@ -100,7 +100,7 @@ class SmartPlanMatcher {
         return breadcrumbs
     }
     
-    // 🔥 Interpolate coordinate between two points
+    // Interpolate coordinate between two points
     private func interpolateCoordinate(
         start: CLLocationCoordinate2D,
         end: CLLocationCoordinate2D,
@@ -148,7 +148,7 @@ class SmartPlanMatcher {
         let durationDeviation = durationDiff / rideDuration
         let durationScore = max(0, 1.0 - (durationDeviation / 0.30))
         
-        // 🔥 4. Route Shape Match (45% weight) - MOST IMPORTANT
+        // 4. Route Shape Match (45% weight) - MOST IMPORTANT
         let routeShapeScore = calculateRouteShapeScore(
             rideBreadcrumbs: rideBreadcrumbs,
             planBreadcrumbs: planBreadcrumbs
@@ -169,7 +169,7 @@ class SmartPlanMatcher {
         return min(1.0, bonusScore)
     }
     
-    // 🔥 Calculate how similar the route shapes are
+    // Calculate how similar the route shapes are
     private func calculateRouteShapeScore(
         rideBreadcrumbs: [CLLocationCoordinate2D],
         planBreadcrumbs: [CLLocationCoordinate2D]
@@ -186,7 +186,7 @@ class SmartPlanMatcher {
             return calculateSimpleProximityScore(rideBreadcrumbs, planBreadcrumbs)
         }
         
-        // 🔥 Calculate route similarity using modified Hausdorff distance
+        // Calculate route similarity using modified Hausdorff distance
         let similarity = calculateRouteSimilarity(rideBreadcrumbs, planBreadcrumbs)
         
         print("      Route shape similarity: \(Int(similarity * 100))% (avg deviation: \(String(format: "%.0f", (1.0 - similarity) * 1000))m)")
@@ -194,7 +194,7 @@ class SmartPlanMatcher {
         return similarity
     }
     
-    // 🔥 Calculate similarity between two routes
+    // Calculate similarity between two routes
     private func calculateRouteSimilarity(
         _ route1: [CLLocationCoordinate2D],
         _ route2: [CLLocationCoordinate2D]
@@ -208,7 +208,7 @@ class SmartPlanMatcher {
         return min(forward, backward)
     }
     
-    // 🔥 Calculate directional similarity (average distance to nearest point)
+    // Calculate directional similarity (average distance to nearest point)
     private func calculateDirectionalSimilarity(
         from route1: [CLLocationCoordinate2D],
         to route2: [CLLocationCoordinate2D]
@@ -247,7 +247,7 @@ class SmartPlanMatcher {
         }
     }
     
-    // 🔥 Simple start/end proximity when we don't have enough breadcrumbs
+    // Simple start/end proximity when we don't have enough breadcrumbs
     private func calculateSimpleProximityScore(
         _ route1: [CLLocationCoordinate2D],
         _ route2: [CLLocationCoordinate2D]
@@ -268,7 +268,7 @@ class SmartPlanMatcher {
         return (startScore + endScore) / 2.0
     }
     
-    // 🔥 Score proximity with tolerances for GPS accuracy
+    // Score proximity with tolerances for GPS accuracy
     private func calculateProximityScore(distance: Double) -> Double {
         switch distance {
         case 0..<50:

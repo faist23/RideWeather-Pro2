@@ -179,9 +179,6 @@ extension WahooWorkoutSummary {
     var distanceKm: Double {
         (Double(workoutSummary?.distanceAccum ?? "0") ?? 0) / 1000.0
     }
-}
-
-extension WahooWorkoutSummary {
     // Get duration in seconds from nested summary (which is a string)
     var durationTotal: Int {
         Int(workoutSummary?.durationTotalAccum ?? "0") ?? 0
@@ -199,13 +196,9 @@ extension WahooWorkoutSummary {
             return String(format: "%ds", s)
         }
     }
-}
-extension WahooWorkoutSummary {
     var work: Double {
         Double(workoutSummary?.workAccum ?? "0") ?? 0
     }
-}
-extension WahooWorkoutSummary {
     var durationActive: Double {
         Double(workoutSummary?.durationActiveAccum ?? "0") ?? 0
     }
@@ -236,9 +229,11 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
     private let apiBaseUrl = "https://api.wahooligan.com"
     private let redirectUri = "https://faist23.github.io/rideweatherpro-redirect/wahoo-redirect.html"
     private let scope = "user_write power_zones_read workouts_read plans_read plans_write routes_read routes_write offline_data user_read"
+
     @Published var isAuthenticated: Bool = false
     @Published var errorMessage: String? = nil
     @Published var athleteName: String? = nil
+
     private var webAuthSession: ASWebAuthenticationSession?
     private var currentPkceVerifier: String?
     private var currentTokens: WahooTokens? {
@@ -257,6 +252,9 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         loadAthleteNameFromKeychain()
     }
     
+    // ✅ CRITICAL FIX: Add a refresh task to deduplicate concurrent refresh requests
+    private var refreshTask: Task<Void, Error>?
+
     // (loadConfig and configValue are correct)
     private func loadConfig() {
         guard let path = Bundle.main.path(forResource: "WahooConfig", ofType: "plist"),
@@ -315,274 +313,263 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
         webAuthSession?.prefersEphemeralWebBrowserSession = true
         _ = webAuthSession?.start()
     }
+    
     func handleRedirect(url: URL) {
-        guard url.scheme == "rideweatherpro",
-              url.host == "wahoo-auth",
-              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let code = components.queryItems?.first(where: { $0.name == "code" })?.value else {
-            return
+            guard url.scheme == "rideweatherpro",
+                  url.host == "wahoo-auth",
+                  let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  let code = components.queryItems?.first(where: { $0.name == "code" })?.value else {
+                return
+            }
+            guard let pkceVerifier = self.currentPkceVerifier else {
+                errorMessage = "Authentication failed: PKCE verifier was lost."
+                return
+            }
+            exchangeToken(code: code, pkceVerifier: pkceVerifier)
         }
-        guard let pkceVerifier = self.currentPkceVerifier else {
-            errorMessage = "Authentication failed: PKCE verifier was lost."
-            return
-        }
-        exchangeToken(code: code, pkceVerifier: pkceVerifier)
-    }
-    
-    private func exchangeToken(code: String, pkceVerifier: String) {
-        guard let tokenURL = URL(string: "\(apiBaseUrl)/oauth/token") else { return }
-        var request = URLRequest(url: tokenURL)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         
-        var body = URLComponents()
-        body.queryItems = [
-            URLQueryItem(name: "client_id", value: clientId),
-            URLQueryItem(name: "client_secret", value: clientSecret),
-            URLQueryItem(name: "code", value: code),
-            URLQueryItem(name: "grant_type", value: "authorization_code"),
-            URLQueryItem(name: "redirect_uri", value: redirectUri),
-            URLQueryItem(name: "code_verifier", value: pkceVerifier)
-        ]
-        request.httpBody = body.percentEncodedQuery?.data(using: .utf8)
-        
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            guard let self else { return }
-            Task { @MainActor in
-                if let error = error {
-                    self.errorMessage = error.localizedDescription; return
-                }
-                guard let data = data else { return }
-                
-                do {
-                    let decoder = JSONDecoder()
-                    decoder.keyDecodingStrategy = .convertFromSnakeCase // <-- FIX
-                    let tokenResponse = try decoder.decode(WahooTokenResponse.self, from: data)
-                    
-                    self.currentTokens = WahooTokens(
-                        accessToken: tokenResponse.accessToken,
-                        refreshToken: tokenResponse.refreshToken,
-                        expiresAt: Date().timeIntervalSince1970 + tokenResponse.expiresIn
-                    )
-                    self.errorMessage = nil
-                    await self.fetchUserName()
-                } catch {
-                    print("WahooService: Token decoding error: \(error)")
-                    if let errorBody = String(data: data, encoding: .utf8) {
-                        print("WahooService: Error body: \(errorBody)")
+        private func exchangeToken(code: String, pkceVerifier: String) {
+            guard let tokenURL = URL(string: "\(apiBaseUrl)/oauth/token") else { return }
+            var request = URLRequest(url: tokenURL)
+            request.httpMethod = "POST"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            
+            var body = URLComponents()
+            body.queryItems = [
+                URLQueryItem(name: "client_id", value: clientId),
+                URLQueryItem(name: "client_secret", value: clientSecret),
+                URLQueryItem(name: "code", value: code),
+                URLQueryItem(name: "grant_type", value: "authorization_code"),
+                URLQueryItem(name: "redirect_uri", value: redirectUri),
+                URLQueryItem(name: "code_verifier", value: pkceVerifier)
+            ]
+            request.httpBody = body.percentEncodedQuery?.data(using: .utf8)
+            
+            URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+                guard let self else { return }
+                Task { @MainActor in
+                    if let error = error {
+                        self.errorMessage = error.localizedDescription; return
                     }
-                    self.errorMessage = "Token decoding failed."
+                    guard let data = data else { return }
+                    
+                    do {
+                        let decoder = JSONDecoder()
+                        decoder.keyDecodingStrategy = .convertFromSnakeCase
+                        let tokenResponse = try decoder.decode(WahooTokenResponse.self, from: data)
+                        
+                        self.currentTokens = WahooTokens(
+                            accessToken: tokenResponse.accessToken,
+                            refreshToken: tokenResponse.refreshToken,
+                            expiresAt: Date().timeIntervalSince1970 + tokenResponse.expiresIn
+                        )
+                        self.errorMessage = nil
+                        await self.fetchUserName()
+                    } catch {
+                        print("WahooService: Token decoding error: \(error)")
+                        self.errorMessage = "Token decoding failed."
+                    }
                 }
+            }.resume()
+        }
+        
+        // MARK: - ✅ CRITICAL FIX: Safe Token Refresh
+        
+        /// Checks token validity and refreshes if needed.
+        /// This method is serialized: duplicate calls wait for the same refresh task.
+        func refreshTokenIfNeededAsync() async throws {
+            // 1. Check if we have tokens at all
+            guard let tokens = currentTokens else { throw WahooError.notAuthenticated }
+            
+            // 2. Check Expiry (with 5-minute buffer)
+            if Date().timeIntervalSince1970 < tokens.expiresAt - 300 {
+                return // Token is still valid
             }
-        }.resume()
-    }
-    
-    func refreshTokenIfNeeded(completion: @escaping (Result<Void, Error>) -> Void) {
-        guard let tokens = currentTokens else {
-            completion(.failure(WahooError.notAuthenticated)); return
-        }
-        if Date().timeIntervalSince1970 < tokens.expiresAt - 3600 {
-            completion(.success(())); return
+            
+            // 3. Deduplication: Join existing refresh if one is running
+            if let existingTask = refreshTask {
+                print("WahooService: Waiting for existing token refresh...")
+                return try await existingTask.value
+            }
+            
+            // 4. Start new refresh task
+            print("WahooService: Starting new token refresh...")
+            let task = Task {
+                defer { self.refreshTask = nil } // Cleanup when done
+                try await performActualRefresh(refreshToken: tokens.refreshToken)
+            }
+            
+            self.refreshTask = task
+            try await task.value
         }
         
-        print("WahooService: Refreshing token...")
-        guard let tokenURL = URL(string: "\(apiBaseUrl)/oauth/token") else {
-            completion(.failure(WahooError.invalidURL)); return
-        }
-        var request = URLRequest(url: tokenURL)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        
-        var body = URLComponents()
-        body.queryItems = [
-            URLQueryItem(name: "client_id", value: clientId),
-            URLQueryItem(name: "client_secret", value: clientSecret),
-            URLQueryItem(name: "refresh_token", value: tokens.refreshToken),
-            URLQueryItem(name: "grant_type", value: "refresh_token")
-        ]
-        request.httpBody = body.percentEncodedQuery?.data(using: .utf8)
-        
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            guard let self else { return }
-            Task { @MainActor in
-                if let error = error {
-                    self.disconnect(); completion(.failure(error)); return
-                }
-                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200, let data = data else {
-                    self.disconnect(); completion(.failure(WahooError.apiError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? -1))); return
+        /// The actual network call to refresh the token.
+        private func performActualRefresh(refreshToken: String) async throws {
+            guard let tokenURL = URL(string: "\(apiBaseUrl)/oauth/token") else {
+                throw WahooError.invalidURL
+            }
+            
+            var request = URLRequest(url: tokenURL)
+            request.httpMethod = "POST"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            
+            var body = URLComponents()
+            body.queryItems = [
+                URLQueryItem(name: "client_id", value: clientId),
+                URLQueryItem(name: "client_secret", value: clientSecret),
+                URLQueryItem(name: "refresh_token", value: refreshToken),
+                URLQueryItem(name: "grant_type", value: "refresh_token")
+            ]
+            request.httpBody = body.percentEncodedQuery?.data(using: .utf8)
+            
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw WahooError.invalidResponse
                 }
                 
+                // ✅ Only disconnect on AUTH errors (400/401), not network errors
+                if httpResponse.statusCode == 400 || httpResponse.statusCode == 401 {
+                    print("WahooService: Refresh token rejected (Status \(httpResponse.statusCode)). Disconnecting.")
+                    self.disconnect()
+                    throw WahooError.notAuthenticated
+                }
+                
+                guard httpResponse.statusCode == 200 else {
+                    if let errorBody = String(data: data, encoding: .utf8) {
+                        print("WahooService: Refresh failed: \(errorBody)")
+                    }
+                    throw WahooError.apiError(statusCode: httpResponse.statusCode)
+                }
+                
+                let decoder = JSONDecoder()
+                decoder.keyDecodingStrategy = .convertFromSnakeCase
+                let tokenResponse = try decoder.decode(WahooTokenResponse.self, from: data)
+                
+                // Update tokens
+                self.currentTokens = WahooTokens(
+                    accessToken: tokenResponse.accessToken,
+                    refreshToken: tokenResponse.refreshToken,
+                    expiresAt: Date().timeIntervalSince1970 + tokenResponse.expiresIn
+                )
+                print("WahooService: Token refreshed successfully.")
+                
+            } catch {
+                print("WahooService: Refresh network error: \(error.localizedDescription)")
+                // Do NOT disconnect here. Just throw the error so the user can retry later.
+                throw error
+            }
+        }
+        
+        func disconnect() {
+            currentTokens = nil
+            athleteName = nil
+            deleteAthleteNameFromKeychain()
+            isAuthenticated = false
+        }
+        
+        // MARK: - Keychain
+        
+        private let keychainService = Bundle.main.bundleIdentifier ?? "com.rideweatherpro.wahoo"
+        private let keychainAccount = "wahooUserTokensV1"
+        
+        private func saveTokensToKeychain() {
+            guard let tokens = currentTokens else {
+                let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: keychainService, kSecAttrAccount as String: keychainAccount]
+                SecItemDelete(query as CFDictionary)
+                return
+            }
+            do {
+                let encoder = JSONEncoder()
+                let data = try encoder.encode(tokens)
+                let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: keychainService, kSecAttrAccount as String: keychainAccount, kSecValueData as String: data, kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
+                SecItemDelete(query as CFDictionary)
+                SecItemAdd(query as CFDictionary, nil)
+            } catch {
+                print("WahooService: Failed to save tokens: \(error)")
+            }
+        }
+        
+        private func loadTokensFromKeychain() {
+            let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: keychainService, kSecAttrAccount as String: keychainAccount, kSecReturnData as String: kCFBooleanTrue!, kSecMatchLimit as String: kSecMatchLimitOne]
+            var item: CFTypeRef?
+            if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data {
                 do {
                     let decoder = JSONDecoder()
-                    decoder.keyDecodingStrategy = .convertFromSnakeCase // <-- FIX
-                    let tokenResponse = try decoder.decode(WahooTokenResponse.self, from: data)
-                    
-                    self.currentTokens = WahooTokens(
-                        accessToken: tokenResponse.accessToken,
-                        refreshToken: tokenResponse.refreshToken,
-                        expiresAt: Date().timeIntervalSince1970 + tokenResponse.expiresIn
-                    )
-                    self.errorMessage = nil
-                    completion(.success(()))
+                    self.currentTokens = try decoder.decode(WahooTokens.self, from: data)
+                    // Note: We don't auto-refresh here to avoid 'launch loops'.
+                    // Tokens will refresh on first API call.
                 } catch {
-                    self.disconnect(); completion(.failure(error))
+                    self.currentTokens = nil; saveTokensToKeychain()
                 }
             }
-        }.resume()
-    }
-    
-    func disconnect() {
-        currentTokens = nil
-        athleteName = nil
-        deleteAthleteNameFromKeychain()
-        isAuthenticated = false
-    }
-    
-    // Keychain functions must use a *default* decoder/encoder ---
-    // We are encoding our *own* Swift struct (WahooTokens), which is already camelCase.
-    private let keychainService = Bundle.main.bundleIdentifier ?? "com.rideweatherpro.wahoo"
-    private let keychainAccount = "wahooUserTokensV1"
-    
-    private func saveTokensToKeychain() {
-        guard let tokens = currentTokens else {
-            let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: keychainService, kSecAttrAccount as String: keychainAccount]
-            SecItemDelete(query as CFDictionary)
-            return
         }
-        do {
-            let encoder = JSONEncoder() // <-- Default encoder (no strategy)
-            let data = try encoder.encode(tokens)
-            let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: keychainService, kSecAttrAccount as String: keychainAccount, kSecValueData as String: data, kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
+        
+        private func saveAthleteNameToKeychain(_ name: String) {
+            let data = Data(name.utf8)
+            let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: athleteNameKey, kSecValueData as String: data]
             SecItemDelete(query as CFDictionary)
             SecItemAdd(query as CFDictionary, nil)
-        } catch {
-            print("WahooService: Failed to save tokens: \(error)")
         }
-    }
-    private func loadTokensFromKeychain() {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: keychainService, kSecAttrAccount as String: keychainAccount, kSecReturnData as String: kCFBooleanTrue!, kSecMatchLimit as String: kSecMatchLimitOne]
-        var item: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data {
+        
+        private func loadAthleteNameFromKeychain() {
+            let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: athleteNameKey, kSecReturnData as String: kCFBooleanTrue!, kSecMatchLimit as String: kSecMatchLimitOne]
+            var ref: AnyObject?
+            if SecItemCopyMatching(query as CFDictionary, &ref) == errSecSuccess, let data = ref as? Data, let name = String(data: data, encoding: .utf8) {
+                athleteName = name
+            }
+        }
+        
+        private func deleteAthleteNameFromKeychain() {
+            let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: athleteNameKey]
+            SecItemDelete(query as CFDictionary)
+        }
+        
+        // MARK: - Presentation
+        
+        func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                return UIWindow(windowScene: windowScene)
+            }
+            fatalError("No valid UIWindowScene found for authentication presentation")
+        }
+        
+        private func generatePKCE() -> (verifier: String, challenge: String) {
+            let verifier = Data.random(length: 32).base64URLEncodedString()
+            let challenge = Data(SHA256.hash(data: Data(verifier.utf8))).base64URLEncodedString()
+            return (verifier, challenge)
+        }
+        
+        // MARK: - API Methods
+        
+        func fetchUserName() async {
+            try? await refreshTokenIfNeededAsync()
+            guard let token = currentTokens?.accessToken else { return }
+            
+            guard let url = URL(string: "\(apiBaseUrl)/v1/user") else { return }
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            
             do {
-                let decoder = JSONDecoder() // <-- Default decoder (no strategy)
-                self.currentTokens = try decoder.decode(WahooTokens.self, from: data)
-                if Date().timeIntervalSince1970 >= (currentTokens?.expiresAt ?? 0) - 3600 {
-                    refreshTokenIfNeeded { _ in }
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    print("WahooService: User fetch failed")
+                    return
                 }
-            } catch {
-                self.currentTokens = nil; saveTokensToKeychain()
-            }
-        }
-    }
-    // (Keychain name methods are correct)
-    private func saveAthleteNameToKeychain(_ name: String) {
-        let data = Data(name.utf8)
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: athleteNameKey, kSecValueData as String: data]
-        SecItemDelete(query as CFDictionary)
-        SecItemAdd(query as CFDictionary, nil)
-    }
-    private func loadAthleteNameFromKeychain() {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: athleteNameKey, kSecReturnData as String: kCFBooleanTrue!, kSecMatchLimit as String: kSecMatchLimitOne]
-        var ref: AnyObject?
-        if SecItemCopyMatching(query as CFDictionary, &ref) == errSecSuccess, let data = ref as? Data, let name = String(data: data, encoding: .utf8) {
-            athleteName = name
-        }
-    }
-    private func deleteAthleteNameFromKeychain() {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: athleteNameKey]
-        SecItemDelete(query as CFDictionary)
-    }
-    
-    // (Presentation Anchor, PKCE, API Helper are correct)
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        // Get the key window scene (modern way)
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-            // Return the scene's key window, or create a UIWindow for that scene (never global UIWindow())
-            return UIWindow(windowScene: windowScene)
-        }
-        // Fallback if nothing found
-        fatalError("No valid UIWindowScene found for authentication presentation")
-    }
-    
-    private func generatePKCE() -> (verifier: String, challenge: String) {
-        let verifier = Data.random(length: 32).base64URLEncodedString()
-        let challenge = Data(SHA256.hash(data: Data(verifier.utf8))).base64URLEncodedString()
-        return (verifier, challenge)
-    }
-    
-    private func refreshTokenIfNeededAsync() async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            refreshTokenIfNeeded { result in
-                continuation.resume(with: result)
-            }
-        }
-    }
-    
-    // MARK: - API Methods
-        
-    func fetchUserName() async {
-        try? await refreshTokenIfNeededAsync()
-        guard let token = currentTokens?.accessToken else { return }
-        
-        guard let url = URL(string: "\(apiBaseUrl)/v1/user") else { return }
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            // Debug logging
-            if let responseString = String(data: data, encoding: .utf8) {
-                print("WahooService: User API response: \(responseString)")
-            }
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("WahooService: Invalid response type")
-                self.athleteName = "Wahoo User"
-                saveAthleteNameToKeychain("Wahoo User")
-                return
-            }
-            
-            print("WahooService: User API status code: \(httpResponse.statusCode)")
-            
-            guard httpResponse.statusCode == 200 else {
-                print("WahooService: Could not fetch user name (status: \(httpResponse.statusCode))")
-                self.athleteName = "Wahoo User"
-                saveAthleteNameToKeychain("Wahoo User")
-                return
-            }
-            
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            
-            do {
+                
+                let decoder = JSONDecoder()
+                decoder.keyDecodingStrategy = .convertFromSnakeCase
                 let user = try decoder.decode(WahooUser.self, from: data)
-                
-                let firstName = user.firstName ?? "Wahoo User"
-                let lastName = user.lastName ?? ""
-                let fullName = "\(firstName) \(lastName)".trimmingCharacters(in: .whitespaces)
-                let finalName = fullName.isEmpty ? "Wahoo User" : fullName
-                
-                self.athleteName = firstName
-                saveAthleteNameToKeychain(firstName)
-                
-                print("WahooService: User authenticated as \(finalName)")
+                let name = user.firstName ?? "Wahoo User"
+                self.athleteName = name
+                saveAthleteNameToKeychain(name)
                 
             } catch {
-                print("WahooService: Could not decode user data: \(error)")
-                print("WahooService: Decoding error details: \(error.localizedDescription)")
-                
-                // Fallback to generic name
-                self.athleteName = "Wahoo User"
-                saveAthleteNameToKeychain("Wahoo User")
+                print("WahooService: Error fetching user: \(error)")
             }
-            
-        } catch {
-            print("WahooService: Network error fetching user name: \(error.localizedDescription)")
-            self.athleteName = "Wahoo User"
-            saveAthleteNameToKeychain("Wahoo User")
         }
-    }
     
     // Fetch workouts list
     func fetchRecentWorkouts(page: Int, perPage: Int = 50) async throws -> WahooWorkoutsResponse {

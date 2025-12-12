@@ -511,8 +511,6 @@ struct QuickStatsCard: View {
 
 // MARK: - Ride Metadata Card
 
-// MARK: - 🔥 FIXED Ride Metadata Card
-
 struct RideMetadataCard: View {
     let analysis: RideAnalysis
     let useMetric: Bool
@@ -525,7 +523,7 @@ struct RideMetadataCard: View {
             
             if let metadata = analysis.metadata {
                 VStack(alignment: .leading, spacing: 16) {
-                    // 🔥 DATE & TIME SECTION
+                    // DATE & TIME SECTION
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Date")
                             .font(.caption)
@@ -537,7 +535,7 @@ struct RideMetadataCard: View {
                     
                     Divider()
                     
-                    // 🔥 DURATION BREAKDOWN (The Critical Fix!)
+                    // DURATION BREAKDOWN (The Critical Fix!)
                     HStack(spacing: 24) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Moving Time")
@@ -571,7 +569,7 @@ struct RideMetadataCard: View {
                         }
                     }
                     
-                    // 🔥 SHOW PERCENTAGE IF SIGNIFICANT STOP TIME
+                    // SHOW PERCENTAGE IF SIGNIFICANT STOP TIME
                     if metadata.stoppedTime > 60 {
                         let stoppedPct = (metadata.stoppedTime / metadata.totalTime) * 100
                         HStack(spacing: 8) {
@@ -587,7 +585,7 @@ struct RideMetadataCard: View {
                     
                     Divider()
                     
-                    // 🔥 ELEVATION & GRADIENT
+                    // ELEVATION & GRADIENT
                     HStack(spacing: 24) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Elevation Gain")
@@ -649,7 +647,7 @@ private var cardBackground: some View {
     Color(.systemBackground)
 }
 
-// MARK: - 🔥 NEW Compact Ride Header (replaces RideMetadataCard)
+// MARK: - Compact Ride Header (replaces RideMetadataCard)
 
 struct CompactRideHeaderCard: View {
     let analysis: RideAnalysis
@@ -2224,7 +2222,7 @@ class RideAnalysisViewModel: ObservableObject {
     @Published var showingPlanComparison = false
     @Published var showingComparisonSelection = false
 
-    // ✅ NEW: Track source information
+    // Track source information
     @Published var analysisSources: [UUID: RideSourceInfo] = [:]
 
     private let parser = FITFileParser()

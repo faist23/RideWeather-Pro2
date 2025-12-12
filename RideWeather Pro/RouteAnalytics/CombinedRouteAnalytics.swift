@@ -55,7 +55,7 @@ struct UnifiedRouteAnalyticsEngine {
     let location: CLLocationCoordinate2D
     let elevationAnalysis: ElevationAnalysis?
 
-    // NEW: Store hourly forecast data for better time-based analysis
+    // Store hourly forecast data for better time-based analysis
     private var cachedHourlyForecasts: [HourlyForecast] = []
     
     var safetyEngine: SafetyAnalyticsEngine {
@@ -92,21 +92,21 @@ struct UnifiedRouteAnalyticsEngine {
         )
     }
 
-    // NEW: Initializer that accepts hourly forecast data
+    // Initializer that accepts hourly forecast data
     init(weatherPoints: [RouteWeatherPoint],
          rideStartTime: Date,
          averageSpeed: Double,
          settings: AppSettings,
          location: CLLocationCoordinate2D,
          hourlyForecasts: [HourlyForecast] = [],
-         elevationAnalysis: ElevationAnalysis?) { // <-- Add parameter
+         elevationAnalysis: ElevationAnalysis?) {
         self.weatherPoints = weatherPoints
         self.rideStartTime = rideStartTime
         self.averageSpeed = averageSpeed
         self.settings = settings
         self.location = location
         self.cachedHourlyForecasts = hourlyForecasts
-        self.elevationAnalysis = elevationAnalysis // <-- Assign property
+        self.elevationAnalysis = elevationAnalysis
     }
     
     // MARK: - At-a-Glance Metrics
@@ -326,7 +326,7 @@ struct UnifiedRouteAnalyticsEngine {
             let temp = point.weather.temp
             let tempDiff = abs(temp - idealTemp)
             
-            // --- ✅ NEW: DEAL-BREAKER PENALTY ---
+            // --- DEAL-BREAKER PENALTY ---
             // If the temperature is drastically off, apply a large, immediate penalty.
             // This is the "25 degrees is just too cold" rule.
             let tempThreshold = settings.units == .metric ? 11.0 : 20.0 // 20°F or 11°C
@@ -609,7 +609,7 @@ struct UnifiedRouteAnalyticsEngine {
             
             let alternativeScore = alternativeEngine.calculateOverallScore()
             
-            // --- ✅ ADD THIS DEBUG BLOCK ---
+            // --- DEBUG BLOCK ---
 #if DEBUG
             let timeString = timeFormatter.string(from: alternativeStart)
             let overall = String(format: "%.1f", alternativeScore.overall)
@@ -659,8 +659,6 @@ struct UnifiedRouteAnalyticsEngine {
         
         return Array(sortedResults.prefix(3))
     }
-    
-    // Add these three functions inside your UnifiedRouteAnalyticsEngine struct
     
     private func isValid(hour: Int, for preference: AppSettings.WakeUpPreference) -> Bool {
         switch preference {

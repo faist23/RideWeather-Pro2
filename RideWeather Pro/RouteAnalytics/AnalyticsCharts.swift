@@ -193,7 +193,6 @@ struct InteractiveWeatherChart: View {
         }
     }
 
-    
     // MARK: - Data Preparation & Helpers
     
     private func alignElevationDataForDisplay() -> [(distance: Double, elevation: Double)] {

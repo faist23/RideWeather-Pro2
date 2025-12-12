@@ -29,7 +29,7 @@ struct RideAnalysis: Codable, Identifiable {
     let duration: TimeInterval // Moving time
     let distance: Double // meters
     
-    // ✅ NEW: Ride metadata
+    // Ride metadata
     let metadata: RideMetadata?
     
     // Power Metrics
@@ -45,7 +45,7 @@ struct RideAnalysis: Codable, Identifiable {
     let peakPower5min: Double
     let peakPower20min: Double
     
-    // ✅ NEW: Terrain-aware analysis
+    // Terrain-aware analysis
     let terrainSegments: [TerrainSegment]?
     let powerAllocation: PowerAllocationAnalysis?
     
@@ -321,7 +321,7 @@ class RideFileAnalyzer {
         let stoppedTime = elapsedTime - movingTime
         let powers = movingPoints.compactMap { $0.power }
         
-        // 🔥 FIX: Build metadata FIRST (without elevation display values)
+        // Build metadata FIRST (without elevation display values)
         let metadataRaw = buildRideMetadata(
             dataPoints: validPoints,
             movingPoints: movingPoints,
@@ -330,7 +330,7 @@ class RideFileAnalyzer {
             stoppedTime: stoppedTime
         )
         
-        // 🔥 NOW calculate display values using metadata
+        // Calculate display values using metadata
         let totalDistance = settings.units == .metric ?
         totalDistanceMeters / 1000 : // km
         totalDistanceMeters / 1609.34 // miles
@@ -363,7 +363,7 @@ class RideFileAnalyzer {
             elevationUnit: elevationUnit,
             startCoordinate: metadataRaw.startCoordinate,
             endCoordinate: metadataRaw.endCoordinate,
-            routeBreadcrumbs: metadataRaw.routeBreadcrumbs       // 🔥 ADD THIS
+            routeBreadcrumbs: metadataRaw.routeBreadcrumbs
         )
         
         print("📊 SPEED VERIFICATION:")
@@ -482,7 +482,7 @@ class RideFileAnalyzer {
         )
     }
     
-    // 🔥 NEW: Extract GPS points at regular intervals for route fingerprinting
+    // Extract GPS points at regular intervals for route fingerprinting
     private func extractRouteBreadcrumbs(
         from dataPoints: [FITDataPoint],
         intervalMeters: Double = 500
@@ -530,7 +530,7 @@ class RideFileAnalyzer {
         return breadcrumbs
     }
     
-    // 🔥 FIX: Simplified buildRideMetadata - just calculates, doesn't format
+    // Simplified buildRideMetadata - just calculates, doesn't format
     private func buildRideMetadata(
         dataPoints: [FITDataPoint],
         movingPoints: [FITDataPoint],
@@ -581,7 +581,7 @@ class RideFileAnalyzer {
         let totalDistance = dataPoints.compactMap { $0.distance }.last ?? 0
         let avgGradient = totalDistance > 0 ? (elevationGain / totalDistance) * 100 : 0
         
-        // 🔥 NEW: Extract start and end coordinates
+        // Extract start and end coordinates
         let startCoordinate = findFirstValidCoordinate(in: dataPoints)
         let endCoordinate = findLastValidCoordinate(in: dataPoints)
         
@@ -597,7 +597,7 @@ class RideFileAnalyzer {
             print("⚠️ No end coordinate found")
         }
         
-        // 🔥 NEW: Extract route breadcrumbs
+        // Extract route breadcrumbs
         let breadcrumbs = extractRouteBreadcrumbs(from: dataPoints, intervalMeters: 500)
         
         // Return metadata with only calculated values, no display formatting yet
@@ -623,7 +623,7 @@ class RideFileAnalyzer {
         )
     }
     
-    // 🔥 NEW: Find first valid GPS coordinate (skip initial zeros)
+    // Find first valid GPS coordinate (skip initial zeros)
     private func findFirstValidCoordinate(in dataPoints: [FITDataPoint]) -> CLLocationCoordinate2D? {
         for point in dataPoints.prefix(100) { // Check first 100 points
             if let coord = point.position,
@@ -637,7 +637,7 @@ class RideFileAnalyzer {
         return nil
     }
     
-    // 🔥 NEW: Find last valid GPS coordinate (skip trailing zeros)
+    // Find last valid GPS coordinate (skip trailing zeros)
     private func findLastValidCoordinate(in dataPoints: [FITDataPoint]) -> CLLocationCoordinate2D? {
         for point in dataPoints.suffix(100).reversed() { // Check last 100 points
             if let coord = point.position,
@@ -651,7 +651,7 @@ class RideFileAnalyzer {
         return nil
     }
     
-    // MARK: - 🔥 IMPROVED TERRAIN SEGMENTATION
+    // MARK: - IMPROVED TERRAIN SEGMENTATION
     
     private func segmentByTerrainImproved(
         dataPoints: [FITDataPoint],
@@ -722,13 +722,13 @@ class RideFileAnalyzer {
             }
         }
         
-        // 🔥 Smart merging - only adjacent similar segments
+        // Smart merging - only adjacent similar segments
         let mergedSegments = mergeAdjacentSimilarSegments(segments: segments)
         
         return mergedSegments
     }
     
-    // MARK: - 🔥 SMARTER SEGMENT MERGING
+    // MARK: - SMARTER SEGMENT MERGING
     
     private func mergeAdjacentSimilarSegments(segments: [TerrainSegment]) -> [TerrainSegment] {
         guard segments.count > 1 else { return segments }
@@ -795,9 +795,7 @@ class RideFileAnalyzer {
         return merged
     }
     
-    // MARK: - 🔥 ENHANCED INSIGHTS GENERATION
-    
-    // MARK: - 🔥 ENHANCED INSIGHTS GENERATION with Location Context
+    // MARK: - ENHANCED INSIGHTS GENERATION with Location Context
     
     private func generateEnhancedInsights(
         metadata: RideMetadata,
@@ -827,7 +825,7 @@ class RideFileAnalyzer {
             cumulativeDistance += segment.distance
         }
         
-        // 🔥 FIX: Use the units stored in metadata
+        // Use the units stored in metadata
         insights.append(RideInsight(
             id: UUID(),
             priority: .low,
@@ -845,7 +843,7 @@ class RideFileAnalyzer {
                 "Good route flow with minimal stops."
         ))
         
-        // 🔥 2. POWER ANALYSIS (using moving time)
+        // 2. POWER ANALYSIS (using moving time)
         let avgWattsPerKg = avgPower / ftp * 100
         let npWattsPerKg = normalizedPower / ftp * 100
         
@@ -862,7 +860,7 @@ class RideFileAnalyzer {
             recommendation: interpretIntensityFactor(intensityFactor, duration: metadata.movingTime)
         ))
         
-        // 🔥 3. TERRAIN BREAKDOWN with LOCATION
+        // 3. TERRAIN BREAKDOWN with LOCATION
         let climbs = terrainSegments.filter { $0.type == .climb }
         
         let climbTime = climbs.reduce(0.0) { $0 + $1.duration }
@@ -886,7 +884,7 @@ class RideFileAnalyzer {
             ))
         }
         
-        // 🔥 IMPROVED: Power allocation insight
+        // Power allocation insight
         if powerAllocation.allocationEfficiency < 90 {
             let timeSaved = Int(powerAllocation.estimatedTimeSaved)
             let climbPercent = Int((powerAllocation.wattsUsedOnClimbs / powerAllocation.totalWatts) * 100)
@@ -913,7 +911,7 @@ class RideFileAnalyzer {
             ))
         }
         
-        // 🔥 5. PACING QUALITY
+        // 5. PACING QUALITY
         if fatigueDetected, let onset = fatigueOnset {
             let onsetPct = (onset / metadata.movingTime) * 100
             let onsetMiles = (onset / metadata.movingTime) * totalDistance
@@ -933,7 +931,7 @@ class RideFileAnalyzer {
             ))
         }
         
-        // 🔥 6. SEGMENT PERFORMANCE with LOCATION
+        // 6. SEGMENT PERFORMANCE with LOCATION
         let inefficientSegments = segmentLocations.filter {
             $0.segment.powerEfficiency < 75 && $0.segment.duration > 30
         }
@@ -1081,8 +1079,6 @@ class RideFileAnalyzer {
         }
         return gain
     }
-    
-    
     
     private func segmentByTerrain(dataPoints: [FITDataPoint], ftp: Double, weight: Double) -> [TerrainSegment] {
         var segments: [TerrainSegment] = []
@@ -1469,7 +1465,7 @@ class RideFileAnalyzer {
         
         var insights: [RideInsight] = []
         
-        // ✅ Ride Overview Insight
+        // Ride Overview Insight
         let climbTime = terrainSegments.filter { $0.type == .climb }.reduce(0) { $0 + $1.duration }
         let climbDistance = terrainSegments.filter { $0.type == .climb }.reduce(0) { $0 + $1.distance }
         
@@ -1485,7 +1481,7 @@ class RideFileAnalyzer {
             recommendation: "This route's terrain heavily influences optimal pacing strategy."
         ))
         
-        // ✅ Power Allocation - THE MOST IMPORTANT INSIGHT
+        // Power Allocation - THE MOST IMPORTANT INSIGHT
         if powerAllocation.allocationEfficiency < 90 {
             let timeSavedMinutes = Int(powerAllocation.estimatedTimeSaved / 60)
             let timeSavedSeconds = Int(powerAllocation.estimatedTimeSaved.truncatingRemainder(dividingBy: 60))
@@ -1514,7 +1510,7 @@ class RideFileAnalyzer {
             ))
         }
         
-        // ✅ Specific Segment Recommendations
+        // Specific Segment Recommendations
         for (index, recommendation) in powerAllocation.recommendations.prefix(3).enumerated() {
             let segment = recommendation.segment
             let timeLostSeconds = Int(recommendation.timeLost)
@@ -1536,7 +1532,7 @@ class RideFileAnalyzer {
             ))
         }
         
-        // ✅ Climb-Specific Analysis
+        // Climb-Specific Analysis
         let climbs = terrainSegments.filter { $0.type == .climb }
         if !climbs.isEmpty {
             let avgClimbPower = climbs.reduce(0) { $0 + $1.averagePower * $1.duration } / climbs.reduce(0) { $0 + $1.duration }
@@ -1582,7 +1578,7 @@ class RideFileAnalyzer {
             insights.append(climbInsight)
         }
         
-        // ✅ Descent Analysis
+        // Descent Analysis
         let descents = terrainSegments.filter { $0.type == .descent }
         if !descents.isEmpty {
             let avgDescentPower = descents.reduce(0) { $0 + $1.averagePower * $1.duration } / descents.reduce(0) { $0 + $1.duration }
@@ -1600,7 +1596,7 @@ class RideFileAnalyzer {
             }
         }
         
-        // ✅ Flat/Rolling Terrain Analysis
+        // Flat/Rolling Terrain Analysis
         let flats = terrainSegments.filter { $0.type == .flat || $0.type == .rolling }
         if !flats.isEmpty {
             let avgFlatPower = flats.reduce(0) { $0 + $1.averagePower * $1.duration } / flats.reduce(0) { $0 + $1.duration }
@@ -1620,7 +1616,7 @@ class RideFileAnalyzer {
             }
         }
         
-        // ✅ Moving Time vs Stopped Time
+        // Moving Time vs Stopped Time
         if metadata.stoppedTime > 120 { // More than 2 minutes
             let stoppedMinutes = Int(metadata.stoppedTime / 60)
             let stoppedPercentage = (metadata.stoppedTime / metadata.totalTime) * 100
@@ -1640,7 +1636,7 @@ class RideFileAnalyzer {
             ))
         }
         
-        // ✅ Fatigue Analysis (Context-Aware)
+        // Fatigue Analysis (Context-Aware)
         if fatigueDetected, let onset = fatigueOnset {
             let onsetMinutes = Int(onset / 60)
             let totalMinutes = Int(metadata.movingTime / 60)
@@ -1669,7 +1665,7 @@ class RideFileAnalyzer {
             insights.append(fatigueInsight)
         }
         
-        // ✅ Intensity Factor Context
+        // Intensity Factor Context
         if intensityFactor > 1.05 {
             insights.append(RideInsight(
                 id: UUID(),
@@ -1695,7 +1691,7 @@ class RideFileAnalyzer {
             ))
         }
         
-        // ✅ Overall Performance Summary
+        // Overall Performance Summary
         if performanceScore >= 85 {
             insights.append(RideInsight(
                 id: UUID(),
@@ -1727,8 +1723,8 @@ class RideFileAnalyzer {
     }
     //______________________________________________
     
-    // ✅ UPDATED: Better moving time detection
-    // ✅ COMPLETELY REWRITTEN: Smarter moving detection
+    // UPDATED: Better moving time detection
+    // Smarter moving detection
     private func identifyMovingSegments(dataPoints: [FITDataPoint]) -> [FITDataPoint] {
         guard dataPoints.count > 1 else { return dataPoints }
         
@@ -1804,7 +1800,7 @@ class RideFileAnalyzer {
         return mostlyZeroPower && mostlyNotMoving && littleDistance
     }
     
-    // ✅ NEW: Analyze ride characteristics
+    // Analyze ride characteristics
     private func analyzeRideCharacteristics(
         dataPoints: [FITDataPoint],
         avgPower: Double,
@@ -2213,7 +2209,7 @@ class RideFileAnalyzer {
             recommendation: rideTypeRecommendation(for: rideCharacteristics.rideType)
         ))
         
-        // ✅ NEW: Stopped Time Analysis
+        // Stopped Time Analysis
         if rideCharacteristics.stoppedTime > 60 {
             let stoppedMinutes = Int(rideCharacteristics.stoppedTime / 60)
             let stoppedPercentage = (rideCharacteristics.stoppedTime / elapsedTime) * 100
@@ -2230,7 +2226,7 @@ class RideFileAnalyzer {
             ))
         }
         
-        // ✅ ENHANCED: Pacing insights with context
+        // Pacing insights with context
         if consistency >= 85 {
             insights.append(RideInsight(
                 id: UUID(),
@@ -2259,7 +2255,7 @@ class RideFileAnalyzer {
             ))
         }
         
-        // ✅ ENHANCED: Power Variability with ride context
+        // Power Variability with ride context
         if variability > 25 {
             insights.append(RideInsight(
                 id: UUID(),
@@ -2273,7 +2269,7 @@ class RideFileAnalyzer {
             ))
         }
         
-        // ✅ NEW: Acceleration Analysis
+        // Acceleration Analysis
         if rideCharacteristics.accelerationCount > 20 {
             insights.append(RideInsight(
                 id: UUID(),
@@ -2317,7 +2313,7 @@ class RideFileAnalyzer {
             ))
         }
         
-        // ✅ NEW: Intensity Factor with personalized guidance
+        // Intensity Factor with personalized guidance
         if intensityFactor > 1.05 {
             insights.append(RideInsight(
                 id: UUID(),
@@ -2430,7 +2426,6 @@ class RideFileAnalyzer {
     
     // MARK: - Helper Functions
     
-    // 🔥 ADD THIS helper function
     private func formatDurationMinutes(_ seconds: TimeInterval) -> String {
         let minutes = Int(seconds / 60)
         return "\(minutes)min"
@@ -2516,8 +2511,6 @@ class RideFileAnalyzer {
     }
     
     // MARK: - Graphing Data
-    
-    // MARK: - Graphing Data
         
     func generateGraphData(dataPoints: [FITDataPoint], targetPoints: Int = 200) -> (power: [GraphableDataPoint]?, hr: [GraphableDataPoint]?, elevation: [GraphableDataPoint]?) {
         
@@ -2565,14 +2558,12 @@ class RideFileAnalyzer {
                 hrGraphData.append(GraphableDataPoint(time: avgTime, value: avgHR))
             }
             
-            // --- ADDED THIS BLOCK ---
             // Calculate average elevation
             let bucketElevations = bucket.compactMap { $0.altitude }
             if !bucketElevations.isEmpty {
                 let avgElevation = bucketElevations.reduce(0, +) / Double(bucketElevations.count)
                 elevationGraphData.append(GraphableDataPoint(time: avgTime, value: avgElevation))
             }
-            // --- END ADD ---
         }
         
         return (powerGraphData.isEmpty ? nil : powerGraphData, hrGraphData.isEmpty ? nil : hrGraphData, elevationGraphData.isEmpty ? nil : elevationGraphData) // <-- FIX: Return 3 values
@@ -2997,7 +2988,7 @@ struct RideMetadata: Codable {
     let avgGradient: Double
     let maxGradient: Double
     
-    // 🔥 NEW: User-friendly display values
+    // User-friendly display values
     let totalDistance: Double    // In user's preferred unit
     let distanceUnit: String     // "km" or "mi"
     let avgSpeed: Double         // In user's preferred unit
@@ -3005,10 +2996,10 @@ struct RideMetadata: Codable {
     let elevation: Double        // In user's preferred unit
     let elevationUnit: String    // "m" or "ft"
     
-    // 🔥 NEW: GPS coordinates for route matching
+    // GPS coordinates for route matching
     let startCoordinate: CLLocationCoordinate2D?
     let endCoordinate: CLLocationCoordinate2D?
-    // 🔥 NEW: GPS breadcrumbs for accurate route matching
+    // GPS breadcrumbs for accurate route matching
     let routeBreadcrumbs: [CLLocationCoordinate2D]?
 }
 
