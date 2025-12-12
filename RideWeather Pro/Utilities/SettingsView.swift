@@ -14,6 +14,11 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     
     @StateObject private var dataSourceManager = DataSourceManager.shared
+    @State private var lastRefresh = Date() // Forces UI update
+
+    // Track storage strings manually to force updates
+    @State private var trainingStorageText: String = ""
+    @State private var wellnessStorageText: String = ""
     
     var body: some View {
         NavigationStack {
@@ -93,29 +98,42 @@ struct SettingsView: View {
                     HStack {
                         Text("Training Data")
                         Spacer()
-                        Text(TrainingLoadManager.shared.getStorageInfo())
+                        Text(trainingStorageText) // ✅ Use State
                             .foregroundStyle(.secondary)
                     }
                     
                     HStack {
                         Text("Wellness Data")
                         Spacer()
-                        Text(WellnessManager.shared.getStorageInfo())
+                        Text(wellnessStorageText) // ✅ Use State
                             .foregroundStyle(.secondary)
                     }
                     
                     Button(role: .destructive) {
+                        // 1. Clear Data
                         TrainingLoadManager.shared.clearAll()
                         WellnessManager.shared.clearAll()
+                        
+                        // 2. Clear Sync State
                         UserDefaults.standard.removeObject(forKey: "lastTrainingLoadSync")
                         UserDefaults.standard.removeObject(forKey: "wellnessLastSync")
+                        UserDefaults.standard.removeObject(forKey: "lastWellnessSyncDate")
+                        
                         print("🗑️ Cleared all training and wellness data")
+                        
+                        // 3. ✅ Force UI Update Immediately
+                        updateStorageInfo()
+                        
+                        // 4. Notify other views
+                        NotificationCenter.default.post(name: .dataSourceChanged, object: nil)
+                        
                     } label: {
                         Label("Reset All Data", systemImage: "trash")
                             .foregroundStyle(.red)
                     }
                 }
-
+                .id(lastRefresh)
+                
                 Section("About") {
                     HStack {
                         Text("Version")
@@ -152,6 +170,9 @@ struct SettingsView: View {
                 }
             }
             .onAppear {
+                // ✅ Update storage text
+                updateStorageInfo()
+                
                 // Auto-configure data sources on first launch if needed
                 let status = dataSourceManager.validateConfiguration(
                     stravaConnected: stravaService.isAuthenticated,
@@ -354,6 +375,12 @@ struct SettingsView: View {
                 let _ = viewModel.settings.bodyWeightInUserUnits
             }
         }
+    }
+    // MARK: - UI Helpers
+    
+    private func updateStorageInfo() {
+        trainingStorageText = TrainingLoadManager.shared.getStorageInfo()
+        wellnessStorageText = WellnessManager.shared.getStorageInfo()
     }
 }
 
@@ -563,7 +590,9 @@ struct IntegrationsSettingsView: View {
     
     var body: some View {
         Form {
-            // Apple Health
+            // ==================================================================
+            // APPLE HEALTH
+            // ==================================================================
             Section {
                 if healthManager.isAuthorized {
                     HStack {
@@ -599,14 +628,25 @@ struct IntegrationsSettingsView: View {
             } header: {
                 Text("Apple Health")
             } footer: {
-                Text("Syncs HRV, Resting HR, and Sleep for readiness insights.")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("What This Enables:")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                    
+                    Text("• Readiness insights from HRV, Resting HR, and Sleep data")
+                    Text("• Automatic body weight sync for power calculations")
+                    Text("• Training load tracking from workouts")
+                    Text("• Recovery recommendations based on wellness metrics")
+                }
+                .font(.caption)
             }
             
-            // Strava
-            Section("Strava") {
+            // ==================================================================
+            // STRAVA
+            // ==================================================================
+            Section {
                 if stravaService.isAuthenticated {
                     HStack {
-                        // Show logo when connected too
                         Image("strava_logo")
                             .resizable()
                             .scaledToFit()
@@ -640,128 +680,201 @@ struct IntegrationsSettingsView: View {
                         }
                     }
                 }
+            } header: {
+                Text("Strava")
+            } footer: {
+                // ✅ Enhanced description
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("What This Enables:")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                    
+                    Text("• Import saved routes for weather forecasting")
+                    Text("• Import completed rides for performance analysis")
+                    Text("• Automatic body weight sync")
+                    Text("• Training load tracking from your activities")
+                }
+                .font(.caption)
             }
             
-            // Garmin
-            // Garmin Section with Permission Check
-            Section("Garmin") {
-                if garminService.isAuthenticated {
-                    HStack {
-                        Image("garmin_logo")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 35, height: 35)
-                        
-                        Text(garminService.athleteName ?? "Connected")
-                        Spacer()
-                        Button("Disconnect", role: .destructive) { garminService.disconnect() }
-                            .buttonStyle(.borderless)
-                    }
-                    
-                    if checkingPermissions {
-                        HStack {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Checking permissions...")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } else if !garminPermissions.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Permissions:")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            
-                            ForEach(garminPermissions, id: \.self) { permission in
-                                HStack(spacing: 4) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(.green)
-                                        .font(.caption2)
-                                    Text(permission)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            
-                            if !garminPermissions.contains("ACTIVITY_EXPORT") {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundStyle(.orange)
-                                    
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Activity import unavailable")
-                                            .font(.caption)
-                                            .fontWeight(.semibold)
-                                            .foregroundStyle(.orange)
-                                        
-                                        Text("Disconnect and reconnect to enable activity import")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                .padding(.top, 4)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    
-                } else {
-                    Button {
-                        garminService.authenticate()
-                    } label: {
-                        HStack {
-                            Image("garmin_logo")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 35, height: 35)
-                                .foregroundColor(.primary)
-                            
-                            Text("Connect with Garmin")
-                        }
-                    }
-                }
-                
-                if let error = garminService.errorMessage {
-                    Text(error).font(.caption).foregroundStyle(.red)
-                }
-            }
+            // ==================================================================
+            // GARMIN
+            // ==================================================================
+            Section {
+                 if garminService.isAuthenticated {
+                     HStack {
+                         Image("garmin_logo")
+                             .resizable()
+                             .scaledToFit()
+                             .frame(width: 35, height: 35)
+                         
+                         Text(garminService.athleteName ?? "Connected")
+                         Spacer()
+                         Button("Disconnect", role: .destructive) {
+                             garminService.disconnect()
+                         }
+                         .buttonStyle(.borderless)
+                     }
+                     
+                     if checkingPermissions {
+                         HStack {
+                             ProgressView()
+                                 .controlSize(.small)
+                             Text("Checking permissions...")
+                                 .font(.caption)
+                                 .foregroundStyle(.secondary)
+                         }
+                     } else if !garminPermissions.isEmpty {
+                         VStack(alignment: .leading, spacing: 8) {
+                             Text("Permissions:")
+                                 .font(.caption)
+                                 .foregroundStyle(.secondary)
+                             
+                             ForEach(garminPermissions, id: \.self) { permission in
+                                 HStack(spacing: 4) {
+                                     Image(systemName: "checkmark.circle.fill")
+                                         .foregroundStyle(.green)
+                                         .font(.caption2)
+                                     Text(permission)
+                                         .font(.caption2)
+                                         .foregroundStyle(.secondary)
+                                 }
+                             }
+                         }
+                         .padding(.vertical, 4)
+                     }
+                     
+                 } else {
+                     Button {
+                         garminService.authenticate()
+                     } label: {
+                         HStack {
+                             Image("garmin_logo")
+                                 .resizable()
+                                 .scaledToFit()
+                                 .frame(width: 35, height: 35)
+                                 .foregroundColor(.primary)
+                             
+                             Text("Connect with Garmin")
+                         }
+                     }
+                 }
+                 
+                 if let error = garminService.errorMessage {
+                     Text(error).font(.caption).foregroundStyle(.red)
+                 }
+             } header: {
+                 Text("Garmin")
+             } footer: {
+                 // ✅ Enhanced description explaining what actually works
+                 VStack(alignment: .leading, spacing: 8) {
+                     Text("What This Enables:")
+                         .font(.caption)
+                         .fontWeight(.semibold)
+                     
+                     Text("• Upload weather-aware pacing plans directly to your Garmin device")
+                         .fontWeight(.medium) // Highlight the main feature
+                     Text("• Wellness data sync (HRV, sleep, stress) for readiness insights")
+                     Text("• Training load tracking from your activities")
+                     
+                     Divider()
+                         .padding(.vertical, 4)
+                     
+                     Text("Note: To import routes or analyze rides, export FIT files from Garmin Connect and use 'Import File'.")
+                         .font(.caption2)
+                         .foregroundStyle(.secondary)
+                         .italic()
+                 }
+                 .font(.caption)
+             }
 
-            // Wahoo
-            Section("Wahoo") {
-                if wahooService.isAuthenticated {
-                    HStack {
-                        Image("wahoo_logo")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 35, height: 35)
-                        
-                        Text(wahooService.athleteName ?? "Connected")
-                        Spacer()
-                        Button("Disconnect", role: .destructive) { wahooService.disconnect() }
-                            .buttonStyle(.borderless)
-                    }
-                } else {
-                    Button {
-                        wahooService.authenticate()
-                    } label: {
-                        // Updated with Logo
-                        HStack {
-                            Image("wahoo_logo")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 35, height: 35)
-                            
-                            Text("Connect with Wahoo")
-                        }
-                    }
-                }
-                if let error = wahooService.errorMessage {
-                    Text(error).font(.caption).foregroundStyle(.red)
-                }
-            }
-        }
-        .navigationTitle("Integrations")
-    }
+             // ==================================================================
+             // WAHOO
+             // ==================================================================
+             Section {
+                 if wahooService.isAuthenticated {
+                     HStack {
+                         Image("wahoo_logo")
+                             .resizable()
+                             .scaledToFit()
+                             .frame(width: 35, height: 35)
+                         
+                         Text(wahooService.athleteName ?? "Connected")
+                         Spacer()
+                         Button("Disconnect", role: .destructive) {
+                             wahooService.disconnect()
+                         }
+                         .buttonStyle(.borderless)
+                     }
+                 } else {
+                     Button {
+                         wahooService.authenticate()
+                     } label: {
+                         HStack {
+                             Image("wahoo_logo")
+                                 .resizable()
+                                 .scaledToFit()
+                                 .frame(width: 35, height: 35)
+                             
+                             Text("Connect with Wahoo")
+                         }
+                     }
+                 }
+                 if let error = wahooService.errorMessage {
+                     Text(error).font(.caption).foregroundStyle(.red)
+                 }
+             } header: {
+                 Text("Wahoo")
+             } footer: {
+                 // ✅ Enhanced description
+                 VStack(alignment: .leading, spacing: 8) {
+                     Text("What This Enables:")
+                         .font(.caption)
+                         .fontWeight(.semibold)
+                     
+                     Text("• Import saved routes for weather forecasting")
+                     Text("• Import completed rides for performance analysis")
+                     Text("• Access your workout library")
+                     Text("• Training load tracking from your activities")
+                 }
+                 .font(.caption)
+             }
+         }
+         .navigationTitle("Integrations")
+         .task {
+             // Check Garmin permissions when view appears
+             if garminService.isAuthenticated && garminPermissions.isEmpty {
+                 await checkGarminPermissions()
+             }
+         }
+     }
+     
+     // Add permission check function
+     private func checkGarminPermissions() async {
+         checkingPermissions = true
+         
+         // Use the existing test endpoint to check permissions
+         do {
+             let token = garminService.currentTokens?.accessToken ?? ""
+             let url = URL(string: "https://apis.garmin.com/userPermissions/")!
+             var request = URLRequest(url: url)
+             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+             
+             let (data, _) = try await URLSession.shared.data(for: request)
+             
+             if let permissions = try? JSONDecoder().decode([String].self, from: data) {
+                 await MainActor.run {
+                     garminPermissions = permissions
+                     checkingPermissions = false
+                 }
+             }
+         } catch {
+             print("Failed to check Garmin permissions: \(error)")
+             await MainActor.run {
+                 checkingPermissions = false
+             }
+         }
+     }
  }
 
 // MARK: - UI Components

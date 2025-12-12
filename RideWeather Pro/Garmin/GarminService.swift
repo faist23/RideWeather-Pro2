@@ -983,6 +983,78 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             }
         }
     }
+    //-------------------------
+    /// Test different Activity API endpoints
+    func testActivityEndpoints() async {
+        try? await refreshTokenIfNeededAsync()
+        
+        guard let token = currentTokens?.accessToken else {
+            print("❌ Not authenticated")
+            return
+        }
+        
+        let endpointsToTry = [
+            // Based on course endpoint pattern
+            "https://apis.garmin.com/training-api/activity/v1/activity",
+            "https://apis.garmin.com/training-api/activity/v1/activities",
+            
+            // Export endpoints (you have ACTIVITY_EXPORT permission)
+            "https://apis.garmin.com/training-api/activity/export",
+            "https://apis.garmin.com/training-api/export/activities",
+            
+            // Historical data (you have HISTORICAL_DATA_EXPORT)
+            "https://apis.garmin.com/training-api/historical/activities",
+            "https://apis.garmin.com/training-api/historical/data",
+            
+            // Workout endpoints
+            "https://apis.garmin.com/training-api/workout/v2/workout",
+            "https://apis.garmin.com/training-api/workout/v2/activities"
+        ]
+        
+        print("\n🔍 Testing Activity Endpoints...\n")
+        
+        for (index, urlString) in endpointsToTry.enumerated() {
+            print("[\(index + 1)/\(endpointsToTry.count)] Testing: \(urlString)")
+            
+            guard let url = URL(string: urlString) else {
+                print("   ❌ Invalid URL\n")
+                continue
+            }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    print("   ❌ Invalid response\n")
+                    continue
+                }
+                
+                print("   Status: \(httpResponse.statusCode)")
+                
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("   Response: \(responseString.prefix(300))...")
+                }
+                
+                if httpResponse.statusCode == 200 {
+                    print("   ✅ ✅ ✅ SUCCESS! This endpoint works! ✅ ✅ ✅\n")
+                } else {
+                    print("   ❌ Failed\n")
+                }
+                
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s delay
+                
+            } catch {
+                print("   ❌ Error: \(error.localizedDescription)\n")
+            }
+        }
+        
+        print("🏁 Testing complete!\n")
+    }
+
 }
 
 // MARK: - Data Models
@@ -1097,14 +1169,17 @@ extension GarminService {
     }
     
     func fetchCourses() async throws -> [GarminCourse] {
-        try await refreshTokenIfNeededAsync()
+        // Not available via OAuth - upload only
+        print("ℹ️ Garmin course listing not available via OAuth API")
+        return []
+/*        try await refreshTokenIfNeededAsync()
         
         guard let token = currentTokens?.accessToken else {
             throw GarminError.notAuthenticated
         }
         
-        // ✅ Try Training API base path
-        let urlString = "https://apis.garmin.com/training-api/workout/v2/workouts"
+        // ✅ Same endpoint as upload, but GET instead of POST
+        let urlString = "https://apis.garmin.com/training-api/courses/v1/course"
         
         guard let url = URL(string: urlString) else {
             throw GarminError.invalidURL
@@ -1122,26 +1197,37 @@ extension GarminService {
             throw GarminError.invalidResponse
         }
         
-        print("GarminService: fetchCourses response status: \(httpResponse.statusCode)")
+        print("GarminService: Response status: \(httpResponse.statusCode)")
         
-        // Log response to see structure
         if let responseString = String(data: data, encoding: .utf8) {
-            print("GarminService: Response: \(responseString)")
+            print("GarminService: Full response: \(responseString)")
         }
         
         guard httpResponse.statusCode == 200 else {
             let errorMsg = String(data: data, encoding: .utf8) ?? "Unknown error"
-            print("❌ GarminService fetchCourses error:")
-            print("   Status: \(httpResponse.statusCode)")
-            print("   Response: \(errorMsg)")
             throw GarminError.apiError(statusCode: httpResponse.statusCode, message: errorMsg)
         }
         
         let decoder = JSONDecoder()
-        let courses = try decoder.decode([GarminCourse].self, from: data)
         
-        print("GarminService: ✅ Fetched \(courses.count) courses")
-        return courses
+        // Try to decode
+        do {
+            let courses = try decoder.decode([GarminCourse].self, from: data)
+            print("GarminService: ✅ Fetched \(courses.count) courses")
+            return courses
+        } catch {
+            print("❌ Decode error: \(error)")
+            
+            // Log the actual structure
+            if let json = try? JSONSerialization.jsonObject(with: data),
+               let prettyData = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted),
+               let prettyString = String(data: prettyData, encoding: .utf8) {
+                print("Actual structure received:")
+                print(prettyString)
+            }
+            
+            throw error
+        }*/
     }
     
     /// Fetch detailed course data including GPS points
@@ -1242,7 +1328,10 @@ extension GarminService {
     
     /// Fetch a specific activity for ride analysis using Activity API
     func fetchActivityDetails(activityId: Int) async throws -> GarminActivityDetail {
-        try await refreshTokenIfNeededAsync()
+        // Not available via OAuth - users should export FIT files
+        print("ℹ️ Garmin activity details not available via OAuth API")
+        throw GarminError.notAuthenticated // Or create a specific error
+/*        try await refreshTokenIfNeededAsync()
         
         guard let token = currentTokens?.accessToken else {
             throw GarminError.notAuthenticated
@@ -1341,100 +1430,99 @@ extension GarminService {
         } catch {
             print("❌ Failed to decode activity detail: \(error)")
             throw error
-        }
+        }*/
     }
     
     /// Fetch activity list using Activity API (which you have access to)
     func fetchRecentActivities(limit: Int = 50) async throws -> [GarminActivitySummary] {
-        try await refreshTokenIfNeededAsync()
-        
-        guard let token = currentTokens?.accessToken else {
-            throw GarminError.notAuthenticated
-        }
-        
-        // ✅ Use Activity API endpoint (not Wellness API)
-        // This is for OAuth apps to fetch user's activities
-        let urlString = "https://apis.garmin.com/activity-service/activities?limit=\(limit)&start=0"
-        
-        guard let url = URL(string: urlString) else {
-            throw GarminError.invalidURL
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        
-        print("GarminService: Fetching activities from Activity API...")
-        print("GarminService: URL: \(urlString)")
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw GarminError.invalidResponse
-        }
-        
-        print("GarminService: Activity API response status: \(httpResponse.statusCode)")
-        
-        // Log response for debugging
-        if let responseString = String(data: data, encoding: .utf8) {
-            print("GarminService: Response preview: \(responseString.prefix(500))...")
-        }
-        
-        guard httpResponse.statusCode == 200 else {
-            let errorMsg = String(data: data, encoding: .utf8) ?? "Unknown error"
-            print("❌ GarminService Activity API error:")
-            print("   Status: \(httpResponse.statusCode)")
-            print("   Response: \(errorMsg)")
-            throw GarminError.apiError(statusCode: httpResponse.statusCode, message: errorMsg)
-        }
-        
-        // Parse the response
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        decoder.dateDecodingStrategy = .iso8601
-        
-        do {
-            // Try to decode as array directly
-            let activities = try decoder.decode([GarminActivityAPIResponse].self, from: data)
-            
-            // Convert to GarminActivitySummary format and filter cycling
-            let summaries = activities
-                .filter { activity in
-                    let type = activity.activityType?.lowercased() ?? ""
-                    return type.contains("cycling") || type.contains("bike")
-                }
-                .compactMap { convertActivityAPIToSummary($0) }
-                .prefix(limit)
-            
-            print("GarminService: ✅ Fetched \(summaries.count) cycling activities")
-            return Array(summaries)
-            
-        } catch {
-            print("❌ Failed to decode as direct array: \(error)")
-            
-            // Try wrapped format
-            struct ActivitiesWrapper: Codable {
-                let activities: [GarminActivityAPIResponse]?
-            }
-            
-            if let wrapped = try? decoder.decode(ActivitiesWrapper.self, from: data),
-               let activities = wrapped.activities {
-                
-                let summaries = activities
-                    .filter { activity in
-                        let type = activity.activityType?.lowercased() ?? ""
-                        return type.contains("cycling") || type.contains("bike")
-                    }
-                    .compactMap { convertActivityAPIToSummary($0) }
-                    .prefix(limit)
-                
-                print("GarminService: ✅ Fetched \(summaries.count) cycling activities (wrapped)")
-                return Array(summaries)
-            }
-            
-            throw error
-        }
+        // Not available via OAuth - users should export FIT files
+        print("ℹ️ Garmin activity listing not available via OAuth API")
+        return []
     }
+    
+    /*    // ✅ Use Activity API endpoint (not Wellness API)
+     // This is for OAuth apps to fetch user's activities
+     let urlString = "https://apis.garmin.com/activity-service/activities?limit=\(limit)&start=0"
+     
+     guard let url = URL(string: urlString) else {
+     throw GarminError.invalidURL
+     }
+     
+     var request = URLRequest(url: url)
+     request.httpMethod = "GET"
+     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+     
+     print("GarminService: Fetching activities from Activity API...")
+     print("GarminService: URL: \(urlString)")
+     
+     let (data, response) = try await URLSession.shared.data(for: request)
+     
+     guard let httpResponse = response as? HTTPURLResponse else {
+     throw GarminError.invalidResponse
+     }
+     
+     print("GarminService: Activity API response status: \(httpResponse.statusCode)")
+     
+     // Log response for debugging
+     if let responseString = String(data: data, encoding: .utf8) {
+     print("GarminService: Response preview: \(responseString.prefix(500))...")
+     }
+     
+     guard httpResponse.statusCode == 200 else {
+     let errorMsg = String(data: data, encoding: .utf8) ?? "Unknown error"
+     print("❌ GarminService Activity API error:")
+     print("   Status: \(httpResponse.statusCode)")
+     print("   Response: \(errorMsg)")
+     throw GarminError.apiError(statusCode: httpResponse.statusCode, message: errorMsg)
+     }
+     
+     // Parse the response
+     let decoder = JSONDecoder()
+     decoder.keyDecodingStrategy = .convertFromSnakeCase
+     decoder.dateDecodingStrategy = .iso8601
+     
+     do {
+     // Try to decode as array directly
+     let activities = try decoder.decode([GarminActivityAPIResponse].self, from: data)
+     
+     // Convert to GarminActivitySummary format and filter cycling
+     let summaries = activities
+     .filter { activity in
+     let type = activity.activityType?.lowercased() ?? ""
+     return type.contains("cycling") || type.contains("bike")
+     }
+     .compactMap { convertActivityAPIToSummary($0) }
+     .prefix(limit)
+     
+     print("GarminService: ✅ Fetched \(summaries.count) cycling activities")
+     return Array(summaries)
+     
+     } catch {
+     print("❌ Failed to decode as direct array: \(error)")
+     
+     // Try wrapped format
+     struct ActivitiesWrapper: Codable {
+     let activities: [GarminActivityAPIResponse]?
+     }
+     
+     if let wrapped = try? decoder.decode(ActivitiesWrapper.self, from: data),
+     let activities = wrapped.activities {
+     
+     let summaries = activities
+     .filter { activity in
+     let type = activity.activityType?.lowercased() ?? ""
+     return type.contains("cycling") || type.contains("bike")
+     }
+     .compactMap { convertActivityAPIToSummary($0) }
+     .prefix(limit)
+     
+     print("GarminService: ✅ Fetched \(summaries.count) cycling activities (wrapped)")
+     return Array(summaries)
+     }
+     
+     throw error
+     }
+     }*/
     
     /// Helper to convert Activity API response to our GarminActivitySummary format
     private func convertActivityAPIToSummary(_ activity: GarminActivityAPIResponse) -> GarminActivitySummary? {

@@ -328,9 +328,11 @@ class TrainingLoadManager {
         return csv
     }
     
-    /// Returns the current storage size
+    /// Returns the current storage size with day count
     func getStorageInfo() -> String {
-        return storage.getStorageSizeFormatted()
+        let count = loadAllDailyLoads().count
+        let size = storage.getStorageSizeFormatted()
+        return "\(count) days (\(size))"
     }
     
     // MARK: - Private Methods
@@ -578,5 +580,99 @@ extension TrainingLoadManager {
         // ADD THIS: Recalculate metrics after updating
         let updatedLoads = recalculateMetrics(for: dailyLoads)
         saveDailyLoads(updatedLoads)
+    }
+    
+    // MARK: - Batch Operations (High Performance)
+    
+    /// Adds multiple rides efficiently by performing a single read/write cycle.
+    /// Use this when syncing historical data to prevent I/O thrashing.
+    func addBatchRides(_ analyses: [RideAnalysis]) {
+        guard !analyses.isEmpty else { return }
+        
+        print("⚡️ Training Load: Batch processing \(analyses.count) rides...")
+        
+        // 1. Single Read
+        var dailyLoads = loadAllDailyLoads()
+        let calendar = Calendar.current
+        
+        // 2. Memory-only processing
+        for analysis in analyses {
+            let rideDate = calendar.startOfDay(for: analysis.date)
+            
+            if let existingIndex = dailyLoads.firstIndex(where: {
+                calendar.isDate($0.date, inSameDayAs: rideDate)
+            }) {
+                // Accumulate data efficiently
+                dailyLoads[existingIndex].tss += analysis.trainingStressScore
+                dailyLoads[existingIndex].rideCount += 1
+                dailyLoads[existingIndex].totalDistance += analysis.distance
+                dailyLoads[existingIndex].totalDuration += analysis.duration
+            } else {
+                // Create new entry
+                let newLoad = DailyTrainingLoad(
+                    date: rideDate,
+                    tss: analysis.trainingStressScore,
+                    rideCount: 1,
+                    totalDistance: analysis.distance,
+                    totalDuration: analysis.duration
+                )
+                dailyLoads.append(newLoad)
+            }
+        }
+        
+        // 3. Sort and Recalculate once
+        dailyLoads.sort { $0.date < $1.date }
+        let updatedLoads = recalculateMetrics(for: dailyLoads)
+        
+        // 4. Single Write
+        saveDailyLoads(updatedLoads)
+        
+        print("✅ Training Load: Successfully batch imported \(analyses.count) rides. I/O optimized.")
+    }
+    
+    // MARK: - Batch Processing (Safe for Strava & HealthKit)
+    
+    /// Updates multiple days efficiently.
+    /// Replaces the logic of calling updateDailyLoad() in a loop.
+    func updateBatchLoads(_ updates: [Date: (tss: Double, rideCount: Int, distance: Double, duration: TimeInterval)]) {
+        guard !updates.isEmpty else { return }
+        
+        print("⚡️ Training Load: Batch updating \(updates.count) days...")
+        
+        // 1. Single Read
+        var dailyLoads = loadAllDailyLoads()
+        let calendar = Calendar.current
+        
+        // 2. In-Memory Updates
+        for (date, data) in updates {
+            let dayStart = calendar.startOfDay(for: date)
+            
+            if let existingIndex = dailyLoads.firstIndex(where: { calendar.isDate($0.date, inSameDayAs: dayStart) }) {
+                // MATCHES EXISTING LOGIC: Overwrite/Update values (don't append)
+                // This ensures re-syncing doesn't double-count TSS
+                dailyLoads[existingIndex].tss = data.tss
+                dailyLoads[existingIndex].rideCount = data.rideCount
+                dailyLoads[existingIndex].totalDistance = data.distance
+                dailyLoads[existingIndex].totalDuration = data.duration
+            } else {
+                // Create new
+                dailyLoads.append(DailyTrainingLoad(
+                    date: dayStart,
+                    tss: data.tss,
+                    rideCount: data.rideCount,
+                    totalDistance: data.distance,
+                    totalDuration: data.duration
+                ))
+            }
+        }
+        
+        // 3. Sort & Recalculate Metrics (CTL/ATL/TSB) - Done once instead of N times
+        dailyLoads.sort { $0.date < $1.date }
+        let updatedLoads = recalculateMetrics(for: dailyLoads)
+        
+        // 4. Single Write
+        saveDailyLoads(updatedLoads)
+        
+        print("✅ Training Load: Batch update complete. Processed \(updates.count) days.")
     }
 }

@@ -19,6 +19,8 @@ struct DailyWellnessMetrics: Identifiable, Codable {
     var basalEnergyBurned: Double? // kcal (resting metabolism)
     var standHours: Int?
     var exerciseMinutes: Int? // Apple Watch "Exercise" ring
+    var restingHeartRate: Int? // bpm
+    var distance: Double? // meters (walking + running)
     
     // MARK: - Sleep Quality (Beyond Duration)
     var sleepDeep: TimeInterval?
@@ -44,6 +46,8 @@ struct DailyWellnessMetrics: Identifiable, Codable {
         basalEnergyBurned: Double? = nil,
         standHours: Int? = nil,
         exerciseMinutes: Int? = nil,
+        restingHeartRate: Int? = nil,
+        distance: Double? = nil,
         sleepDeep: TimeInterval? = nil,
         sleepREM: TimeInterval? = nil,
         sleepCore: TimeInterval? = nil,
@@ -61,6 +65,8 @@ struct DailyWellnessMetrics: Identifiable, Codable {
         self.basalEnergyBurned = basalEnergyBurned
         self.standHours = standHours
         self.exerciseMinutes = exerciseMinutes
+        self.restingHeartRate = restingHeartRate
+        self.distance = distance
         self.sleepDeep = sleepDeep
         self.sleepREM = sleepREM
         self.sleepCore = sleepCore

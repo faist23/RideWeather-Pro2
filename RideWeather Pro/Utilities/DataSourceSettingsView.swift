@@ -20,6 +20,10 @@ struct DataSourceSettingsView: View {
     
     var body: some View {
         Form {
+            // MARK: - NEW: Active Configuration Summary
+            // This clears up the confusion about "What is powering what?"
+            activeConfigurationSection
+            
             // Status Overview
             connectionStatusSection
             
@@ -68,6 +72,54 @@ struct DataSourceSettingsView: View {
         }
     }
     
+    // MARK: - Active Configuration Section
+    
+    private var activeConfigurationSection: some View {
+        Section {
+            HStack(spacing: 0) {
+                // Training Load Config
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("TRAINING LOAD")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.secondary)
+                    
+                    HStack(spacing: 6) {
+                        SourceIconView(icon: dataSourceManager.configuration.trainingLoadSource.icon)
+                        Text(dataSourceManager.configuration.trainingLoadSource.rawValue)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                
+                // Vertical Divider
+                Divider()
+                    .frame(height: 30)
+                    .padding(.horizontal, 8)
+                
+                // Wellness Config
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("WELLNESS")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.secondary)
+                    
+                    HStack(spacing: 6) {
+                        SourceIconView(icon: dataSourceManager.configuration.wellnessSource.icon, isWellness: true)
+                        Text(dataSourceManager.configuration.wellnessSource.rawValue)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.vertical, 4)
+        } header: {
+            Text("Active Configuration")
+        }
+    }
+    
     // MARK: - Connection Status Section
     
     private var connectionStatusSection: some View {
@@ -103,7 +155,9 @@ struct DataSourceSettingsView: View {
                 }
             }
         } header: {
-            Text("Connected Services")
+            Text("Connection Status") // Renamed for clarity
+        } footer: {
+            Text("Connect services here to make them available as sources.")
         }
     }
     
@@ -314,7 +368,6 @@ struct DataSourceSettingsView: View {
     private func performInitialSync(for source: DataSourceConfiguration.TrainingLoadSource) async {
         guard source == .appleHealth else { return }
         
-        // Import UnifiedTrainingLoadSync at the top of your view
         let trainingSync = UnifiedTrainingLoadSync()
         
         await trainingSync.syncFromConfiguredSource(
@@ -325,6 +378,26 @@ struct DataSourceSettingsView: View {
             userLTHR: nil,
             startDate: Calendar.current.date(byAdding: .day, value: -90, to: Date())
         )
+    }
+}
+
+// MARK: - Helper View: Source Icon
+
+struct SourceIconView: View {
+    let icon: String
+    var isWellness: Bool = false
+    
+    var body: some View {
+        if icon.contains("_logo") {
+            Image(icon)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+        } else {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundColor(isWellness ? .red : .blue)
+        }
     }
 }
 

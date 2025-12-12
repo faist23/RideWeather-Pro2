@@ -66,11 +66,11 @@ struct RideAnalysisView: View {
                                 Label("Import from Wahoo", systemImage: "square.and.arrow.down.on.square")
                             }
                         }
-                        if garminService.isAuthenticated {
+ /*                       if garminService.isAuthenticated {
                             Button(action: { viewModel.showingGarminActivities = true }) {
                                 Label("Import from Garmin", systemImage: "square.and.arrow.down.on.square")
                             }
-                        }
+                        }*/
                         Divider()
                         Button(action: { viewModel.showingSavedPlans = true }) {
                             Label("Saved Pacing Plans", systemImage: "list.bullet.rectangle")
@@ -133,11 +133,11 @@ struct RideAnalysisView: View {
                     .environmentObject(wahooService)
                     .environmentObject(weatherViewModel)
             }
-            .sheet(isPresented: $viewModel.showingGarminActivities) {
+/*            .sheet(isPresented: $viewModel.showingGarminActivities) {
                 GarminActivityImportView()
                     .environmentObject(garminService)
                     .environmentObject(viewModel)
-            }
+            }*/
             .sheet(isPresented: $viewModel.showingPlanComparison) {
                 if let analysis = viewModel.currentAnalysis {
                     ComparisonSelectionView(analysis: analysis)
@@ -240,7 +240,7 @@ struct RideAnalysisView: View {
                 .padding(.horizontal, 40)
             }
 
-            if garminService.isAuthenticated {
+/*            if garminService.isAuthenticated {
                 Button(action: { viewModel.showingGarminActivities = true }) {
                     HStack(spacing: 12) {
                         Image(systemName: "figure.outdoor.cycle")
@@ -255,7 +255,7 @@ struct RideAnalysisView: View {
                     .cornerRadius(12)
                 }
                 .padding(.horizontal, 40)
-            }
+            }*/
 
             if !viewModel.analysisHistory.isEmpty {
                 Button(action: { viewModel.showingHistory = true }) {

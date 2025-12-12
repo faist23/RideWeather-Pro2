@@ -62,14 +62,14 @@ struct MainView: View {
                     .tag(3)
                 
             }
-            // ✅ THE "SOURCE ACTIVE" BADGE
+/*            // ✅ THE "SOURCE ACTIVE" BADGE
             // Only show on relevant tabs (Analysis or Fitness)
             if selectedTab == 2 || selectedTab == 3 {
                 DataSourceBadge(source: dataSourceManager.configuration.trainingLoadSource)
                     .padding(.top, 50) // Adjust for safe area
                     .padding(.trailing, 16)
                     .transition(.move(edge: .top).combined(with: .opacity))
-            }
+            }*/
         }
         .environmentObject(wahooService)
         .onChange(of: selectedTab) { oldValue, newValue in

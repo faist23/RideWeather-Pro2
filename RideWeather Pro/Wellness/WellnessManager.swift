@@ -218,6 +218,9 @@ class WellnessManager: ObservableObject {
         lastSyncDate = nil
         userDefaults.removeObject(forKey: metricsKey)
         userDefaults.removeObject(forKey: syncDateKey)
+
+        userDefaults.removeObject(forKey: "lastWellnessSyncDate")
+                
         print("🗑️ Wellness: Cleared all data")
     }
     

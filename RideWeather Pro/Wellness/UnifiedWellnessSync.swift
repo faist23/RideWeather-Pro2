@@ -2,7 +2,7 @@
 //  UnifiedWellnessSync.swift
 //  RideWeather Pro
 //
-//  Fetches wellness data from Garmin Connect
+//  Fetches wellness data from Garmin Connect and Apple Health
 //
 
 import Foundation
@@ -42,43 +42,16 @@ class UnifiedWellnessSync: ObservableObject {
         needsSync = false
     }
     
-    // Sync wellness data from configured source
-    func syncWellnessData(source: DataSource, userId: String) async throws {
-        print("🏥 \(source.rawValue) Wellness: Starting sync...")
-        
-        switch source {
-        case .appleHealth:
-            try await syncAppleHealthWellness()
-            
-        case .garmin:
-            // Garmin data is now synced automatically via webhook to Supabase
-            // We just fetch the latest data from Supabase
-            try await syncGarminWellnessFromSupabase(userId: userId)
-            
-        case .manual:
-            print("⚠️ Manual entry not implemented for wellness")
-            
-        case .strava:
-            print("⚠️ Strava entry not implemented for wellness")
-        case .wahoo:
-            print("⚠️ Wahoo entry not implemented for wellness")
-        }
-    }
-    
     // MARK: - User Identification
     
-    /// Returns a unique identifier for this device/user
     private var appUserId: String {
         if let vendorId = UIDevice.current.identifierForVendor?.uuidString {
             return vendorId
         }
-        
-        // Fallback: Create and store a UUID if vendorId is unavailable
         let fallbackKey = "app_user_id_fallback"
         if let stored = UserDefaults.standard.string(forKey: fallbackKey) {
             return stored
         }
-        
         let newId = UUID().uuidString
         UserDefaults.standard.set(newId, forKey: fallbackKey)
         return newId
@@ -92,10 +65,8 @@ class UnifiedWellnessSync: ObservableObject {
     ) async {
         guard !isSyncing else { return }
         
-        // 1. Fetch the Source of Truth
         let config = DataSourceManager.shared.configuration
         
-        // 2. UX: Immediate feedback
         isSyncing = true
         defer {
             isSyncing = false
@@ -103,7 +74,6 @@ class UnifiedWellnessSync: ObservableObject {
         }
         
         do {
-            // 3. Switch based on CONFIGURATION, not just authentication status
             switch config.wellnessSource {
             case .garmin:
                 guard garminService.isAuthenticated else {
@@ -111,15 +81,15 @@ class UnifiedWellnessSync: ObservableObject {
                     return
                 }
                 syncStatus = "Syncing wellness from Garmin..."
-                try await syncWellnessData(source: .garmin, userId: appUserId)
+                try await syncGarminWellnessFromSupabase(userId: appUserId)
                 
             case .appleHealth:
                 guard healthManager.isAuthorized else {
-                    syncStatus = "Apple Health selected but permissions missing."
+                    syncStatus = "Apple Health permissions missing."
                     return
                 }
                 syncStatus = "Syncing wellness from Apple Health..."
-                try await syncWellnessData(source: .appleHealth, userId: "")
+                try await syncAppleHealthWellness()
                 
             case .none:
                 syncStatus = "Wellness sync disabled."
@@ -139,190 +109,241 @@ class UnifiedWellnessSync: ObservableObject {
     private func syncGarminWellnessFromSupabase(userId: String) async throws {
         print("📥 Fetching Garmin wellness data from Supabase...")
         
-        // Fetch all wellness data types in parallel
         async let dailies = wellnessService.fetchDailySummaries(forUser: userId, days: 7)
         async let sleep = wellnessService.fetchSleepData(forUser: userId, days: 7)
-        async let stress = wellnessService.fetchStressData(forUser: userId, days: 7)
         
-        let (dailyData, sleepData, stressData) = try await (dailies, sleep, stress)
+        let (dailyData, sleepData) = try await (dailies, sleep)
         
-        print("✅ Fetched from Supabase:")
-        print("   - \(dailyData.count) daily summaries")
-        print("   - \(sleepData.count) sleep records")
-        print("   - \(stressData.count) stress records")
+        print("✅ Fetched from Supabase: \(dailyData.count) daily, \(sleepData.count) sleep records")
         
-        // Process and store the data
-        try await processDailyData(dailyData)
-        try await processSleepData(sleepData)
-        try await processStressData(stressData)
+        var metricsByDate: [Date: DailyWellnessMetrics] = [:]
+        let calendar = Calendar.current
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withFullDate]
         
-        print("✨ Garmin wellness sync complete")
-    }
-    
-    private func processDailyData(_ summaries: [DailySummary]) async throws {
-        // Convert to your app's wellness model and store
-        for summary in summaries {
-            // Use the ISO8601DateFormatter to parse the date
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withFullDate]
+        // 1. Process Daily Summaries
+        for summary in dailyData {
+            guard let date = dateFormatter.date(from: summary.calendarDate) else { continue }
+            let startOfDay = calendar.startOfDay(for: date)
             
-            guard let date = dateFormatter.date(from: summary.calendarDate) else {
-                print("⚠️ Failed to parse date: \(summary.calendarDate)")
-                continue
-            }
+            var metric = metricsByDate[startOfDay] ?? DailyWellnessMetrics(date: startOfDay)
+            metric.steps = summary.steps
+            metric.activeEnergyBurned = summary.activeKilocalories.map { Double($0) }
+            metric.restingHeartRate = summary.restingHeartRate
+            metric.distance = summary.distanceInMeters
             
-            let wellness = WellnessMetrics(
-                date: date,
-                steps: summary.steps,
-                activeCalories: summary.activeKilocalories,
-                distance: summary.distanceInMeters,
-                averageHR: summary.averageHeartRate,
-                restingHR: summary.restingHeartRate,
-                source: .garmin
-            )
-            
-            // Save to your local database/storage
-            try await saveWellnessMetrics(wellness)
+            metricsByDate[startOfDay] = metric
         }
-    }
-    
-    private func processSleepData(_ summaries: [SleepSummary]) async throws {
-        for summary in summaries {
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withFullDate]
+        
+        // 2. Process Sleep Data
+        for summary in sleepData {
+            guard let date = dateFormatter.date(from: summary.calendarDate) else { continue }
+            let startOfDay = calendar.startOfDay(for: date)
             
-            guard let date = dateFormatter.date(from: summary.calendarDate) else {
-                print("⚠️ Failed to parse date: \(summary.calendarDate)")
-                continue
-            }
-            
-            let sleep = SleepData(
-                date: date,
-                totalDuration: TimeInterval(summary.durationInSeconds ?? 0),
-                deepSleep: TimeInterval(summary.deepSleepDurationInSeconds ?? 0),
-                lightSleep: TimeInterval(summary.lightSleepDurationInSeconds ?? 0),
-                remSleep: TimeInterval(summary.remSleepInSeconds ?? 0),
-                awake: TimeInterval(summary.awakeDurationInSeconds ?? 0),
-                source: .garmin
-            )
-            
-            try await saveSleepData(sleep)
+            var metric = metricsByDate[startOfDay] ?? DailyWellnessMetrics(date: startOfDay)
+            metric.sleepDeep = TimeInterval(summary.deepSleepDurationInSeconds ?? 0)
+            metric.sleepREM = TimeInterval(summary.remSleepInSeconds ?? 0)
+            metric.sleepCore = TimeInterval(summary.lightSleepDurationInSeconds ?? 0)
+            metric.sleepAwake = TimeInterval(summary.awakeDurationInSeconds ?? 0)
+            metricsByDate[startOfDay] = metric
         }
-    }
-    
-    private func processStressData(_ summaries: [StressSummary]) async throws {
-        for summary in summaries {
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withFullDate]
-            
-            guard let date = dateFormatter.date(from: summary.calendarDate) else {
-                print("⚠️ Failed to parse date: \(summary.calendarDate)")
-                continue
+        
+        let allMetrics = Array(metricsByDate.values)
+        if !allMetrics.isEmpty {
+            await MainActor.run {
+                WellnessManager.shared.updateBulkMetrics(allMetrics)
             }
-            
-            let stress = StressData(
-                date: date,
-                averageStress: summary.averageStressLevel,
-                maxStress: summary.maxStressLevel,
-                restDuration: TimeInterval(summary.restStressDuration ?? 0),
-                lowDuration: TimeInterval(summary.lowStressDuration ?? 0),
-                mediumDuration: TimeInterval(summary.mediumStressDuration ?? 0),
-                highDuration: TimeInterval(summary.highStressDuration ?? 0),
-                source: .garmin
-            )
-            
-            try await saveStressData(stress)
+            print("✨ Garmin wellness sync complete. Saved \(allMetrics.count) days.")
         }
     }
     
     // MARK: - Apple Health
-    private func syncAppleHealthWellness() async throws {
-        print("🍎 Syncing from Apple Health...")
-        
-        // Check authorization
-        guard HKHealthStore.isHealthDataAvailable() else {
-            throw WellnessError.healthKitNotAvailable
-        }
-        
-        let calendar = Calendar.current
-        let endDate = Date()
-        let startDate = calendar.date(byAdding: .day, value: -7, to: endDate)!
-        
-        // Fetch data in parallel
-        async let hrv = fetchHRVData(start: startDate, end: endDate)
-        async let sleep = fetchSleepAnalysis(start: startDate, end: endDate)
-        async let steps = fetchStepsData(start: startDate, end: endDate)
-        async let restingHR = fetchRestingHeartRate(start: startDate, end: endDate)
-        async let activeEnergy = fetchActiveEnergy(start: startDate, end: endDate)
-        
-        let (hrvData, sleepData, stepsData, restingHRData, activeEnergyData) = try await (hrv, sleep, steps, restingHR, activeEnergy)
-        
-        print("✅ Apple Health sync complete")
-        print("   - \(hrvData.count) HRV readings")
-        print("   - \(sleepData.count) sleep records")
-        print("   - \(stepsData.count) step records")
-        print("   - \(restingHRData.count) resting HR readings")
-        print("   - \(activeEnergyData.count) active energy records")
-        
-        // Process and save
-        try await processAppleHealthData(
-            hrv: hrvData,
-            sleep: sleepData,
-            steps: stepsData,
-            restingHR: restingHRData,
-            activeEnergy: activeEnergyData
-        )
-    }
-    
-    private func fetchHRVData(start: Date, end: Date) async throws -> [HRVSample] {
-        guard let hrvType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else {
-            return []
-        }
-        
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
-        
-        return try await withCheckedThrowingContinuation { continuation in
-            let query = HKSampleQuery(sampleType: hrvType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                    return
+        private func syncAppleHealthWellness() async throws {
+            print("🍎 Syncing from Apple Health...")
+            
+            guard HKHealthStore.isHealthDataAvailable() else {
+                throw WellnessError.healthKitNotAvailable
+            }
+            
+            let calendar = Calendar.current
+            let endDate = Date()
+            let startOfToday = calendar.startOfDay(for: endDate)
+            let startDate = calendar.date(byAdding: .day, value: -7, to: startOfToday)!
+            
+            // Fetch data
+            async let hrv = fetchHRVData(start: startDate, end: endDate)
+            async let sleep = fetchSleepAnalysis(start: startDate, end: endDate)
+            async let steps = fetchStepsData(start: startDate, end: endDate)
+            async let restingHR = fetchRestingHeartRate(start: startDate, end: endDate)
+            async let activeEnergy = fetchActiveEnergy(start: startDate, end: endDate)
+            async let bodyMass = fetchBodyMass(start: startDate, end: endDate)
+            
+            let (hrvData, sleepData, stepsData, restingHRData, activeEnergyData, bodyMassData) = try await (hrv, sleep, steps, restingHR, activeEnergy, bodyMass)
+            
+            // ---------------------------------------------------------------------
+            // 1. NON-SLEEP DATA (Standard Daily Grouping)
+            // ---------------------------------------------------------------------
+            var metricsByDate: [Date: DailyWellnessMetrics] = [:]
+            
+            func getMetric(for date: Date) -> DailyWellnessMetrics {
+                let startOfDay = calendar.startOfDay(for: date)
+                return metricsByDate[startOfDay] ?? DailyWellnessMetrics(date: startOfDay)
+            }
+            
+            for sample in stepsData {
+                var metric = getMetric(for: sample.date)
+                metric.steps = sample.steps
+                metricsByDate[metric.date] = metric
+            }
+            for sample in activeEnergyData {
+                var metric = getMetric(for: sample.date)
+                metric.activeEnergyBurned = Double(sample.calories)
+                metricsByDate[metric.date] = metric
+            }
+            for sample in bodyMassData {
+                var metric = getMetric(for: sample.date)
+                metric.bodyMass = sample.value
+                metricsByDate[metric.date] = metric
+            }
+            for sample in restingHRData {
+                var metric = getMetric(for: sample.date)
+                metric.restingHeartRate = sample.bpm
+                metricsByDate[metric.date] = metric
+            }
+            
+            // ---------------------------------------------------------------------
+            // 2. SLEEP DATA (Smart "Sleep Night" Grouping & Explicit Source Selection)
+            // ---------------------------------------------------------------------
+            // Logic: Shift time +6 hours to assign "Night of 12/9" to "12/10".
+            let sleepBySleepDay = Dictionary(grouping: sleepData) { sample in
+                let adjustedDate = sample.startDate.addingTimeInterval(6 * 3600)
+                return calendar.startOfDay(for: adjustedDate)
+            }
+            
+            print("\n😴 Sleep Processing:")
+            
+            for (date, allSamples) in sleepBySleepDay {
+                var metric = getMetric(for: date)
+                
+                // --- SOURCE FILTERING FIX ---
+                // 1. Identify if AutoSleep is present (using strict bundle ID check)
+                let hasAutoSleep = allSamples.contains { $0.sourceBundleId.lowercased().contains("autosleep") }
+                
+                let targetSamples: [SleepAnalysisSample]
+                let usedSource: String
+                
+                if hasAutoSleep {
+                    // ✅ AutoSleep Mode: Use ONLY AutoSleep samples
+                    targetSamples = allSamples.filter { $0.sourceBundleId.lowercased().contains("autosleep") }
+                    usedSource = "AutoSleep"
+                } else {
+                    // ⌚️ Apple Watch Mode: Use everything else (likely Apple Watch)
+                    targetSamples = allSamples
+                    usedSource = "Apple Watch"
                 }
                 
-                let hrvSamples = (samples as? [HKQuantitySample])?.map { sample in
-                    HRVSample(
-                        date: sample.startDate,
-                        value: sample.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
-                    )
-                } ?? []
+                // --- STAGE FILTERING ---
+                // Important: AutoSleep writes "In Bed" (0) and "Asleep" (1). We MUST ignore 0.
+                // "Unspecified" (1) from AutoSleep is treated as "Core" here to ensure it counts as sleep.
                 
-                continuation.resume(returning: hrvSamples)
+                let deepSamples = targetSamples.filter { $0.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue }
+                let remSamples = targetSamples.filter { $0.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue }
+                let coreSamples = targetSamples.filter {
+                    $0.value == HKCategoryValueSleepAnalysis.asleepCore.rawValue ||
+                    $0.value == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue // <-- AutoSleep "Asleep" falls here
+                }
+                let awakeSamples = targetSamples.filter { $0.value == HKCategoryValueSleepAnalysis.awake.rawValue }
+                
+                // Calculate unique duration for each stage
+                metric.sleepDeep = calculateUniqueDuration(deepSamples)
+                metric.sleepREM = calculateUniqueDuration(remSamples)
+                metric.sleepCore = calculateUniqueDuration(coreSamples)
+                metric.sleepAwake = calculateUniqueDuration(awakeSamples)
+                
+                let totalSleep = (metric.sleepDeep ?? 0) + (metric.sleepCore ?? 0) + (metric.sleepREM ?? 0)
+                
+                print("   👉 \(date.formatted(date: .numeric, time: .omitted)): \(String(format: "%.1f", totalSleep/3600))h | Source: \(usedSource)")
+                
+                metricsByDate[metric.date] = metric
             }
-            healthStore.execute(query)
+            
+            // ---------------------------------------------------------------------
+            // 3. SAVE
+            // ---------------------------------------------------------------------
+            let allMetrics = Array(metricsByDate.values)
+            if !allMetrics.isEmpty {
+                await MainActor.run {
+                    WellnessManager.shared.updateBulkMetrics(allMetrics)
+                }
+                print("💾 Saved \(allMetrics.count) days of wellness data.")
+            }
+        }
+    
+    /// Merges overlapping sleep intervals to prevent double counting (e.g. AutoSleep + Apple Watch)
+    private func calculateUniqueDuration(_ samples: [SleepAnalysisSample]) -> TimeInterval {
+        guard !samples.isEmpty else { return 0 }
+        
+        // 1. Sort by start time
+        let sortedSamples = samples.sorted { $0.startDate < $1.startDate }
+        
+        var totalDuration: TimeInterval = 0
+        // Start with the first interval
+        var currentIntervalStart = sortedSamples[0].startDate
+        var currentIntervalEnd = sortedSamples[0].endDate
+        
+        for i in 1..<sortedSamples.count {
+            let nextSample = sortedSamples[i]
+            
+            if nextSample.startDate < currentIntervalEnd {
+                // Overlap detected: Extend current interval if needed
+                if nextSample.endDate > currentIntervalEnd {
+                    currentIntervalEnd = nextSample.endDate
+                }
+            } else {
+                // No overlap: Commit the current interval and start a new one
+                totalDuration += currentIntervalEnd.timeIntervalSince(currentIntervalStart)
+                currentIntervalStart = nextSample.startDate
+                currentIntervalEnd = nextSample.endDate
+            }
+        }
+        
+        // Commit the final interval
+        totalDuration += currentIntervalEnd.timeIntervalSince(currentIntervalStart)
+        
+        return totalDuration
+    }
+    
+    // MARK: - HealthKit Fetchers
+    
+    private func fetchHRVData(start: Date, end: Date) async throws -> [HRVSample] {
+        guard let hrvType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else { return [] }
+        return try await fetchSamples(type: hrvType, start: start, end: end).map {
+            HRVSample(date: $0.startDate, value: $0.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli)))
+        }
+    }
+    
+    private func fetchBodyMass(start: Date, end: Date) async throws -> [BodyMassSample] {
+        guard let massType = HKQuantityType.quantityType(forIdentifier: .bodyMass) else { return [] }
+        return try await fetchSamples(type: massType, start: start, end: end).map {
+            BodyMassSample(date: $0.startDate, value: $0.quantity.doubleValue(for: .gramUnit(with: .kilo)))
         }
     }
     
     private func fetchSleepAnalysis(start: Date, end: Date) async throws -> [SleepAnalysisSample] {
-        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
-            return []
-        }
-        
+        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return [] }
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
         
         return try await withCheckedThrowingContinuation { continuation in
             let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                
+                if let error = error { continuation.resume(throwing: error); return }
                 let sleepSamples = (samples as? [HKCategorySample])?.map { sample in
                     SleepAnalysisSample(
                         startDate: sample.startDate,
                         endDate: sample.endDate,
-                        value: sample.value
+                        value: sample.value,
+                        sourceBundleId: sample.sourceRevision.source.bundleIdentifier
                     )
                 } ?? []
-                
                 continuation.resume(returning: sleepSamples)
             }
             healthStore.execute(query)
@@ -330,284 +351,83 @@ class UnifiedWellnessSync: ObservableObject {
     }
     
     private func fetchStepsData(start: Date, end: Date) async throws -> [StepSample] {
-        guard let stepsType = HKQuantityType.quantityType(forIdentifier: .stepCount) else {
-            return []
-        }
-        
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
-        
-        return try await withCheckedThrowingContinuation { continuation in
-            let query = HKStatisticsCollectionQuery(
-                quantityType: stepsType,
-                quantitySamplePredicate: predicate,
-                options: .cumulativeSum,
-                anchorDate: start,
-                intervalComponents: DateComponents(day: 1)
-            )
-            
-            query.initialResultsHandler = { _, results, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                
-                var samples: [StepSample] = []
-                results?.enumerateStatistics(from: start, to: end) { statistics, _ in
-                    if let sum = statistics.sumQuantity() {
-                        samples.append(StepSample(
-                            date: statistics.startDate,
-                            steps: Int(sum.doubleValue(for: HKUnit.count()))
-                        ))
-                    }
-                }
-                
-                continuation.resume(returning: samples)
-            }
-            
-            healthStore.execute(query)
+        guard let stepsType = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return [] }
+        return try await fetchDailyStatistics(type: stepsType, start: start, end: end, unit: .count()) {
+            StepSample(date: $0.startDate, steps: Int($1.doubleValue(for: .count())))
         }
     }
     
     private func fetchRestingHeartRate(start: Date, end: Date) async throws -> [RestingHRSample] {
-        guard let restingHRType = HKQuantityType.quantityType(forIdentifier: .restingHeartRate) else {
-            return []
-        }
-        
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
-        
-        return try await withCheckedThrowingContinuation { continuation in
-            let query = HKSampleQuery(sampleType: restingHRType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                
-                let hrSamples = (samples as? [HKQuantitySample])?.map { sample in
-                    RestingHRSample(
-                        date: sample.startDate,
-                        bpm: Int(sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute())))
-                    )
-                } ?? []
-                
-                continuation.resume(returning: hrSamples)
-            }
-            healthStore.execute(query)
+        guard let restingHRType = HKQuantityType.quantityType(forIdentifier: .restingHeartRate) else { return [] }
+        return try await fetchSamples(type: restingHRType, start: start, end: end).map {
+            RestingHRSample(date: $0.startDate, bpm: Int($0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))))
         }
     }
     
     private func fetchActiveEnergy(start: Date, end: Date) async throws -> [ActiveEnergySample] {
-        guard let activeEnergyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else {
-            return []
+        guard let activeEnergyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else { return [] }
+        return try await fetchDailyStatistics(type: activeEnergyType, start: start, end: end, unit: .kilocalorie()) {
+            ActiveEnergySample(date: $0.startDate, calories: Int($1.doubleValue(for: .kilocalorie())))
         }
-        
+    }
+    
+    // MARK: - Generic HealthKit Helpers
+    
+    private func fetchSamples(type: HKSampleType, start: Date, end: Date) async throws -> [HKQuantitySample] {
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
-        
         return try await withCheckedThrowingContinuation { continuation in
-            let query = HKStatisticsCollectionQuery(
-                quantityType: activeEnergyType,
-                quantitySamplePredicate: predicate,
-                options: .cumulativeSum,
-                anchorDate: start,
-                intervalComponents: DateComponents(day: 1)
-            )
-            
-            query.initialResultsHandler = { _, results, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                
-                var samples: [ActiveEnergySample] = []
-                results?.enumerateStatistics(from: start, to: end) { statistics, _ in
-                    if let sum = statistics.sumQuantity() {
-                        samples.append(ActiveEnergySample(
-                            date: statistics.startDate,
-                            calories: Int(sum.doubleValue(for: HKUnit.kilocalorie()))
-                        ))
-                    }
-                }
-                
-                continuation.resume(returning: samples)
+            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+                if let error = error { continuation.resume(throwing: error); return }
+                continuation.resume(returning: (samples as? [HKQuantitySample]) ?? [])
             }
-            
             healthStore.execute(query)
         }
     }
     
-    private func processAppleHealthData(
-        hrv: [HRVSample],
-        sleep: [SleepAnalysisSample],
-        steps: [StepSample],
-        restingHR: [RestingHRSample],
-        activeEnergy: [ActiveEnergySample]
-    ) async throws {
-        // Group by date and save
+    // Updated to align with Day Boundaries for correct daily totals
+    private func fetchDailyStatistics<T>(type: HKQuantityType, start: Date, end: Date, unit: HKUnit, transform: @escaping (HKStatistics, HKQuantity) -> T) async throws -> [T] {
         let calendar = Calendar.current
-        var dataByDate: [Date: (steps: Int?, restingHR: Int?, activeCalories: Int?, hrv: Double?)] = [:]
+        // Anchor to Midnight to ensure daily buckets are 00:00 - 23:59
+        let anchorDate = calendar.startOfDay(for: start)
         
-        // Group steps by date
-        for sample in steps {
-            let date = calendar.startOfDay(for: sample.date)
-            var existing = dataByDate[date] ?? (nil, nil, nil, nil)
-            existing.steps = sample.steps
-            dataByDate[date] = existing
-        }
-        
-        // Group resting HR by date
-        for sample in restingHR {
-            let date = calendar.startOfDay(for: sample.date)
-            var existing = dataByDate[date] ?? (nil, nil, nil, nil)
-            existing.restingHR = sample.bpm
-            dataByDate[date] = existing
-        }
-        
-        // Group active energy by date
-        for sample in activeEnergy {
-            let date = calendar.startOfDay(for: sample.date)
-            var existing = dataByDate[date] ?? (nil, nil, nil, nil)
-            existing.activeCalories = sample.calories
-            dataByDate[date] = existing
-        }
-        
-        // Group HRV by date (take average for the day)
-        var hrvByDate: [Date: [Double]] = [:]
-        for sample in hrv {
-            let date = calendar.startOfDay(for: sample.date)
-            hrvByDate[date, default: []].append(sample.value)
-        }
-        for (date, values) in hrvByDate {
-            var existing = dataByDate[date] ?? (nil, nil, nil, nil)
-            existing.hrv = values.reduce(0, +) / Double(values.count)
-            dataByDate[date] = existing
-        }
-        
-        // Save wellness metrics
-        for (date, data) in dataByDate {
-            let wellness = WellnessMetrics(
-                date: date,
-                steps: data.steps,
-                activeCalories: data.activeCalories,
-                distance: nil,
-                averageHR: nil,
-                restingHR: data.restingHR,
-                source: .appleHealth
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKStatisticsCollectionQuery(
+                quantityType: type,
+                quantitySamplePredicate: predicate,
+                options: .cumulativeSum,
+                anchorDate: anchorDate, // ✅ Fixed anchor
+                intervalComponents: DateComponents(day: 1)
             )
-            try await saveWellnessMetrics(wellness)
-        }
-        
-        // Process sleep data
-        for sample in sleep {
-            let duration = sample.endDate.timeIntervalSince(sample.startDate)
-            
-            // Map HKCategoryValueSleepAnalysis to sleep stages
-            var deepSleep: TimeInterval = 0
-            var lightSleep: TimeInterval = 0
-            var remSleep: TimeInterval = 0
-            var awake: TimeInterval = 0
-            
-            switch sample.value {
-            case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
-                deepSleep = duration
-            case HKCategoryValueSleepAnalysis.asleepCore.rawValue,
-                 HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue:
-                lightSleep = duration
-            case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
-                remSleep = duration
-            case HKCategoryValueSleepAnalysis.awake.rawValue:
-                awake = duration
-            default:
-                break
+            query.initialResultsHandler = { _, results, error in
+                if let error = error { continuation.resume(throwing: error); return }
+                var samples: [T] = []
+                results?.enumerateStatistics(from: start, to: end) { statistics, _ in
+                    if let sum = statistics.sumQuantity() {
+                        samples.append(transform(statistics, sum))
+                    }
+                }
+                continuation.resume(returning: samples)
             }
-            
-            let sleepData = SleepData(
-                date: calendar.startOfDay(for: sample.startDate),
-                totalDuration: duration,
-                deepSleep: deepSleep,
-                lightSleep: lightSleep,
-                remSleep: remSleep,
-                awake: awake,
-                source: .appleHealth
-            )
-            
-            try await saveSleepData(sleepData)
+            healthStore.execute(query)
         }
     }
-    
-    // MARK: - Storage Methods (implement based on your data persistence layer)
-    private func saveWellnessMetrics(_ metrics: WellnessMetrics) async throws {
-        // TODO: Save to your local database/CoreData/SwiftData
-        print("💾 Saving wellness metrics for \(metrics.date)")
-    }
-    
-    private func saveSleepData(_ data: SleepData) async throws {
-        // TODO: Save to your local database
-        print("💾 Saving sleep data for \(data.date)")
-    }
-    
-    private func saveStressData(_ data: StressData) async throws {
-        // TODO: Save to your local database
-        print("💾 Saving stress data for \(data.date)")
-    }
 }
 
-// MARK: - Models
-struct WellnessMetrics {
-    let date: Date
-    let steps: Int?
-    let activeCalories: Int?
-    let distance: Double?
-    let averageHR: Int?
-    let restingHR: Int?
-    let source: DataSource
-}
-
-struct SleepData {
-    let date: Date
-    let totalDuration: TimeInterval
-    let deepSleep: TimeInterval
-    let lightSleep: TimeInterval
-    let remSleep: TimeInterval
-    let awake: TimeInterval
-    let source: DataSource
-}
-
-struct StressData {
-    let date: Date
-    let averageStress: Int?
-    let maxStress: Int?
-    let restDuration: TimeInterval
-    let lowDuration: TimeInterval
-    let mediumDuration: TimeInterval
-    let highDuration: TimeInterval
-    let source: DataSource
-}
-
-// Apple Health Sample Types
-struct HRVSample {
-    let date: Date
-    let value: Double
-}
+// MARK: - Helper Structs
+struct HRVSample { let date: Date; let value: Double }
 
 struct SleepAnalysisSample {
     let startDate: Date
     let endDate: Date
     let value: Int
+    let sourceBundleId: String
 }
 
-struct StepSample {
-    let date: Date
-    let steps: Int
-}
-
-struct RestingHRSample {
-    let date: Date
-    let bpm: Int
-}
-
-struct ActiveEnergySample {
-    let date: Date
-    let calories: Int
-}
+struct StepSample { let date: Date; let steps: Int }
+struct RestingHRSample { let date: Date; let bpm: Int }
+struct ActiveEnergySample { let date: Date; let calories: Int }
+struct BodyMassSample { let date: Date; let value: Double }
 
 enum WellnessError: Error {
     case unsupportedSource

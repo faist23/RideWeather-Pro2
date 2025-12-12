@@ -99,8 +99,19 @@ struct GarminActivityImportView: View {
     private func loadActivities() async {
         isLoading = true
         errorMessage = nil
+  
+        //----------------------------
+        print("📥 GarminActivityImportView: Testing endpoints...")
         
-        print("📥 GarminActivityImportView: Starting to load activities...")
+        // ✅ Add this line to test
+        await garminService.testActivityEndpoints()
+        
+        isLoading = false
+    }
+    //------------------------
+    
+    
+/*        print("📥 GarminActivityImportView: Starting to load activities...")
         
         do {
             activities = try await garminService.fetchRecentActivities(limit: 50)
@@ -120,7 +131,7 @@ struct GarminActivityImportView: View {
         }
         
         isLoading = false
-    }
+    }*/
     
     private func importActivity(_ activity: GarminActivitySummary) async {
         isLoading = true
