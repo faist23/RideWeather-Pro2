@@ -3,7 +3,7 @@
 //  RideWeather Pro
 //
 //  Manager for calculating and persisting training load metrics
-//  UPDATED: Now uses file-based storage instead of UserDefaults
+//  Uses file-based storage instead of UserDefaults
 //
 
 import Foundation
@@ -577,7 +577,7 @@ extension TrainingLoadManager {
         
         dailyLoads.sort { $0.date < $1.date }
         
-        // ADD THIS: Recalculate metrics after updating
+        // Recalculate metrics after updating
         let updatedLoads = recalculateMetrics(for: dailyLoads)
         saveDailyLoads(updatedLoads)
     }

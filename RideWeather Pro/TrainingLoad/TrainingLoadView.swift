@@ -16,7 +16,7 @@ struct TrainingLoadView: View {
     @StateObject private var wellnessManager = WellnessManager.shared
     @StateObject private var aiInsightsManager = AIInsightsManager()
     
-    // ✅ Observe DataSourceManager to show current sources
+    // Observe DataSourceManager to show current sources
     @ObservedObject private var dataSourceManager = DataSourceManager.shared
     
     @EnvironmentObject private var stravaService: StravaService
@@ -310,7 +310,7 @@ struct TrainingLoadView: View {
                 trainingSync.loadSyncDate()
                 wellnessSync.loadSyncDate()
                 
-                // FIX: Force reload data from disk on appear to fix stale charts
+                // Force reload data from disk on appear to fix stale charts
                 viewModel.refresh(readiness: healthManager.readiness)
                 viewModel.loadPeriod(selectedPeriod, forceReload: true)
                 

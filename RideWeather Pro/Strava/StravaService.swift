@@ -82,12 +82,12 @@ struct StravaActivity: Codable, Identifiable {
         return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
     }
 
-    // 🔥 NEW: Stopped time helper
+    // Stopped time helper
     var stoppedTime: Int {
         return elapsed_time - moving_time
     }
     
-    // 🔥 NEW: Has significant stops?
+    // Has significant stops?
     var hasSignificantStops: Bool {
         return stoppedTime > 60  // More than 1 minute
     }
@@ -434,7 +434,6 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                     print("StravaService: Refresh Token Response (\(validHttpResponse.statusCode)): \(responseString)")
                 }
                 
-                // --- FIX IS HERE (Line 398 area) ---
                 // Use the captured validHttpResponse.statusCode consistently
                 guard validHttpResponse.statusCode == 200 else {
                     self.errorMessage = "Token refresh failed: Status \(validHttpResponse.statusCode)" // Use captured variable
@@ -445,9 +444,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                     completion(.failure(error))
                     return
                 }
-                
-                // --- END UPDATED GUARD ---
-                
+                                
                 if let responseString = String(data: data, encoding: .utf8) {
                     // --- UPDATED LOGGING --- Use the captured validHttpResponse.statusCode
                     print("StravaService: Refresh Token Response (\(validHttpResponse.statusCode)): \(responseString)")
@@ -992,7 +989,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                 throw StravaError.notAuthenticated
             }
             
-            // ✅ CHANGED: Added "altitude" to request
+            // Added "altitude" to request
             let streamTypes = ["time", "distance", "latlng", "moving", "altitude"]
             
             var components = URLComponents(string: "https://www.strava.com/api/v3/activities/\(activityId)/streams")!
@@ -1020,8 +1017,6 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             }
             
             let streams = try JSONDecoder().decode(StravaStreams.self, from: data)
-
-            // ✅ ALL LOGIC BELOW IS REVISED
             
             guard let timeData = streams.time?.data, !timeData.isEmpty,
                   let latlngData = streams.latlng?.data,
