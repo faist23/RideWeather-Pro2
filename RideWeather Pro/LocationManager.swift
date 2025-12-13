@@ -31,7 +31,7 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         print("[LocationManager] Initialized with optimized settings.")
     }
 
-    // CORRECTED: Use DispatchQueue to safely clean up the non-Sendable Timer
+    // Use DispatchQueue to safely clean up the non-Sendable Timer
     deinit {
         // Explicitly capture the resources that need main-thread cleanup
         let manager = self.manager

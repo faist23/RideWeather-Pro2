@@ -64,7 +64,6 @@ struct WahooRouteImportView: View {
     
     private var activitiesList: some View {
         List {
-            // ... (your existing activity count Section) ...
             Section {
                 HStack {
                     Image(systemName: "figure.outdoor.cycle")
@@ -201,7 +200,7 @@ class WahooActivitiesImportViewModel: ObservableObject {
         Task {
             do {
                 // This already filters for workout_type_id=0 (Cycling)
-                let response = try await service.fetchRecentWorkouts(page: self.currentPage, perPage: perPage) // <-- Fetch page 0
+                let response = try await service.fetchRecentWorkouts(page: self.currentPage, perPage: perPage) // Fetch page 0
                 let allActivities = response.workouts
                 
                 let filteredActivities = allActivities.filter {
@@ -210,7 +209,7 @@ class WahooActivitiesImportViewModel: ObservableObject {
                 }
 
                 await MainActor.run {
-                    self.activities = filteredActivities // <-- Use filtered list
+                    self.activities = filteredActivities // Use filtered list
                     if let total = response.total, let p = response.page, let pp = response.perPage, total > 0, pp > 0 {
                         self.hasMorePages = (p + 1) * pp < total
                     } else {
@@ -250,7 +249,7 @@ class WahooActivitiesImportViewModel: ObservableObject {
                 }
 
                 await MainActor.run {
-                    self.activities.append(contentsOf: filteredActivities) // <-- Use filtered list
+                    self.activities.append(contentsOf: filteredActivities) // Use filtered list
                     if let total = response.total, let p = response.page, let pp = response.perPage, total > 0, pp > 0 {
                         self.hasMorePages = (p + 1) * pp < total
                     } else {
@@ -323,7 +322,4 @@ class WahooActivitiesImportViewModel: ObservableObject {
         }
     }
 }
-
-// NOTE: WahooActivityRow and InfoRow are intentionally omitted
-// as they are correctly defined in WahooActivitiesView.swift
 

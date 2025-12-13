@@ -21,7 +21,7 @@ struct AppSettings: Codable, Equatable {
     // NEW: Speed calculation method
     var speedCalculationMethod: SpeedCalculationMethod = .averageSpeed
     
-    // NEW: Power-based analysis settings (only used when speedCalculationMethod == .powerBased)
+    // Power-based analysis settings (only used when speedCalculationMethod == .powerBased)
     var functionalThresholdPower: Int = 200 // watts
     var bodyWeight: Double = 70.0 // kg (always stored in kg internally)
     var bikeAndEquipmentWeight: Double = 10.0 // kg (always stored in kg internally)

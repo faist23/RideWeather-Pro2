@@ -381,7 +381,7 @@ final class PacingEngine {
             targetPower = terrainPower
             print("   ⚖️ BALANCED: Applying base terrain logic.")
 
-        // ✅ NEW HIERARCHICAL & MULTI-PHASE AGGRESSIVE STRATEGY
+        // HIERARCHICAL & MULTI-PHASE AGGRESSIVE STRATEGY
         case .aggressive:
             let racePaceMultiplier: Double
             if rideProgress < 0.20 {
@@ -409,7 +409,7 @@ final class PacingEngine {
             targetPower = terrainPower * negativeSplitMultiplier
             print(String(format: "   📈 NEGATIVE SPLIT: Applying time-based multiplier of %.3fx to terrain power.", negativeSplitMultiplier))
             
-        // ✅ CORRECTED EVEN EFFORT STRATEGY
+        // EVEN EFFORT STRATEGY
         case .evenEffort:
             // This strategy IGNORES the standard terrain logic and works directly on the fatigued baseline.
             // It aims for constant physiological stress, meaning MORE power on climbs and LESS on descents.

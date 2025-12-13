@@ -1,6 +1,8 @@
-
 //
 //  WeatherRepository.swift
+//  RideWeather Pro
+//
+//  Created by Craig Faist on 8/16/25.
 //
 
 import Foundation
@@ -38,12 +40,12 @@ struct WeatherRepository {
     }
     
     
-    // NEW: Air pollution fetching - delegates to service layer
+    // Air pollution fetching - delegates to service layer
     func fetchAirPollution(lat: Double, lon: Double) async throws -> AirPollutionResponse {
         return try await service.fetchAirPollution(lat: lat, lon: lon)
     }
     
-    // NEW: Fetch complete weather data including air pollution
+    // Fetch complete weather data including air pollution
     func fetchCompleteWeatherData(for location: CLLocation, units: String) async throws -> CompleteWeatherData {
         async let currentWeather = service.fetchCurrentWeather(
             lat: location.coordinate.latitude,
