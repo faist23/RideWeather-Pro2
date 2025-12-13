@@ -161,7 +161,7 @@ struct DetailedPacingPlanView: View {
 struct PacingPlanHeaderView: View {
     let pacing: PacingPlan
     let settings: AppSettings
-    let energy: EnergyExpenditure?  // Add this parameter
+    let energy: EnergyExpenditure?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -573,7 +573,7 @@ struct SegmentDetailRow: View {
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
     }
     
-    // ✅ ADDED: Helper function to calculate and format segment speed
+    // Helper function to calculate and format segment speed
     private func formattedSpeed() -> String {
         guard segment.estimatedTimeMinutes > 0 else { return "N/A" }
         let speedKph = segment.distanceKm / (segment.estimatedTimeMinutes / 60.0)
@@ -586,7 +586,7 @@ struct SegmentDetailRow: View {
         }
     }
     
-    // ✅ ADDED: Helper function to format distance for consistency
+    // Helper function to format distance for consistency
     private func formatDistance(_ distanceKm: Double) -> String {
         if settings.units == .metric {
             return String(format: "%.2f km", distanceKm)
@@ -596,7 +596,7 @@ struct SegmentDetailRow: View {
         }
     }
     
-    // ✅ CHANGED: Renamed from formattedHeadwindSpeed to be more generic
+    // Renamed from formattedHeadwindSpeed to be more generic
     private func formattedWindSpeed(windMps: Double) -> String {
         let absWindMps = abs(windMps)
         let unitSystem = settings.units

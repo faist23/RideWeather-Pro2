@@ -1,6 +1,8 @@
 //
-// MainView.swift
+//  MainView.swift
+//  RideWeather Pro
 //
+
 
 import SwiftUI
 import MapKit
@@ -8,7 +10,7 @@ import CoreLocation
 
 struct MainView: View {
     @StateObject private var viewModel = WeatherViewModel()
-    // ✅ OBSERVE THE DATA SOURCE MANAGER
+    // OBSERVE THE DATA SOURCE MANAGER
     @ObservedObject private var dataSourceManager = DataSourceManager.shared
     
     @State private var selectedTab = 0
@@ -16,7 +18,7 @@ struct MainView: View {
     @EnvironmentObject var wahooService: WahooService // Inherited from App
     
     var body: some View {
-        ZStack(alignment: .topTrailing) { // ✅ WRAP IN ZSTACK
+        ZStack(alignment: .topTrailing) { // WRAP IN ZSTACK
             TabView(selection: $selectedTab) {
                 LiveWeatherView()
                     .environmentObject(viewModel)
@@ -108,7 +110,7 @@ struct MainView: View {
     }
 }
 
-// ✅ NEW SUBVIEW FOR THE BADGE
+// SUBVIEW FOR THE BADGE
 struct DataSourceBadge: View {
     let source: DataSourceConfiguration.TrainingLoadSource
     

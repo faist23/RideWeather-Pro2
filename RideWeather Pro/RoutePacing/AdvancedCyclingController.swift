@@ -40,7 +40,7 @@ final class AdvancedCyclingController: ObservableObject {
         strategy: PacingStrategy = .balanced,
         fuelingPreferences: FuelingPreferences = FuelingPreferences(),
         startTime: Date = Date().addingTimeInterval(7200), // 2 hours from now
-        routeName: String = "My Route"  // ✅ ADD THIS PARAMETER
+        routeName: String = "My Route"
     ) async {
         
         isGeneratingPlan = true
@@ -66,8 +66,8 @@ final class AdvancedCyclingController: ObservableObject {
             preferences: fuelingPreferences
         )
         
-        // ✅ SAVE THE PLAN AUTOMATICALLY
-        self.savePacingPlan(pacing, routeName: routeName)  // FIX: Use 'self' and pass routeName
+        // SAVE THE PLAN AUTOMATICALLY
+        self.savePacingPlan(pacing, routeName: routeName)  // Use 'self' and pass routeName
         
         // Update published properties
         self.pacingPlan = pacing
@@ -361,7 +361,7 @@ extension AdvancedCyclingController {
         
         let planWrapper = StoredPacingPlan(
             id: UUID(),
-            routeName: "\(routeName) (\(strategyAbbrev))",  // ✅ Strategy appended here
+            routeName: "\(routeName) (\(strategyAbbrev))",  // Strategy appended here
             plan: plan,
             createdDate: Date()
         )

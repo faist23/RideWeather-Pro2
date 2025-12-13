@@ -47,7 +47,7 @@ struct ModernRouteBottomControlsView: View {
                 .controlSize(.large)
                 .scaleEffect(importButtonPressed ? 0.95 : 1.0)
                 .tint(getImportButtonColor())
-                .disabled(viewModel.isLoading) // ✅ ADDED: Disable the button while parsing
+                .disabled(viewModel.isLoading) // Disable the button while parsing
 
                 Button {
                     showingSettings = true
@@ -57,7 +57,7 @@ struct ModernRouteBottomControlsView: View {
                 }
                 .buttonStyle(.bordered)
                 .frame(width: 56, height: 56)
-                .disabled(viewModel.isLoading) // ✅ ADDED: Also disable settings while parsing
+                .disabled(viewModel.isLoading) // Also disable settings while parsing
  
                 // This VStack will stack Strava and Wahoo buttons if both are connected
                 VStack(spacing: 8) {
@@ -85,7 +85,7 @@ struct ModernRouteBottomControlsView: View {
                     
                     if wahooService.isAuthenticated {
                         Button {
-                            showingWahooImport = true // ✅ Point to new state var
+                            showingWahooImport = true // Point to new state var
                         } label: {
                             HStack(spacing: 8) {
                                 Image("wahoo_logo") // Wahoo icon
@@ -150,7 +150,7 @@ struct ModernRouteBottomControlsView: View {
     
     // MARK: - Import Button Label
     
-    // ✅ ADDED: This new ViewBuilder creates the correct button label based on the current UI state.
+    // his new ViewBuilder creates the correct button label based on the current UI state.
     @ViewBuilder
     private var importButtonLabel: some View {
         // When the state is .parsing, show a progress indicator.

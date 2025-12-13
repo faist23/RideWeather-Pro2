@@ -102,7 +102,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             URLQueryItem(name: "redirect_uri", value: redirectUri),
             URLQueryItem(name: "code_challenge", value: pkce.challenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
-            URLQueryItem(name: "scope", value: "WELLNESS_READ ACTIVITY_READ")
+            URLQueryItem(name: "scope", value: "HEALTH_READ ACTIVITY_READ")
        ]
         
         guard let authURL = components.url else { return }
@@ -240,6 +240,8 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                 }
             }
         }.resume()
+        
+        self.debugTokenScopes() // debug
     }
     
     func refreshTokenIfNeeded(completion: @escaping (Result<Void, Error>) -> Void) {
@@ -1698,4 +1700,283 @@ struct GarminActivitySample: Codable {
     let power: Double?
     let speed: Double?
     let cadence: Int?
+}
+
+
+//
+//  Add this extension to GarminService.swift
+//  This manually pulls wellness data from Garmin and saves to Supabase
+//
+
+extension GarminService {
+    
+    /// Manually sync wellness data using Health API (not Wellness API)
+    func manualWellnessSync(appUserId: String, days: Int = 7) async throws {
+        print("\n🔄 MANUAL GARMIN HEALTH API SYNC")
+        print(String(repeating: "=", count: 50))
+        
+        try await refreshTokenIfNeededAsync()
+        
+        guard let token = currentTokens?.accessToken else {
+            throw GarminError.notAuthenticated
+        }
+        
+        // Get Garmin user ID
+        guard let garminUserId = try await fetchGarminUserId() else {
+            print("❌ Could not get Garmin user ID")
+            throw GarminError.apiError(statusCode: 0, message: "No Garmin user ID")
+        }
+        
+        print("✅ Garmin User ID: \(garminUserId)")
+        print("📅 Syncing last \(days) days using Health API...")
+        
+        let calendar = Calendar.current
+        let endDate = Date()
+        let startDate = calendar.date(byAdding: .day, value: -days, to: endDate)!
+        
+        // Health API uses date strings, not timestamps
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        
+        var allDailies: [GarminDailySummary] = []
+        var allSleep: [GarminSleepData] = []
+        
+        // Fetch data day by day
+        var currentDate = startDate
+        while currentDate <= endDate {
+            let dateString = dateFormatter.string(from: currentDate)
+            print("\n📥 Fetching \(dateString)...")
+            
+            // Fetch daily summary
+            if let daily = try await fetchDailySummaryHealthAPI(date: dateString, token: token) {
+                allDailies.append(daily)
+                print("   ✅ Daily: \(daily.steps ?? 0) steps")
+            } else {
+                print("   ⚠️ No daily data")
+            }
+            
+            // Fetch sleep data
+            if let sleep = try await fetchSleepHealthAPI(date: dateString, token: token) {
+                allSleep.append(sleep)
+                let totalHours = Double(sleep.sleepTimeSeconds ?? 0) / 3600
+                print("   ✅ Sleep: \(String(format: "%.1f", totalHours))h")
+            } else {
+                print("   ⚠️ No sleep data")
+            }
+            
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s delay
+        }
+        
+        print("\n✅ Fetched from Garmin Health API:")
+        print("   - Daily summaries: \(allDailies.count)")
+        print("   - Sleep records: \(allSleep.count)")
+        
+        // Save to Supabase
+        let wellnessService = WellnessDataService()
+        
+        print("\n💾 Saving to Supabase...")
+        
+        // Save dailies
+        for daily in allDailies {
+            do {
+                try await wellnessService.saveDailySummary(
+                    appUserId: appUserId,
+                    garminUserId: garminUserId,
+                    summary: daily
+                )
+                print("   ✅ Saved daily: \(daily.calendarDate)")
+            } catch {
+                print("   ❌ Failed to save daily \(daily.calendarDate): \(error)")
+            }
+        }
+        
+        // Save sleep
+        for sleep in allSleep {
+            do {
+                try await wellnessService.saveSleepData(
+                    appUserId: appUserId,
+                    garminUserId: garminUserId,
+                    sleep: sleep
+                )
+                print("   ✅ Saved sleep: \(sleep.calendarDate)")
+            } catch {
+                print("   ❌ Failed to save sleep \(sleep.calendarDate): \(error)")
+            }
+        }
+        
+        print("\n✅ MANUAL SYNC COMPLETE")
+        print(String(repeating: "=", count: 50))
+    }
+    
+    // MARK: - Health API Endpoints
+    
+    /// Fetch daily summary using Health API
+    private func fetchDailySummaryHealthAPI(date: String, token: String) async throws -> GarminDailySummary? {
+        // Health API endpoint format: /api/health/v1/user/summaries/{date}
+        let urlString = "https://apis.garmin.com/api/health/v1/user/summaries/\(date)"
+        
+        guard let url = URL(string: urlString) else {
+            throw GarminError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        print("   📡 Health API: \(urlString)")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GarminError.invalidResponse
+        }
+        
+        print("   Response: \(httpResponse.statusCode)")
+        
+        guard httpResponse.statusCode == 200 else {
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("   Error: \(responseString)")
+            }
+            return nil // No data for this date
+        }
+        
+        // Parse Health API response
+        struct HealthAPIDailySummary: Codable {
+            let summaryDate: String?
+            let totalSteps: Int?
+            let totalDistanceMeters: Int?
+            let activeTimeSeconds: Int?
+            let activeKilocalories: Int?
+            let bmrKilocalories: Int?
+            let restingHeartRate: Int?
+            
+            enum CodingKeys: String, CodingKey {
+                case summaryDate, totalSteps, totalDistanceMeters, activeTimeSeconds,
+                     activeKilocalories, bmrKilocalories, restingHeartRate
+            }
+        }
+        
+        let decoder = JSONDecoder()
+        let healthSummary = try decoder.decode(HealthAPIDailySummary.self, from: data)
+        
+        // Convert to our format
+        return GarminDailySummary(
+            calendarDate: healthSummary.summaryDate ?? date,
+            steps: healthSummary.totalSteps,
+            distanceInMeters: healthSummary.totalDistanceMeters,
+            activeTimeInSeconds: healthSummary.activeTimeSeconds,
+            activeKilocalories: healthSummary.activeKilocalories,
+            bmrKilocalories: healthSummary.bmrKilocalories,
+            stressLevel: nil,
+            bodyBatteryChargedValue: nil,
+            bodyBatteryDrainedValue: nil,
+            bodyBatteryHighestValue: nil,
+            bodyBatteryLowestValue: nil,
+            restingHeartRate: healthSummary.restingHeartRate,
+            hrVariability: nil
+        )
+    }
+    
+    /// Fetch sleep data using Health API
+    private func fetchSleepHealthAPI(date: String, token: String) async throws -> GarminSleepData? {
+        // Health API endpoint: /api/health/v1/user/sleeps/{date}
+        let urlString = "https://apis.garmin.com/api/health/v1/user/sleeps/\(date)"
+        
+        guard let url = URL(string: urlString) else {
+            throw GarminError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        print("   📡 Health API: \(urlString)")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GarminError.invalidResponse
+        }
+        
+        print("   Response: \(httpResponse.statusCode)")
+        
+        guard httpResponse.statusCode == 200 else {
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("   Error: \(responseString)")
+            }
+            return nil // No data for this date
+        }
+        
+        // Parse Health API response
+        struct HealthAPISleep: Codable {
+            let sleepDate: String?
+            let totalSleepSeconds: Int?
+            let deepSleepSeconds: Int?
+            let lightSleepSeconds: Int?
+            let remSleepSeconds: Int?
+            let awakeSleepSeconds: Int?
+            
+            enum CodingKeys: String, CodingKey {
+                case sleepDate, totalSleepSeconds, deepSleepSeconds, lightSleepSeconds,
+                     remSleepSeconds, awakeSleepSeconds
+            }
+        }
+        
+        let decoder = JSONDecoder()
+        let healthSleep = try decoder.decode(HealthAPISleep.self, from: data)
+        
+        // Convert to our format
+        return GarminSleepData(
+            calendarDate: healthSleep.sleepDate ?? date,
+            sleepTimeSeconds: healthSleep.totalSleepSeconds,
+            deepSleepSeconds: healthSleep.deepSleepSeconds,
+            lightSleepSeconds: healthSleep.lightSleepSeconds,
+            remSleepSeconds: healthSleep.remSleepSeconds,
+            awakeSleepSeconds: healthSleep.awakeSleepSeconds,
+            sleepQualityScore: nil
+        )
+    }
+}
+
+extension GarminService {
+    /// Debug function to check what scopes the current token has
+    func debugTokenScopes() {
+        guard let tokens = currentTokens else {
+            print("❌ No token available")
+            return
+        }
+        
+        print("\n🔍 TOKEN DEBUG INFO:")
+        print("   Access Token: \(tokens.accessToken.prefix(20))...")
+        print("   Expires: \(Date(timeIntervalSince1970: tokens.expiresAt))")
+        
+        // Decode JWT to see scopes (if token is JWT format)
+        let parts = tokens.accessToken.components(separatedBy: ".")
+        if parts.count == 3, let payloadData = base64UrlDecode(parts[1]) {
+            if let json = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any] {
+                print("   Token Payload:")
+                if let scope = json["scope"] as? String {
+                    print("   ✅ Scopes: \(scope)")
+                } else if let scopes = json["scopes"] as? [String] {
+                    print("   ✅ Scopes: \(scopes.joined(separator: ", "))")
+                } else {
+                    print("   ⚠️ No scope field found in token")
+                }
+            }
+        }
+    }
+    
+    private func base64UrlDecode(_ value: String) -> Data? {
+        var base64 = value
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        
+        let length = Double(base64.lengthOfBytes(using: .utf8))
+        let requiredLength = 4 * ceil(length / 4.0)
+        let paddingLength = requiredLength - length
+        if paddingLength > 0 {
+            let padding = "".padding(toLength: Int(paddingLength), withPad: "=", startingAt: 0)
+            base64 += padding
+        }
+        return Data(base64Encoded: base64)
+    }
 }

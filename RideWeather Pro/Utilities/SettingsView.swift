@@ -98,14 +98,14 @@ struct SettingsView: View {
                     HStack {
                         Text("Training Data")
                         Spacer()
-                        Text(trainingStorageText) // ✅ Use State
+                        Text(trainingStorageText) // Use State
                             .foregroundStyle(.secondary)
                     }
                     
                     HStack {
                         Text("Wellness Data")
                         Spacer()
-                        Text(wellnessStorageText) // ✅ Use State
+                        Text(wellnessStorageText) // Use State
                             .foregroundStyle(.secondary)
                     }
                     
@@ -121,7 +121,7 @@ struct SettingsView: View {
                         
                         print("🗑️ Cleared all training and wellness data")
                         
-                        // 3. ✅ Force UI Update Immediately
+                        // 3. Force UI Update Immediately
                         updateStorageInfo()
                         
                         // 4. Notify other views
@@ -170,7 +170,7 @@ struct SettingsView: View {
                 }
             }
             .onAppear {
-                // ✅ Update storage text
+                // Update storage text
                 updateStorageInfo()
                 
                 // Auto-configure data sources on first launch if needed
@@ -376,6 +376,7 @@ struct SettingsView: View {
             }
         }
     }
+    
     // MARK: - UI Helpers
     
     private func updateStorageInfo() {
@@ -497,7 +498,7 @@ struct RouteSettingsView: View {
             }
             
             Section("Elevation") {
-                // FIXED: Logic to force elevation ON when power-based
+                // Logic to force elevation ON when power-based
                 Toggle("Consider Elevation", isOn: Binding(
                     get: {
                         settings.speedCalculationMethod == .powerBased ? true : settings.considerElevation
@@ -596,14 +597,26 @@ struct IntegrationsSettingsView: View {
             Section {
                 if healthManager.isAuthorized {
                     HStack {
-                        Label("Connected to Health", systemImage: "heart.fill")
-                            .foregroundStyle(.red)
-                        Spacer()
-                        Button("Refresh") {
-                            Task { await healthManager.fetchReadinessData() }
+                        Image(systemName: "heart.fill")
+ //                           .resizable()
+ //                           .scaledToFit()
+                            .frame(width: 35, height: 35)
+                            .foregroundColor(.red)
+                        
+                        VStack(alignment: .leading) {
+                            Text("Apple Health")
+                                .font(.headline)
+                            Text("Connected")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        .font(.caption)
-                        .buttonStyle(.bordered)
+                        
+                        Spacer()
+                        
+                        Button("Disconnect", role: .destructive) {
+                            healthManager.disconnect()
+                        }
+                        .buttonStyle(.borderless)
                     }
                 } else {
                     Button {
@@ -628,17 +641,7 @@ struct IntegrationsSettingsView: View {
             } header: {
                 Text("Apple Health")
             } footer: {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("What This Enables:")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                    
-                    Text("• Readiness insights from HRV, Resting HR, and Sleep data")
-                    Text("• Automatic body weight sync for power calculations")
-                    Text("• Training load tracking from workouts")
-                    Text("• Recovery recommendations based on wellness metrics")
-                }
-                .font(.caption)
+                Text("Syncs HRV, Resting HR, and Sleep for readiness insights.")
             }
             
             // ==================================================================
@@ -683,7 +686,7 @@ struct IntegrationsSettingsView: View {
             } header: {
                 Text("Strava")
             } footer: {
-                // ✅ Enhanced description
+                // Enhanced description
                 VStack(alignment: .leading, spacing: 8) {
                     Text("What This Enables:")
                         .font(.caption)
@@ -724,9 +727,9 @@ struct IntegrationsSettingsView: View {
                                  .font(.caption)
                                  .foregroundStyle(.secondary)
                          }
-                     } else if !garminPermissions.isEmpty {
+                     } /* else if !garminPermissions.isEmpty {
                          VStack(alignment: .leading, spacing: 8) {
-/*                             Text("Permissions:")
+                             Text("Permissions:")
                                  .font(.caption)
                                  .foregroundStyle(.secondary)
                              
@@ -739,10 +742,10 @@ struct IntegrationsSettingsView: View {
                                          .font(.caption2)
                                          .foregroundStyle(.secondary)
                                  }
-                             }*/
+                             }
                          }
                          .padding(.vertical, 4)
-                     }
+                     }*/
                      
                  } else {
                      Button {
@@ -757,6 +760,7 @@ struct IntegrationsSettingsView: View {
                              
                              Text("Connect with Garmin")
                          }
+                         
                      }
                  }
                  
@@ -766,7 +770,7 @@ struct IntegrationsSettingsView: View {
              } header: {
                  Text("Garmin")
              } footer: {
-                 // ✅ Enhanced description explaining what actually works
+                 // Enhanced description explaining what actually works
                  VStack(alignment: .leading, spacing: 8) {
                      Text("What This Enables:")
                          .font(.caption)
@@ -826,13 +830,13 @@ struct IntegrationsSettingsView: View {
              } header: {
                  Text("Wahoo")
              } footer: {
-                 // ✅ Enhanced description
+                 // Enhanced description
                  VStack(alignment: .leading, spacing: 8) {
                      Text("What This Enables:")
                          .font(.caption)
                          .fontWeight(.semibold)
                      
-                     Text("• Upload weather-aware pacing plans directly to your Garmin device")
+                     Text("• Upload weather-aware pacing plans directly to your Wahoo device")
                          .fontWeight(.medium) // Highlight the main feature
                      Text("• Import saved routes for weather forecasting")
                      Text("• Import completed rides for performance analysis")
@@ -896,4 +900,6 @@ extension Bundle {
         return infoDictionary?["CFBundleVersion"] as? String
     }
 }
+
+
 

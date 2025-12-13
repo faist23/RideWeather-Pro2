@@ -1,5 +1,6 @@
 //
-// RideWeatherProApp.swift
+//  RideWeatherProApp.swift
+//  RideWeather Pro
 //
 
 import SwiftUI

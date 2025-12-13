@@ -1,158 +1,290 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+// ============================================================================
+// Supabase Edge Function: garmin-webhook
+// ============================================================================
+// This receives webhooks from Garmin Health API and stores data in Supabase
+//
+// Deploy with:
+// supabase functions deploy garmin-webhook
+//
+// Configure in Garmin Developer Portal:
+// Push URL: https://YOUR_PROJECT.supabase.co/functions/v1/garmin-webhook
+// ============================================================================
+
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, garmin-client-id',
-}
-
-interface GarminSummary {
-  userId: string
-  callbackURL?: string
-  summaryId?: string
-  calendarDate?: string
-  [key: string]: any
-}
-
-interface GarminPing {
-    dailies?: GarminSummary[]
-    sleeps?: GarminSummary[]
-    stressDetails?: GarminSummary[]
-    epochs?: GarminSummary[]
-    bodyComps?: GarminSummary[]
-    userMetrics?: GarminSummary[]
-    pulseox?: GarminSummary[]
-    allDayRespiration?: GarminSummary[]
-    healthSnapshot?: GarminSummary[]
-    hrv?: GarminSummary[]
-    bloodPressures?: GarminSummary[]
-    skinTemp?: GarminSummary[]
-    activities?: GarminSummary[]
-}
-
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+  // Only accept POST requests
+  if (req.method !== 'POST') {
+    return new Response('Method not allowed', { status: 405 })
   }
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    )
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabase = createClient(supabaseUrl, supabaseKey)
 
-    const ping: GarminPing = await req.json()
-    console.log('📍 Received Garmin ping:', JSON.stringify(ping, null, 2))
+    // Parse the webhook payload
+    const payload = await req.json()
+    
+    console.log('📥 Received Garmin webhook:', JSON.stringify(payload).substring(0, 500))
 
-    let processedCount = 0
-    let errorCount = 0
+    // Garmin sends data in format: { "dailies": [...], "sleeps": [...], etc }
+    const results = []
 
-    // Process each summary type
-    for (const [summaryType, summaries] of Object.entries(ping)) {
-      if (!Array.isArray(summaries)) continue
-
-      console.log(`\n🔄 Processing ${summaries.length} ${summaryType} notifications...`)
-
-      for (const summary of summaries) {
-        try {
-          const { userId, callbackURL } = summary
-
-          let data: any
-          let calendarDate: string | null = null
-
-          // MODE 1: Ping Service (has callbackURL)
-          if (callbackURL) {
-            console.log(`\n📥 Fetching ${summaryType} for user ${userId} from callback`)
-            console.log(`   URL: ${callbackURL}`)
-
-            const response = await fetch(callbackURL)
-            
-            if (!response.ok) {
-              console.error(`❌ Failed to fetch ${summaryType}: ${response.status} ${response.statusText}`)
-              errorCount++
-              continue
-            }
-
-            data = await response.json()
-            console.log(`✅ Fetched ${Array.isArray(data) ? data.length : 1} ${summaryType} record(s)`)
-
-            // Extract calendar date from fetched data
-            if (Array.isArray(data) && data.length > 0 && data[0].calendarDate) {
-              calendarDate = data[0].calendarDate
-            } else if (data.calendarDate) {
-              calendarDate = data.calendarDate
-            }
-          }
-          // MODE 2: Push Service (data is already in the summary)
-          else {
-            console.log(`\n📦 Processing ${summaryType} data directly from push notification`)
-            
-            // The summary itself IS the data
-            data = summary
-            calendarDate = summary.calendarDate || null
-            
-            console.log(`✅ Received ${summaryType} data for ${calendarDate || 'unknown date'}`)
-          }
-
-            // Store in database (Unified storage or separate table)
-            // Ideally, you'd want a specific 'garmin_activities' table for rich query capabilities
-            const tableName = summaryType === 'activities' ? 'garmin_activities' : 'garmin_wellness'
-            
-            const recordToInsert = {
-                garmin_user_id: userId,
-                user_id: userId, // Mapping handled by your DB triggers/logic
-                data_type: summaryType,
-                data: data, // Stores the full JSON (power, HR, distance, etc.)
-                // Garmin activities use 'startTimeInSeconds' usually, check payload
-                calendar_date: calendarDate || (data.startTimeInSeconds ? new Date(data.startTimeInSeconds * 1000).toISOString().split('T')[0] : null),
-                synced_at: new Date().toISOString()
-            }
-            
-            const { error: insertError } = await supabase
-            .from(tableName)
-            .insert(recordToInsert)
-            
-          if (insertError) {
-            console.error(`❌ Database insert error for ${summaryType}:`, insertError)
-            errorCount++
-          } else {
-            console.log(`✅ Stored ${summaryType} data successfully`)
-            processedCount++
-          }
-
-        } catch (error) {
-          console.error(`❌ Error processing ${summaryType}:`, error)
-          errorCount++
-        }
+    // Process dailies
+    if (payload.dailies) {
+      for (const daily of payload.dailies) {
+        const result = await processDailySummary(supabase, daily)
+        results.push(result)
       }
     }
 
-    console.log(`\n✨ Processing complete: ${processedCount} succeeded, ${errorCount} failed`)
+    // Process sleeps
+    if (payload.sleeps) {
+      for (const sleep of payload.sleeps) {
+        const result = await processSleepSummary(supabase, sleep)
+        results.push(result)
+      }
+    }
 
+    // Process stress details
+    if (payload.stressDetails) {
+      for (const stress of payload.stressDetails) {
+        const result = await processStressDetails(supabase, stress)
+        results.push(result)
+      }
+    }
+
+    // Process body composition
+    if (payload.bodyComps) {
+      for (const bodyComp of payload.bodyComps) {
+        const result = await processBodyComposition(supabase, bodyComp)
+        results.push(result)
+      }
+    }
+
+    console.log('✅ Processed webhook successfully')
+
+    // IMPORTANT: Return 200 OK immediately (within 30 seconds)
     return new Response(
-      JSON.stringify({
-        success: true,
-        processed: processedCount,
-        errors: errorCount
-      }),
+      JSON.stringify({ success: true, processed: results.length }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
       }
     )
 
   } catch (error) {
-    console.error('💥 Unhandled error:', error)
+    console.error('❌ Webhook processing error:', error)
+    
+    // Still return 200 to prevent Garmin from retrying
+    // Log the error for debugging
     return new Response(
-      JSON.stringify({
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }),
+      JSON.stringify({ success: false, error: error.message }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
       }
     )
   }
 })
+
+// ============================================================================
+// Data Processing Functions
+// ============================================================================
+
+async function processDailySummary(supabase: any, daily: any) {
+  const garminUserId = daily.userId
+  
+  // Get app user ID from mapping
+  const { data: mapping } = await supabase
+    .from('user_garmin_mapping')
+    .select('user_id')
+    .eq('garmin_user_id', garminUserId)
+    .single()
+
+  // FIX: Store data even if no mapping exists (use garmin_user_id as fallback)
+  const appUserId = mapping?.user_id || garminUserId
+
+  if (!mapping) {
+    console.log(`⚠️ No app user mapping found for Garmin user ${garminUserId}, using Garmin ID as user_id`)
+  }
+
+  // Store in garmin_wellness table
+  const { error } = await supabase
+    .from('garmin_wellness')
+    .upsert({
+      user_id: appUserId,  // Use app user ID if available, otherwise Garmin ID
+      garmin_user_id: garminUserId,
+      data_type: 'dailies',
+      calendar_date: daily.calendarDate,
+      data: daily,
+      synced_at: new Date().toISOString()
+    }, {
+      onConflict: 'user_id,garmin_user_id,data_type,calendar_date'
+    })
+
+  if (error) {
+    console.error('❌ Failed to save daily:', error)
+    return { type: 'daily', userId: garminUserId, status: 'error', error }
+  }
+
+  console.log(`✅ Saved daily for ${daily.calendarDate}`)
+  return { type: 'daily', userId: garminUserId, date: daily.calendarDate, status: 'success' }
+}
+
+async function processSleepSummary(supabase: any, sleep: any) {
+  const userId = sleep.userId
+  
+  const { data: mapping } = await supabase
+    .from('user_garmin_mapping')
+    .select('user_id')
+    .eq('garmin_user_id', userId)
+    .single()
+
+  if (!mapping) {
+    console.log(`⚠️ No app user found for Garmin user ${userId}`)
+    return { type: 'sleep', userId, status: 'skipped' }
+  }
+
+  const { error } = await supabase
+    .from('garmin_wellness')
+    .upsert({
+      user_id: mapping.user_id,
+      garmin_user_id: userId,
+      data_type: 'sleeps',
+      calendar_date: sleep.calendarDate,
+      data: sleep,
+      synced_at: new Date().toISOString()
+    }, {
+      onConflict: 'user_id,garmin_user_id,data_type,calendar_date'
+    })
+
+  if (error) {
+    console.error('❌ Failed to save sleep:', error)
+    return { type: 'sleep', userId, status: 'error', error }
+  }
+
+  console.log(`✅ Saved sleep for ${sleep.calendarDate}`)
+  return { type: 'sleep', userId, date: sleep.calendarDate, status: 'success' }
+}
+
+async function processStressDetails(supabase: any, stress: any) {
+  const userId = stress.userId
+  
+  const { data: mapping } = await supabase
+    .from('user_garmin_mapping')
+    .select('user_id')
+    .eq('garmin_user_id', userId)
+    .single()
+
+  if (!mapping) {
+    return { type: 'stress', userId, status: 'skipped' }
+  }
+
+  const { error } = await supabase
+    .from('garmin_wellness')
+    .upsert({
+      user_id: mapping.user_id,
+      garmin_user_id: userId,
+      data_type: 'stressDetails',
+      calendar_date: stress.calendarDate,
+      data: stress,
+      synced_at: new Date().toISOString()
+    }, {
+      onConflict: 'user_id,garmin_user_id,data_type,calendar_date'
+    })
+
+  if (error) {
+    console.error('❌ Failed to save stress:', error)
+    return { type: 'stress', userId, status: 'error', error }
+  }
+
+  console.log(`✅ Saved stress for ${stress.calendarDate}`)
+  return { type: 'stress', userId, date: stress.calendarDate, status: 'success' }
+}
+
+async function processBodyComposition(supabase: any, bodyComp: any) {
+  const userId = bodyComp.userId
+  
+  const { data: mapping } = await supabase
+    .from('user_garmin_mapping')
+    .select('user_id')
+    .eq('garmin_user_id', userId)
+    .single()
+
+  if (!mapping) {
+    return { type: 'bodyComp', userId, status: 'skipped' }
+  }
+
+  // Convert timestamp to calendar date
+  const date = new Date(bodyComp.measurementTimeInSeconds * 1000)
+  const calendarDate = date.toISOString().split('T')[0]
+
+  const { error } = await supabase
+    .from('garmin_wellness')
+    .upsert({
+      user_id: mapping.user_id,
+      garmin_user_id: userId,
+      data_type: 'bodyComps',
+      calendar_date: calendarDate,
+      data: bodyComp,
+      synced_at: new Date().toISOString()
+    }, {
+      onConflict: 'user_id,garmin_user_id,data_type,calendar_date'
+    })
+
+  if (error) {
+    console.error('❌ Failed to save body composition:', error)
+    return { type: 'bodyComp', userId, status: 'error', error }
+  }
+
+  console.log(`✅ Saved body composition for ${calendarDate}`)
+  return { type: 'bodyComp', userId, date: calendarDate, status: 'success' }
+}
+
+// ============================================================================
+// Setup Instructions:
+// ============================================================================
+/*
+
+1. INSTALL SUPABASE CLI
+   npm install -g supabase
+
+2. LOGIN TO SUPABASE
+   supabase login
+
+3. LINK YOUR PROJECT
+   supabase link --project-ref YOUR_PROJECT_REF
+
+4. CREATE THIS FUNCTION
+   supabase functions new garmin-webhook
+   (Copy this code into: supabase/functions/garmin-webhook/index.ts)
+
+5. DEPLOY THE FUNCTION
+   supabase functions deploy garmin-webhook
+
+6. GET YOUR FUNCTION URL
+   It will be: https://YOUR_PROJECT.supabase.co/functions/v1/garmin-webhook
+
+7. CONFIGURE GARMIN DEVELOPER PORTAL
+   - Go to https://apis.garmin.com/tools/endpoints/
+   - Log in with your Garmin developer credentials
+   - Enable "dailies" and "sleeps" (and others you want)
+   - Set Push URL to your Supabase function URL
+   - Click Save
+
+8. TEST IT
+   - Sync your Garmin device
+   - Check Supabase logs: supabase functions logs garmin-webhook
+   - Check your garmin_wellness table for new data
+
+9. UPDATE YOUR DATABASE SCHEMA (if needed)
+   Make sure garmin_wellness table has a unique constraint:
+   
+   ALTER TABLE garmin_wellness ADD CONSTRAINT garmin_wellness_unique
+   UNIQUE (user_id, garmin_user_id, data_type, calendar_date);
+
+*/

@@ -121,7 +121,7 @@ struct RecoveryMetric: View {
             return "vs 7d Avg" // Default text if no avg data
         }
         
-        // **FIX**: For Sleep, show the 7d avg, not the difference
+        // For Sleep, show the 7d avg, not the difference
         if title == "Sleep" {
             let avgString = formattedValue(average, format: "%.0fh %.0fm")
             return "\(avgString) (7d avg)"
@@ -137,7 +137,7 @@ struct RecoveryMetric: View {
             trendNumString = String(format: "\(prefix)%.1f", trend)
         }
         
-        // **FIX**: Add "vs 7d Avg" to HRV/RHR
+        // Add "vs 7d Avg" to HRV/RHR
         return "\(trendNumString) vs 7d Avg"
     }
     

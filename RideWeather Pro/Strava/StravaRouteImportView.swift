@@ -182,7 +182,7 @@ struct StravaActivitiesTab: View {
     @State private var importingId: Int? = nil // For per-row loading
     
     var body: some View {
-        ZStack { // ✅ Wrapped in ZStack
+        ZStack { // Wrapped in ZStack
             Group {
                 if viewModel.isLoading && viewModel.activities.isEmpty {
                     ProgressView("Loading activities...")
@@ -195,7 +195,7 @@ struct StravaActivitiesTab: View {
                 }
             }
             
-            // ✅ Consistent Processing Overlay
+            // Consistent Processing Overlay
             if viewModel.isImporting {
                 ProcessingOverlay.importing(
                     "Strava Activity",
@@ -516,7 +516,6 @@ class StravaRoutesViewModel: ObservableObject {
                 
                 print("🔵 Step 3: Updating weather view model")
                 
-//                await MainActor.run {
                     // Clear the previous pacing plan when importing new route
                      weatherViewModel.clearAdvancedPlan()
                      
@@ -548,7 +547,6 @@ class StravaRoutesViewModel: ObservableObject {
                     
                     print("🔵 Step 7: Calling onSuccess callback")
                     onSuccess()
- //               }
                 
             } catch {
                 print("❌ Import failed: \(error.localizedDescription)")
@@ -682,7 +680,6 @@ class StravaActivitiesImportViewModel: ObservableObject {
                 
                 print("🔵 Step 3: Updating weather view model")
                 
-//                await MainActor.run {
                     // Clear the previous pacing plan when importing new route
                      weatherViewModel.clearAdvancedPlan()
                      
@@ -714,7 +711,6 @@ class StravaActivitiesImportViewModel: ObservableObject {
                     
                     print("🔵 Step 8: Calling onSuccess callback")
                     onSuccess()
-//                }
                 
             } catch {
                 print("❌ Import failed: \(error.localizedDescription)")

@@ -1,4 +1,3 @@
-
 //
 //  WeatherService.swift
 //  RideWeather Pro
@@ -63,7 +62,7 @@ class WeatherService {
         return response
     }
     
-    // MODIFIED: Regular forecast for 6-hour display (excludes hourly to save bandwidth)
+    // Regular forecast for 6-hour display (excludes hourly to save bandwidth)
     func fetchForecast(lat: Double, lon: Double, units: String) async throws -> OneCallResponse {
         let cacheKey = "forecast_\(lat)_\(lon)_\(units)"
         
@@ -376,7 +375,7 @@ struct CompleteWeatherData {
 private class CachedWeatherData: NSObject {
     let currentWeather: CurrentWeatherResponse?
     let forecast: OneCallResponse?
-    let extendedForecast: ExtendedOneCallResponse? // NEW
+    let extendedForecast: ExtendedOneCallResponse? 
     let timestamp: Date
     
     init(currentWeather: CurrentWeatherResponse?, forecast: OneCallResponse?, extendedForecast: ExtendedOneCallResponse?, timestamp: Date) {

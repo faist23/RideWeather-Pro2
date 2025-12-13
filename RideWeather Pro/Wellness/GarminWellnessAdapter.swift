@@ -75,7 +75,7 @@ class GarminWellnessSync: ObservableObject {
             
             print("🏥 Garmin Wellness: Syncing \(days) days...")
             
-            // FIX: Fetch one day at a time (Garmin limit is 24 hours)
+            // Fetch one day at a time (Garmin limit is 24 hours)
             var allSummaries: [GarminDailySummary] = []
             var allSleep: [GarminSleepData] = []
             
@@ -212,7 +212,7 @@ extension GarminService {
         let startString = formatter.string(from: startDate)
         let endString = formatter.string(from: endDate)
         
-        // FIX: Use correct Garmin wellness endpoint format
+        // Use correct Garmin wellness endpoint format
         let urlString = "https://apis.garmin.com/wellness-api/rest/dailies?uploadStartTimeInSeconds=\(Int(startDate.timeIntervalSince1970))&uploadEndTimeInSeconds=\(Int(endDate.timeIntervalSince1970))"
         
         guard let url = URL(string: urlString) else {
@@ -256,7 +256,7 @@ extension GarminService {
             throw GarminError.notAuthenticated
         }
         
-        // FIX: Use Unix timestamps instead of date strings
+        // Use Unix timestamps instead of date strings
         let urlString = "https://apis.garmin.com/wellness-api/rest/sleeps?uploadStartTimeInSeconds=\(Int(startDate.timeIntervalSince1970))&uploadEndTimeInSeconds=\(Int(endDate.timeIntervalSince1970))"
         
         guard let url = URL(string: urlString) else {

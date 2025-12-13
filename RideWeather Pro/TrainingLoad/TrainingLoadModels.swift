@@ -20,7 +20,7 @@ struct DailyTrainingLoad: Codable, Identifiable {
     var rideCount: Int
     var totalDistance: Double  // meters
     var totalDuration: TimeInterval  // seconds
-    var isProjected: Bool = false // <-- ADD THIS
+    var isProjected: Bool = false
     
     init(
         id: UUID = UUID(),
@@ -43,7 +43,7 @@ struct DailyTrainingLoad: Codable, Identifiable {
         self.rideCount = rideCount
         self.totalDistance = totalDistance
         self.totalDuration = totalDuration
-        self.isProjected = isProjected // <-- ADD THIS
+        self.isProjected = isProjected 
     }
     
     var formStatus: FormStatus {

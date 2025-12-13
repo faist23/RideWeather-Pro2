@@ -15,7 +15,7 @@ struct PhysiologicalReadiness: Equatable {
     var latestRHR: Double?
     var averageRHR: Double?
     var sleepDuration: TimeInterval?
-    var averageSleepDuration: TimeInterval? // <-- ADD THIS
+    var averageSleepDuration: TimeInterval? 
     
     /// A simple readiness score from 0-100 based on metrics vs. their average.
     var readinessScore: Int {

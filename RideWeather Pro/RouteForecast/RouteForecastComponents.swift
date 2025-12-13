@@ -24,7 +24,7 @@ struct ModernWeatherAnnotationView: View {
                     .font(.headline.weight(.bold))
                     .foregroundStyle(.primary)
 
-                // ✅ Add Feels Like back
+                // Feels Like
                   Text("Feels like \(Int(weatherPoint.weather.feelsLike))\(viewModel.settings.units.tempSymbol)")
                       .font(.caption2)
                       .foregroundStyle(.secondary)

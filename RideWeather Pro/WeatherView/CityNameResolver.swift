@@ -1,13 +1,5 @@
 //
 //  CityNameResolver.swift
-//  RideWeather Pro
-//
-//  Created by Craig Faist on 8/16/25.
-//
-
-
-//
-//  CityNameResolver.swift
 //
 
 import Foundation

@@ -133,7 +133,7 @@ enum JSONValue: Codable {
 class WellnessDataService {
     private let supabase = SupabaseManager.shared.client
     
-    // NEW: Get Garmin User ID from app user ID
+    // Get Garmin User ID from app user ID
     func getGarminUserId(forAppUser appUserId: String) async throws -> String? {
         print("   📡 Querying user_garmin_mapping table...")
         print("   Looking for user_id: \(appUserId)")
@@ -179,41 +179,104 @@ class WellnessDataService {
         }
     }
     
-    // Fetch recent wellness data
+    // ============================================================================
+    // REPLACE YOUR fetchWellnessData METHOD WITH THIS VERSION
+    // This queries using garmin_user_id instead of user_id
+    // ============================================================================
+
     func fetchWellnessData(
         forUser userId: String,
+        garminUserId: String? = nil,
         dataType: String? = nil,
         daysBack: Int = 7
     ) async throws -> [GarminWellnessRow] {
         print("   📡 Fetching from garmin_wellness table...")
-        print("      user_id: \(userId)")
+        print("      app_user_id: \(userId)")
+        if let garminId = garminUserId {
+            print("      garmin_user_id: \(garminId)")
+        }
         if let type = dataType {
             print("      data_type: \(type)")
         }
         
+        // Build query step by step for debugging
         var query = supabase
             .from("garmin_wellness")
             .select()
-            .eq("user_id", value: userId)
+        
+        // Add filters
+        if let garminId = garminUserId {
+            print("   🔍 Adding filter: garmin_user_id = '\(garminId)'")
+            query = query.eq("garmin_user_id", value: garminId)
+        } else {
+            print("   🔍 Adding filter: user_id = '\(userId)'")
+            query = query.eq("user_id", value: userId)
+        }
         
         if let dataType = dataType {
+            print("   🔍 Adding filter: data_type = '\(dataType)'")
             query = query.eq("data_type", value: dataType)
         }
         
-        let response: [GarminWellnessRow] = try await query
-            .order("calendar_date", ascending: false)
-            .order("synced_at", ascending: false)
-            .execute()
-            .value
+        print("   📤 Executing query...")
         
-        print("   ✅ Retrieved \(response.count) rows")
-        return response
+        do {
+            let response: [GarminWellnessRow] = try await query
+                .order("calendar_date", ascending: false)
+                .order("synced_at", ascending: false)
+                .execute()
+                .value
+            
+            print("   ✅ Retrieved \(response.count) rows")
+            
+            if response.isEmpty {
+                print("   ⚠️ Query returned empty. Trying raw query to test...")
+                
+                // Try a completely raw query without filters
+                let testQuery = supabase
+                    .from("garmin_wellness")
+                    .select()
+                    .limit(5)
+                
+                let testResponse: [GarminWellnessRow] = try await testQuery
+                    .execute()
+                    .value
+                
+                print("   🧪 Test query (no filters, limit 5): \(testResponse.count) rows")
+                if !testResponse.isEmpty {
+                    print("   📋 Sample row from test:")
+                    if let first = testResponse.first {
+                        print("      user_id: \(first.userId)")
+                        print("      garmin_user_id: \(first.garminUserId)")
+                        print("      data_type: \(first.dataType)")
+                    }
+                }
+            } else {
+                print("   📋 Sample data:")
+                if let first = response.first {
+                    print("      user_id: \(first.userId)")
+                    print("      garmin_user_id: \(first.garminUserId)")
+                    print("      data_type: \(first.dataType)")
+                    print("      calendar_date: \(first.calendarDate ?? "null")")
+                }
+            }
+            
+            return response
+            
+        } catch {
+            print("   ❌ Query error: \(error)")
+            print("   Error type: \(type(of: error))")
+            throw error
+        }
     }
-    
-    // Fetch dailies specifically
-    func fetchDailySummaries(forUser userId: String, days: Int = 7) async throws -> [DailySummary] {
+
+    // ============================================================================
+    // UPDATE fetchDailySummaries to pass garminUserId
+    // ============================================================================
+
+    func fetchDailySummaries(forUser userId: String, garminUserId: String? = nil, days: Int = 7) async throws -> [DailySummary] {
         print("\n📊 Fetching daily summaries...")
-        let rows = try await fetchWellnessData(forUser: userId, dataType: "dailies", daysBack: days)
+        let rows = try await fetchWellnessData(forUser: userId, garminUserId: garminUserId, dataType: "dailies", daysBack: days)
         
         print("   Processing \(rows.count) daily summary rows...")
         
@@ -228,7 +291,6 @@ class WellnessDataService {
                 print("   ✅ \(date): steps=\(dict["steps"] as? Int ?? 0), calories=\(dict["activeKilocalories"] as? Int ?? 0)")
             }
             
-            // Parse the Garmin daily summary format
             return DailySummary(
                 id: row.id,
                 calendarDate: row.calendarDate ?? "",
@@ -245,11 +307,14 @@ class WellnessDataService {
         print("   Parsed \(summaries.count) valid summaries")
         return summaries
     }
-    
-    // Fetch sleep data
-    func fetchSleepData(forUser userId: String, days: Int = 7) async throws -> [SleepSummary] {
+
+    // ============================================================================
+    // UPDATE fetchSleepData to pass garminUserId
+    // ============================================================================
+
+    func fetchSleepData(forUser userId: String, garminUserId: String? = nil, days: Int = 7) async throws -> [SleepSummary] {
         print("\n😴 Fetching sleep data...")
-        let rows = try await fetchWellnessData(forUser: userId, dataType: "sleeps", daysBack: days)
+        let rows = try await fetchWellnessData(forUser: userId, garminUserId: garminUserId, dataType: "sleeps", daysBack: days)
         
         print("   Processing \(rows.count) sleep rows...")
         
@@ -283,10 +348,9 @@ class WellnessDataService {
         print("   Parsed \(summaries.count) valid sleep records")
         return summaries
     }
-    
     // Fetch stress details
-    func fetchStressData(forUser userId: String, days: Int = 7) async throws -> [StressSummary] {
-        let rows = try await fetchWellnessData(forUser: userId, dataType: "stressDetails", daysBack: days)
+    func fetchStressData(forUser userId: String, garminUserId: String? = nil, days: Int = 7) async throws -> [StressSummary] {
+        let rows = try await fetchWellnessData(forUser: userId, garminUserId: garminUserId, dataType: "stressDetails", daysBack: days)
         
         return rows.compactMap { row -> StressSummary? in
             guard let dict = row.data.dictionary else { return nil }
@@ -373,3 +437,114 @@ struct StressSummary: Identifiable {
     let highStressDuration: Int?
     let syncedAt: Date
 }
+
+extension WellnessDataService {
+    
+    /// Save a daily summary to Supabase
+    func saveDailySummary(appUserId: String, garminUserId: String, summary: GarminDailySummary) async throws {
+        
+        struct WellnessRow: Encodable {
+            let user_id: String
+            let garmin_user_id: String
+            let data_type: String
+            let calendar_date: String
+            let data: [String: Any]
+            let synced_at: String
+            
+            enum CodingKeys: String, CodingKey {
+                case user_id, garmin_user_id, data_type, calendar_date, data, synced_at
+            }
+            
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(user_id, forKey: .user_id)
+                try container.encode(garmin_user_id, forKey: .garmin_user_id)
+                try container.encode(data_type, forKey: .data_type)
+                try container.encode(calendar_date, forKey: .calendar_date)
+                try container.encode(synced_at, forKey: .synced_at)
+                
+                // Encode data as JSON
+                let jsonData = try JSONSerialization.data(withJSONObject: data)
+                let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
+                try container.encode(jsonString, forKey: .data)
+            }
+        }
+        
+        // Convert summary to dictionary
+        var dataDict: [String: Any] = [:]
+        if let steps = summary.steps { dataDict["steps"] = steps }
+        if let distance = summary.distanceInMeters { dataDict["distanceInMeters"] = distance }
+        if let active = summary.activeTimeInSeconds { dataDict["activeTimeInSeconds"] = active }
+        if let calories = summary.activeKilocalories { dataDict["activeKilocalories"] = calories }
+        if let bmr = summary.bmrKilocalories { dataDict["bmrKilocalories"] = bmr }
+        if let rhr = summary.restingHeartRate { dataDict["restingHeartRateInBeatsPerMinute"] = rhr }
+        
+        let row = WellnessRow(
+            user_id: appUserId,
+            garmin_user_id: garminUserId,
+            data_type: "dailies",
+            calendar_date: summary.calendarDate,
+            data: dataDict,
+            synced_at: Date().ISO8601Format()
+        )
+        
+        try await supabase
+            .from("garmin_wellness")
+            .upsert(row)
+            .execute()
+    }
+    
+    /// Save sleep data to Supabase
+    func saveSleepData(appUserId: String, garminUserId: String, sleep: GarminSleepData) async throws {
+        
+        struct WellnessRow: Encodable {
+            let user_id: String
+            let garmin_user_id: String
+            let data_type: String
+            let calendar_date: String
+            let data: [String: Any]
+            let synced_at: String
+            
+            enum CodingKeys: String, CodingKey {
+                case user_id, garmin_user_id, data_type, calendar_date, data, synced_at
+            }
+            
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(user_id, forKey: .user_id)
+                try container.encode(garmin_user_id, forKey: .garmin_user_id)
+                try container.encode(data_type, forKey: .data_type)
+                try container.encode(calendar_date, forKey: .calendar_date)
+                try container.encode(synced_at, forKey: .synced_at)
+                
+                // Encode data as JSON
+                let jsonData = try JSONSerialization.data(withJSONObject: data)
+                let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
+                try container.encode(jsonString, forKey: .data)
+            }
+        }
+        
+        // Convert sleep to dictionary
+        var dataDict: [String: Any] = [:]
+        if let total = sleep.sleepTimeSeconds { dataDict["durationInSeconds"] = total }
+        if let deep = sleep.deepSleepSeconds { dataDict["deepSleepDurationInSeconds"] = deep }
+        if let light = sleep.lightSleepSeconds { dataDict["lightSleepDurationInSeconds"] = light }
+        if let rem = sleep.remSleepSeconds { dataDict["remSleepInSeconds"] = rem }
+        if let awake = sleep.awakeSleepSeconds { dataDict["awakeDurationInSeconds"] = awake }
+        
+        let row = WellnessRow(
+            user_id: appUserId,
+            garmin_user_id: garminUserId,
+            data_type: "sleeps",
+            calendar_date: sleep.calendarDate,
+            data: dataDict,
+            synced_at: Date().ISO8601Format()
+        )
+        
+        try await supabase
+            .from("garmin_wellness")
+            .upsert(row)
+            .execute()
+    }
+}
+

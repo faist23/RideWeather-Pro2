@@ -5,11 +5,6 @@
 //  Created by Craig Faist on 8/16/25.
 //
 
-
-//
-//  UIState.swift
-//
-
 import Foundation
 
 enum UIState: Equatable {

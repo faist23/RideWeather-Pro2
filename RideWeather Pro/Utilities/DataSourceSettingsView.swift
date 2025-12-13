@@ -233,7 +233,7 @@ struct DataSourceSettingsView: View {
                         }
                     )
                     
-                    // ✅ SHOW SPINNER IF VERIFYING THIS SOURCE
+                    // SHOW SPINNER IF VERIFYING THIS SOURCE
                     if verifyingSource == source {
                         ProgressView()
                             .controlSize(.small)
@@ -249,7 +249,7 @@ struct DataSourceSettingsView: View {
         }
     }
     
-    // ✅ NEW HELPER FUNCTION TO HANDLE THE TRANSITION
+    // HELPER FUNCTION TO HANDLE THE TRANSITION
     private func handleSourceChange(to source: DataSourceConfiguration.TrainingLoadSource) {
         // 1. Set Transition State
         withAnimation { verifyingSource = source }

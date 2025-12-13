@@ -10,10 +10,10 @@ import FitFileParser
 @MainActor
 class WahooActivitiesViewModel: ObservableObject {
     @Published var activities: [WahooWorkoutSummary] = []
-    @Published var selectedActivityDetail: WahooWorkoutSummary? // <-- This holds the detail
+    @Published var selectedActivityDetail: WahooWorkoutSummary? // This holds the detail
     @Published var isLoading = false
     @Published var isImporting = false
-    @Published var isFetchingDetail = false // <-- NEW: For the sheet's spinner
+    @Published var isFetchingDetail = false // For the sheet's spinner
     @Published var errorMessage: String?
     @Published var showingAnalysisImport = false
     @Published var analysis: RideAnalysis?
@@ -39,7 +39,7 @@ class WahooActivitiesViewModel: ObservableObject {
 
         Task {
             do {
-                let response = try await service.fetchRecentWorkouts(page: self.currentPage, perPage: perPage) // <-- Fetch page 0
+                let response = try await service.fetchRecentWorkouts(page: self.currentPage, perPage: perPage) // Fetch page 0
                 let workouts = response.workouts
                 
                 let filteredWorkouts = workouts.filter {
@@ -51,15 +51,15 @@ class WahooActivitiesViewModel: ObservableObject {
                 await MainActor.run {
                     self.activities = filteredWorkouts
                     self.isLoading = false
-                    // --- REVISED PAGINATION LOGIC ---
+
                     if let total = response.total, let p = response.page, let pp = response.perPage, total > 0, pp > 0 {
                         self.hasMorePages = (p + 1) * pp < total
                     } else {
                         // Fallback if pagination data is missing
                         self.hasMorePages = workouts.count == self.perPage
                     }
-                    self.currentPage = 2 // <-- Next page is 1
-                    // --- END REVISED LOGIC ---
+                    self.currentPage = 2 // Next page is 1
+
                 }
             } catch {
                 await MainActor.run {
@@ -81,7 +81,6 @@ class WahooActivitiesViewModel: ObservableObject {
                 let response = try await service.fetchRecentWorkouts(page: self.currentPage, perPage: self.perPage)
                 let newWorkouts = response.workouts
                 
-                // --- MODIFIED FILTER ---
                 let filteredWorkouts = newWorkouts.filter {
                     let distance = Double($0.workoutSummary?.distanceAccum ?? "0") ?? 0
                     let power = Double($0.workoutSummary?.powerAvg ?? "0") ?? 0 // Get average power
@@ -89,8 +88,8 @@ class WahooActivitiesViewModel: ObservableObject {
                 }
                 
                 await MainActor.run {
-                    self.activities.append(contentsOf: filteredWorkouts) // <-- Use filtered list
-                    // --- REVISED PAGINATION LOGIC ---
+                    self.activities.append(contentsOf: filteredWorkouts) // Use filtered list
+
                     if let total = response.total, let p = response.page, let pp = response.perPage, total > 0, pp > 0 {
                         self.hasMorePages = (p + 1) * pp < total
                     } else {
@@ -99,7 +98,7 @@ class WahooActivitiesViewModel: ObservableObject {
                     }
                     self.isLoadingMore = false
                     self.currentPage += 1
-                    // --- END REVISED LOGIC ---
+
                 }
             } catch {
                 await MainActor.run {
@@ -110,7 +109,7 @@ class WahooActivitiesViewModel: ObservableObject {
         }
     }
     
-    // --- FIX: This function now fetches the detail when a row is tapped ---
+    // This function now fetches the detail when a row is tapped
     func selectActivity(_ activitySummary: WahooWorkoutSummary, service: WahooService) {
         Task {
             isFetchingDetail = true
@@ -129,7 +128,7 @@ class WahooActivitiesViewModel: ObservableObject {
         }
     }
     
-    // --- NEW: Helper to clear state when sheet is dismissed ---
+    // Helper to clear state when sheet is dismissed ---
     func clearSelection() {
         selectedActivityDetail = nil
         showingAnalysisImport = false
@@ -181,9 +180,7 @@ class WahooActivitiesViewModel: ObservableObject {
                     
                     let analyzer = RideFileAnalyzer(settings: self.settings)
                     let rideName = activity.workoutSummary?.name ?? activity.name ?? "Wahoo Ride"
-                    
-                    // --- START FIX ---
-                    
+                                        
                     // 1. Get all THREE return values from the function
                     let (powerGraphData, hrGraphData, elevationGraphData) = analyzer.generateGraphData(dataPoints: fitDataPoints)
                     
@@ -199,11 +196,10 @@ class WahooActivitiesViewModel: ObservableObject {
                         averageHeartRate: averageHeartRate,
                         powerGraphData: powerGraphData,
                         heartRateGraphData: hrGraphData,
-                        elevationGraphData: elevationGraphData // <-- Pass it here
+                        elevationGraphData: elevationGraphData
                     )
-                    // --- END FIX ---
                     
-                    rideAnalysis.rideName = rideName // <-- Set correct name on the mutable copy
+                    rideAnalysis.rideName = rideName // Set correct name on the mutable copy
                     self.analysis = rideAnalysis
                     print("WahooImport: Analysis complete - Score: \(rideAnalysis.performanceScore)")
 
@@ -217,7 +213,7 @@ class WahooActivitiesViewModel: ObservableObject {
                     storage.saveSource(sourceInfo, for: rideAnalysis.id)
 
                     await MainActor.run {
-                        // ✅ NEW: Clear the previous pacing plan when importing new route
+                        // Clear the previous pacing plan when importing new route
                          weatherViewModel.clearAdvancedPlan()
                          
                         self.isImporting = false

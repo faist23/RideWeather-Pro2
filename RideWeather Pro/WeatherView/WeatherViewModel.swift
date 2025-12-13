@@ -1,5 +1,8 @@
 //
-//  WeatherViewModel.swift - Updated with filename tracking
+//  WeatherViewModel.swift
+//  RideWeather Pro
+//
+//  Created by Craig Faist on 8/16/25.
 //
 
 import SwiftUI
@@ -45,7 +48,7 @@ class WeatherViewModel: ObservableObject {
     @Published var processingStatus: String = ""
     @Published var pacingGenerationStatus: String = ""
 
-    // NEW: Filename tracking properties
+    // Filename tracking properties
     @Published var lastImportedFileName: String? = nil
     @Published var importedRouteDisplayName: String = ""
     
@@ -104,7 +107,7 @@ class WeatherViewModel: ObservableObject {
         return baseSpeed
     }
     
-    // NEW: Computed property for route display name
+    // Computed property for route display name
     var routeDisplayName: String {
         get {
             if !importedRouteDisplayName.isEmpty {
@@ -182,11 +185,11 @@ class WeatherViewModel: ObservableObject {
     ) -> String {
         let routeName: String
         
-        // ✅ PRIORITY: baseName > importedRouteDisplayName > lastImportedFileName > default
+        // PRIORITY: baseName > importedRouteDisplayName > lastImportedFileName > default
         if let baseName = baseName, !baseName.isEmpty {
             routeName = baseName
         } else if !importedRouteDisplayName.isEmpty {
-            // ✅ NEW: Check stored display name FIRST
+            // Check stored display name FIRST
             routeName = importedRouteDisplayName
         } else if let fileName = lastImportedFileName, !fileName.isEmpty {
             routeName = cleanFileName(fileName)
@@ -209,7 +212,7 @@ class WeatherViewModel: ObservableObject {
     
     func importRoute(from url: URL) {
         Task {
-            // ✅ FIX: Use .loading immediately (Indeterminate Spinner)
+            // Use .loading immediately (Indeterminate Spinner)
             // This ensures we see "Working" the whole time, not a progress bar.
             uiState = .loading
             processingStatus = "Reading file..."
@@ -616,7 +619,7 @@ class WeatherViewModel: ObservableObject {
         // Determine the correct start time
         let planStartTime = startTime ?? rideDate
         
-        // ✅ Do the heavy work here - this is what takes time
+        // Do the heavy work here - this is what takes time
         await controller.generateAdvancedRacePlan(
             from: powerAnalysis,
             strategy: strategy,
@@ -729,7 +732,7 @@ extension WeatherViewModel {
         enhancedRoutePoints.removeAll()
         lastImportedFileName = ""
         authoritativeRouteDistanceMeters = nil 
-        importedRouteDisplayName = "" // ✅ FIXED: Explicitly reset the imported name
+        importedRouteDisplayName = "" // Explicitly reset the imported name
         // Reset any other route-related state
     }
 }
@@ -749,7 +752,7 @@ extension WeatherViewModel {
     func buildEnhancedRoutePoints() async {
         // 1. Capture data LOCALLY on the Main Thread before detaching
         let rawPoints = self.routePoints
-        let localElevationAnalysis = self.elevationAnalysis // <--- Capture copy here
+        let localElevationAnalysis = self.elevationAnalysis // Capture copy here
         
         // 2. Run heavy calculation in a detached task (Background Thread)
         let enhanced = await Task.detached(priority: .userInitiated) {
@@ -830,7 +833,7 @@ extension WeatherViewModel {
         }
         
         guard let controller = advancedController,
-              let pacing = self.finalPacingPlan, // <-- Grabs the FINAL adjusted plan
+              let pacing = self.finalPacingPlan, // Grabs the FINAL adjusted plan
               !enhancedRoutePoints.isEmpty else {
             throw GarminCourseFitGenerator.CourseExportError.invalidData("Missing required data")
         }
@@ -844,7 +847,7 @@ extension WeatherViewModel {
         
         // Generate FIT data
         let fitData = try controller.generateGarminCourseFIT(
-            pacingPlan: pacing, // <-- Pass the adjusted plan in
+            pacingPlan: pacing, // Pass the adjusted plan in
             routePoints: enhancedRoutePoints,
             courseName: courseName
         )

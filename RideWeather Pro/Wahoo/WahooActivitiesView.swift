@@ -170,8 +170,6 @@ struct WahooActivityRow: View {
     }
 }
 
-
-
 // MARK: - Import Sheet
 struct WahooImportSheet: View {
     @ObservedObject var viewModel: WahooActivitiesViewModel
@@ -202,19 +200,19 @@ struct WahooImportSheet: View {
                             .fontWeight(.bold)
                         
                         VStack(alignment: .leading, spacing: 12) {
-                            WahooInfoRow(  // <-- RENAMED
+                            WahooInfoRow(
                                 label: "Distance",
                                 value: weatherViewModel.settings.units == .metric ?
                                     String(format: "%.2f km", activity.distanceKm) :
                                     String(format: "%.2f mi", activity.distanceMiles)
                             )
-                            WahooInfoRow(label: "Duration", value: activity.movingTimeFormatted) // <-- RENAMED
+                            WahooInfoRow(label: "Duration", value: activity.movingTimeFormatted)
                             
                             if activity.work > 0 {
                                 let work = activity.work
-                                WahooInfoRow(label: "Work", value: "\(Int(work/1000)) kJ") // <-- RENAMED
+                                WahooInfoRow(label: "Work", value: "\(Int(work/1000)) kJ")
                             } else {
-                                WahooInfoRow(label: "Work", value: "N/A") // <-- RENAMED
+                                WahooInfoRow(label: "Work", value: "N/A")
                             }
                         }
                         
@@ -278,9 +276,6 @@ struct WahooImportSheet: View {
     }
 }
 
-
-
-// Renamed struct `InfoRow` to `WahooInfoRow` as you requested.
 struct WahooInfoRow: View {
     let label: String
     let value: String

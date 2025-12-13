@@ -125,7 +125,7 @@ struct HourlyForecast: Identifiable, Equatable {
         self.aqi = nil           // AQI will be populated later
     }
     
-    // NEW: Initializer for creating sample/test data
+    // Initializer for creating sample/test data
     init(id: UUID = UUID(), time: String, date: Date, iconName: String, temp: Double, feelsLike: Double, pop: Double, windSpeed: Double, windDeg: Int, humidity: Int, uvIndex: Double? = nil, aqi: Int? = nil) {
         self.id = id
         self.time = time
@@ -161,7 +161,7 @@ struct DailyForecast: Identifiable, Equatable {
         WeatherMapper.mapWindDirection(degrees: Double(windDeg))
     }
 
-    // NEW: Direction the wind is BLOWING TO (not from)
+    // Direction the wind is BLOWING TO (not from)
     var blowingDirection: String {
         let adjusted = Double((windDeg + 180) % 360)
         return WeatherMapper.mapWindDirection(degrees: adjusted)
@@ -197,7 +197,7 @@ struct HourlyItem: Codable {
     let weather: [Weather]
     let windSpeed: Double
     let windDeg: Int
-    let uvi: Double // Add this line - UV Index
+    let uvi: Double 
 
     enum CodingKeys: String, CodingKey {
         case dt, temp, weather, pop, humidity, uvi

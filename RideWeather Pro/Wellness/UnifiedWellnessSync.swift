@@ -156,182 +156,183 @@ class UnifiedWellnessSync: ObservableObject {
     // MARK: - Garmin via Supabase
     
     private func syncGarminWellnessFromSupabase(userId: String) async throws {
-        print("\n📥 GARMIN SUPABASE SYNC")
-        print(String(repeating: "-", count: 40))
-        print("App User ID: \(userId)")
-        
-        // Step 0: Get Garmin User ID from mapping table
-        print("\n🔍 Looking up Garmin User ID from user_garmin_mapping...")
-        
-        guard let garminUserId = try await wellnessService.getGarminUserId(forAppUser: userId) else {
-            print("❌ No Garmin user mapping found for app user: \(userId)")
-            print("\n⚠️ DIAGNOSIS:")
-            print("   The user_garmin_mapping table doesn't have an entry for this user.")
-            print("   This happens when:")
-            print("   1. User hasn't completed Garmin OAuth yet")
-            print("   2. linkToSupabase() wasn't called after OAuth")
-            print("   3. The mapping was deleted/cleared")
-            print("\n💡 SOLUTION:")
-            print("   Re-authenticate with Garmin to create the mapping.")
-            throw WellnessError.authenticationRequired
-        }
-        
-        print("✅ Found Garmin User ID: \(garminUserId)")
-        
-        // Step 1: Fetch data from Supabase using GARMIN user ID
-        print("\n🔍 Fetching wellness data from Supabase...")
-        print("   Query: user_id=\(userId) AND garmin_user_id=\(garminUserId)")
-        
-        do {
-            async let dailies = wellnessService.fetchDailySummaries(forUser: userId, days: 7)
-            async let sleep = wellnessService.fetchSleepData(forUser: userId, days: 7)
-            
-            let (dailyData, sleepData) = try await (dailies, sleep)
-            
-            print("✅ Supabase fetch successful:")
-            print("   - Daily summaries: \(dailyData.count)")
-            print("   - Sleep records: \(sleepData.count)")
-            
-            if dailyData.isEmpty && sleepData.isEmpty {
-                print("\n⚠️ WARNING: No data returned from Supabase")
-                print("   garmin_user_id: \(garminUserId)")
-                print("   app_user_id: \(userId)")
-                print("\n   This could mean:")
-                print("   1. Garmin hasn't pushed any wellness data to your backend yet")
-                print("   2. The backend webhook isn't working")
-                print("   3. Data exists but for a different garmin_user_id")
-                print("\n💡 DEBUGGING STEPS:")
-                print("   1. Check Supabase garmin_wellness table directly")
-                print("   2. Verify webhook is receiving Garmin push notifications")
-                print("   3. Check if garmin_user_id matches what's in the table")
-                return
-            }
-            
-            // Step 2: Process the data
-            print("\n🔨 Processing fetched data...")
-            
-            var metricsByDate: [Date: DailyWellnessMetrics] = [:]
-            let calendar = Calendar.current
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withFullDate]
-            
-            // Process Daily Summaries
-            print("\n📊 Processing \(dailyData.count) daily summaries...")
-            for (index, summary) in dailyData.enumerated() {
-                print("   [\(index + 1)/\(dailyData.count)] Date: \(summary.calendarDate)")
-                
-                guard let date = dateFormatter.date(from: summary.calendarDate) else {
-                    print("      ❌ Failed to parse date: \(summary.calendarDate)")
-                    continue
-                }
-                
-                let startOfDay = calendar.startOfDay(for: date)
-                print("      📅 Parsed to: \(startOfDay.formatted(date: .abbreviated, time: .omitted))")
-                
-                var metric = metricsByDate[startOfDay] ?? DailyWellnessMetrics(date: startOfDay)
-                
-                // Log each field
-                if let steps = summary.steps {
-                    print("      👣 Steps: \(steps)")
-                    metric.steps = steps
-                }
-                
-                if let calories = summary.activeKilocalories {
-                    print("      🔥 Active calories: \(calories)")
-                    metric.activeEnergyBurned = Double(calories)
-                }
-                
-                if let hr = summary.restingHeartRate {
-                    print("      ❤️ Resting HR: \(hr) bpm")
-                    metric.restingHeartRate = hr
-                }
-                
-                if let distance = summary.distanceInMeters {
-                    print("      📏 Distance: \(String(format: "%.1f", distance / 1000)) km")
-                    metric.distance = distance
-                }
-                
-                metricsByDate[startOfDay] = metric
-                print("      ✅ Daily summary processed")
-            }
-            
-            // Process Sleep Data
-            print("\n😴 Processing \(sleepData.count) sleep records...")
-            for (index, summary) in sleepData.enumerated() {
-                print("   [\(index + 1)/\(sleepData.count)] Date: \(summary.calendarDate)")
-                
-                guard let date = dateFormatter.date(from: summary.calendarDate) else {
-                    print("      ❌ Failed to parse date: \(summary.calendarDate)")
-                    continue
-                }
-                
-                let startOfDay = calendar.startOfDay(for: date)
-                print("      📅 Parsed to: \(startOfDay.formatted(date: .abbreviated, time: .omitted))")
-                
-                var metric = metricsByDate[startOfDay] ?? DailyWellnessMetrics(date: startOfDay)
-                
-                if let deep = summary.deepSleepDurationInSeconds {
-                    let hours = Double(deep) / 3600
-                    print("      🌙 Deep sleep: \(String(format: "%.1f", hours))h")
-                    metric.sleepDeep = TimeInterval(deep)
-                }
-                
-                if let rem = summary.remSleepInSeconds {
-                    let hours = Double(rem) / 3600
-                    print("      💭 REM sleep: \(String(format: "%.1f", hours))h")
-                    metric.sleepREM = TimeInterval(rem)
-                }
-                
-                if let light = summary.lightSleepDurationInSeconds {
-                    let hours = Double(light) / 3600
-                    print("      ☁️ Light sleep: \(String(format: "%.1f", hours))h")
-                    metric.sleepCore = TimeInterval(light)
-                }
-                
-                if let awake = summary.awakeDurationInSeconds {
-                    let hours = Double(awake) / 3600
-                    print("      👀 Awake: \(String(format: "%.1f", hours))h")
-                    metric.sleepAwake = TimeInterval(awake)
-                }
-                
-                // Calculate total sleep
-                let totalSleep = (metric.sleepDeep ?? 0) + (metric.sleepREM ?? 0) + (metric.sleepCore ?? 0)
-                print("      📊 Total sleep: \(String(format: "%.1f", totalSleep / 3600))h")
-                
-                metricsByDate[startOfDay] = metric
-                print("      ✅ Sleep data processed")
-            }
-            
-            // Step 3: Save to WellnessManager
-            let allMetrics = Array(metricsByDate.values).sorted { $0.date < $1.date }
-            
-            print("\n💾 Saving \(allMetrics.count) days to WellnessManager...")
-            for (index, metric) in allMetrics.enumerated() {
-                print("   [\(index + 1)/\(allMetrics.count)] \(metric.date.formatted(date: .abbreviated, time: .omitted))")
-                print("      Steps: \(metric.steps ?? 0)")
-                if let sleep = metric.totalSleep {
-                    print("      Sleep: \(String(format: "%.1f", sleep / 3600))h")
-                }
-            }
-            
-            if !allMetrics.isEmpty {
-                await MainActor.run {
-                    WellnessManager.shared.updateBulkMetrics(allMetrics)
-                }
-                print("\n✅ Successfully saved \(allMetrics.count) days to WellnessManager")
-            } else {
-                print("\n⚠️ No metrics to save (all dates filtered out)")
-            }
-            
-        } catch {
-            print("\n❌ SUPABASE FETCH ERROR")
-            print("   Error: \(error)")
-            print("   Type: \(type(of: error))")
-            print("   Localized: \(error.localizedDescription)")
-            throw error
-        }
-    }
-
+         print("\n📥 GARMIN SUPABASE SYNC")
+         print(String(repeating: "-", count: 40))
+         print("App User ID: \(userId)")
+         
+         // Step 0: Get Garmin User ID from mapping table
+         print("\n🔍 Looking up Garmin User ID from user_garmin_mapping...")
+         
+         guard let garminUserId = try await wellnessService.getGarminUserId(forAppUser: userId) else {
+             print("❌ No Garmin user mapping found for app user: \(userId)")
+             print("\n⚠️ DIAGNOSIS:")
+             print("   The user_garmin_mapping table doesn't have an entry for this user.")
+             print("   This happens when:")
+             print("   1. User hasn't completed Garmin OAuth yet")
+             print("   2. linkToSupabase() wasn't called after OAuth")
+             print("   3. The mapping was deleted/cleared")
+             print("\n💡 SOLUTION:")
+             print("   Re-authenticate with Garmin to create the mapping.")
+             throw WellnessError.authenticationRequired
+         }
+         
+         print("✅ Found Garmin User ID: \(garminUserId)")
+         
+         // Step 1: Fetch data from Supabase using GARMIN user ID
+         print("\n🔍 Fetching wellness data from Supabase...")
+         print("   Querying with garmin_user_id: \(garminUserId)")
+         
+         do {
+             // Pass the garminUserId to the fetch methods
+             async let dailies = wellnessService.fetchDailySummaries(forUser: userId, garminUserId: garminUserId, days: 7)
+             async let sleep = wellnessService.fetchSleepData(forUser: userId, garminUserId: garminUserId, days: 7)
+             
+             let (dailyData, sleepData) = try await (dailies, sleep)
+             
+             print("✅ Supabase fetch successful:")
+             print("   - Daily summaries: \(dailyData.count)")
+             print("   - Sleep records: \(sleepData.count)")
+             
+             if dailyData.isEmpty && sleepData.isEmpty {
+                 print("\n⚠️ WARNING: No data returned from Supabase")
+                 print("   garmin_user_id: \(garminUserId)")
+                 print("   app_user_id: \(userId)")
+                 print("\n   This could mean:")
+                 print("   1. Garmin hasn't pushed any wellness data to your backend yet")
+                 print("   2. The backend webhook isn't working")
+                 print("   3. Data exists but for a different garmin_user_id")
+                 print("\n💡 DEBUGGING STEPS:")
+                 print("   1. Check Supabase garmin_wellness table directly")
+                 print("   2. Verify webhook is receiving Garmin push notifications")
+                 print("   3. Check if garmin_user_id matches what's in the table")
+                 return
+             }
+             
+             // Step 2: Process the data
+             print("\n🔨 Processing fetched data...")
+             
+             var metricsByDate: [Date: DailyWellnessMetrics] = [:]
+             let calendar = Calendar.current
+             let dateFormatter = ISO8601DateFormatter()
+             dateFormatter.formatOptions = [.withFullDate]
+             
+             // Process Daily Summaries
+             print("\n📊 Processing \(dailyData.count) daily summaries...")
+             for (index, summary) in dailyData.enumerated() {
+                 print("   [\(index + 1)/\(dailyData.count)] Date: \(summary.calendarDate)")
+                 
+                 guard let date = dateFormatter.date(from: summary.calendarDate) else {
+                     print("      ❌ Failed to parse date: \(summary.calendarDate)")
+                     continue
+                 }
+                 
+                 let startOfDay = calendar.startOfDay(for: date)
+                 print("      📅 Parsed to: \(startOfDay.formatted(date: .abbreviated, time: .omitted))")
+                 
+                 var metric = metricsByDate[startOfDay] ?? DailyWellnessMetrics(date: startOfDay)
+                 
+                 // Log each field
+                 if let steps = summary.steps {
+                     print("      👣 Steps: \(steps)")
+                     metric.steps = steps
+                 }
+                 
+                 if let calories = summary.activeKilocalories {
+                     print("      🔥 Active calories: \(calories)")
+                     metric.activeEnergyBurned = Double(calories)
+                 }
+                 
+                 if let hr = summary.restingHeartRate {
+                     print("      ❤️ Resting HR: \(hr) bpm")
+                     metric.restingHeartRate = hr
+                 }
+                 
+                 if let distance = summary.distanceInMeters {
+                     print("      📏 Distance: \(String(format: "%.1f", distance / 1000)) km")
+                     metric.distance = distance
+                 }
+                 
+                 metricsByDate[startOfDay] = metric
+                 print("      ✅ Daily summary processed")
+             }
+             
+             // Process Sleep Data
+             print("\n😴 Processing \(sleepData.count) sleep records...")
+             for (index, summary) in sleepData.enumerated() {
+                 print("   [\(index + 1)/\(sleepData.count)] Date: \(summary.calendarDate)")
+                 
+                 guard let date = dateFormatter.date(from: summary.calendarDate) else {
+                     print("      ❌ Failed to parse date: \(summary.calendarDate)")
+                     continue
+                 }
+                 
+                 let startOfDay = calendar.startOfDay(for: date)
+                 print("      📅 Parsed to: \(startOfDay.formatted(date: .abbreviated, time: .omitted))")
+                 
+                 var metric = metricsByDate[startOfDay] ?? DailyWellnessMetrics(date: startOfDay)
+                 
+                 if let deep = summary.deepSleepDurationInSeconds {
+                     let hours = Double(deep) / 3600
+                     print("      🌙 Deep sleep: \(String(format: "%.1f", hours))h")
+                     metric.sleepDeep = TimeInterval(deep)
+                 }
+                 
+                 if let rem = summary.remSleepInSeconds {
+                     let hours = Double(rem) / 3600
+                     print("      💭 REM sleep: \(String(format: "%.1f", hours))h")
+                     metric.sleepREM = TimeInterval(rem)
+                 }
+                 
+                 if let light = summary.lightSleepDurationInSeconds {
+                     let hours = Double(light) / 3600
+                     print("      ☁️ Light sleep: \(String(format: "%.1f", hours))h")
+                     metric.sleepCore = TimeInterval(light)
+                 }
+                 
+                 if let awake = summary.awakeDurationInSeconds {
+                     let hours = Double(awake) / 3600
+                     print("      👀 Awake: \(String(format: "%.1f", hours))h")
+                     metric.sleepAwake = TimeInterval(awake)
+                 }
+                 
+                 // Calculate total sleep
+                 let totalSleep = (metric.sleepDeep ?? 0) + (metric.sleepREM ?? 0) + (metric.sleepCore ?? 0)
+                 print("      📊 Total sleep: \(String(format: "%.1f", totalSleep / 3600))h")
+                 
+                 metricsByDate[startOfDay] = metric
+                 print("      ✅ Sleep data processed")
+             }
+             
+             // Step 3: Save to WellnessManager
+             let allMetrics = Array(metricsByDate.values).sorted { $0.date < $1.date }
+             
+             print("\n💾 Saving \(allMetrics.count) days to WellnessManager...")
+             for (index, metric) in allMetrics.enumerated() {
+                 print("   [\(index + 1)/\(allMetrics.count)] \(metric.date.formatted(date: .abbreviated, time: .omitted))")
+                 print("      Steps: \(metric.steps ?? 0)")
+                 if let sleep = metric.totalSleep {
+                     print("      Sleep: \(String(format: "%.1f", sleep / 3600))h")
+                 }
+             }
+             
+             if !allMetrics.isEmpty {
+                 await MainActor.run {
+                     WellnessManager.shared.updateBulkMetrics(allMetrics)
+                 }
+                 print("\n✅ Successfully saved \(allMetrics.count) days to WellnessManager")
+             } else {
+                 print("\n⚠️ No metrics to save (all dates filtered out)")
+             }
+             
+         } catch {
+             print("\n❌ SUPABASE FETCH ERROR")
+             print("   Error: \(error)")
+             print("   Type: \(type(of: error))")
+             print("   Localized: \(error.localizedDescription)")
+             throw error
+         }
+     }
+     
     // MARK: - Apple Health
         private func syncAppleHealthWellness() async throws {
             print("🍎 Syncing from Apple Health...")
@@ -408,7 +409,7 @@ class UnifiedWellnessSync: ObservableObject {
                 let usedSource: String
                 
                 if hasAutoSleep {
-                    // ✅ AutoSleep Mode: Use ONLY AutoSleep samples
+                    // AutoSleep Mode: Use ONLY AutoSleep samples
                     targetSamples = allSamples.filter { $0.sourceBundleId.lowercased().contains("autosleep") }
                     usedSource = "AutoSleep"
                 } else {

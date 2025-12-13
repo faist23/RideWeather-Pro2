@@ -1,6 +1,6 @@
-
 //
-//  Enhanced RouteParser.swift with Elevation Support
+//  RouteParser.swift with Elevation Support
+//  RideWeather Pro
 //
 
 import Foundation
