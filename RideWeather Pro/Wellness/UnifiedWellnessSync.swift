@@ -186,9 +186,10 @@ class UnifiedWellnessSync: ObservableObject {
              // Pass the garminUserId to the fetch methods
              async let dailies = wellnessService.fetchDailySummaries(forUser: userId, garminUserId: garminUserId, days: 7)
              async let sleep = wellnessService.fetchSleepData(forUser: userId, garminUserId: garminUserId, days: 7)
-             
-             let (dailyData, sleepData) = try await (dailies, sleep)
-             
+             async let bodyComps = wellnessService.fetchBodyComposition(forUser: userId, garminUserId: garminUserId, days: 30) // Fetch more days for weight
+
+             let (dailyData, sleepData, bodyCompData) = try await (dailies, sleep, bodyComps)
+
              print("✅ Supabase fetch successful:")
              print("   - Daily summaries: \(dailyData.count)")
              print("   - Sleep records: \(sleepData.count)")

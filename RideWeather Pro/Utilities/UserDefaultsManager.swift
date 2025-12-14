@@ -102,7 +102,8 @@ struct AppSettings: Codable, Equatable {
             case manual = "Manual Input"
             case strava = "Strava"
             case healthKit = "Apple Health"
-            
+            case garmin = "Garmin" 
+
             var id: String { self.rawValue }
         }
         

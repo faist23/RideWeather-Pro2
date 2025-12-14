@@ -16,6 +16,8 @@ struct SettingsView: View {
     @StateObject private var dataSourceManager = DataSourceManager.shared
     @State private var lastRefresh = Date() // Forces UI update
 
+    @State private var showWeightSourcePicker = false
+
     // Track storage strings manually to force updates
     @State private var trainingStorageText: String = ""
     @State private var wellnessStorageText: String = ""
@@ -170,6 +172,7 @@ struct SettingsView: View {
                 }
             }
             .onAppear {
+                autoSelectWeightSourceIfNeeded() 
                 // Update storage text
                 updateStorageInfo()
                 
@@ -187,6 +190,18 @@ struct SettingsView: View {
                         garminConnected: garminService.isAuthenticated
                     )
                 }
+            }
+            .sheet(isPresented: $showWeightSourcePicker) {
+                WeightSourcePickerSheet(
+                    currentSource: $viewModel.settings.weightSource,
+                    settings: $viewModel.settings,
+                    healthConnected: healthManager.isAuthorized,
+                    stravaConnected: stravaService.isAuthenticated,
+                    garminConnected: garminService.isAuthenticated,
+                    onSourceChanged: { source in
+                        await performWeightSync(source: source)
+                    }
+                )
             }
         }
     }
@@ -256,7 +271,7 @@ struct SettingsView: View {
     
     private var powerProfileSettings: some View {
         Group {
-            // FTP
+            // FTP (unchanged)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Functional Threshold Power")
@@ -280,51 +295,11 @@ struct SettingsView: View {
             }
             .padding(.vertical, 4)
             
-            // Body Weight
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Body Weight")
-                    Spacer()
-                    Text("\(viewModel.settings.bodyWeightInUserUnits, specifier: "%.1f") \(viewModel.settings.units.weightSymbol)")
-                        .foregroundStyle(.secondary)
-                }
-                
-                Slider(
-                    value: $viewModel.settings.bodyWeightInUserUnits,
-                    in: viewModel.settings.units == .metric ? 40...150 : 90...330,
-                    step: 0.1
-                )
-                .disabled(viewModel.settings.weightSource != .manual)
-                .opacity(viewModel.settings.weightSource != .manual ? 0.6 : 1.0)
-                
-                Picker("Update from", selection: $viewModel.settings.weightSource) {
-                    ForEach(AppSettings.WeightSource.allCases) { source in
-                        Text(source.rawValue).tag(source)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: viewModel.settings.weightSource) { _, newSource in
-                    Task {
-                        await performWeightSync(source: newSource)
-                    }
-                }
-                
-                if viewModel.settings.weightSource == .strava && !stravaService.isAuthenticated {
-                    Text("⚠️ Connect Strava in Integrations to sync")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                } else if viewModel.settings.weightSource == .healthKit && !healthManager.isAuthorized {
-                    Text("⚠️ Connect Health in Integrations to sync")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                }
-            }
-            .padding(.vertical, 4)
-            .task {
-                await performWeightSync(source: viewModel.settings.weightSource)
-            }
+            // Body Weight - NEW SIMPLIFIED VERSION
+            weightManagementSection
+                .padding(.vertical, 4)
             
-            // Bike Weight
+            // Bike Weight (unchanged)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Bike + Equipment Weight")
@@ -336,7 +311,7 @@ struct SettingsView: View {
                 Slider(
                     value: $viewModel.settings.bikeWeightInUserUnits,
                     in: viewModel.settings.units == .metric ? 5...25 : 10...55,
-                    step: 0.1
+                    step: 0.2
                 )
                 
                 Text("Total System Weight: \(String(format: "%.1f", viewModel.settings.totalWeightKg * (viewModel.settings.units == .metric ? 1 : 2.20462))) \(viewModel.settings.units.weightSymbol)")
@@ -346,7 +321,7 @@ struct SettingsView: View {
             .padding(.vertical, 4)
         }
     }
-    
+
     // MARK: - Sync Helper
     
     private func performWeightSync(source: AppSettings.WeightSource) async {
@@ -365,6 +340,10 @@ struct SettingsView: View {
             if healthManager.isAuthorized {
                 newWeight = await healthManager.fetchLatestWeight()
             }
+        case .garmin:
+            if garminService.isAuthenticated {
+                newWeight = await fetchWeightFromGarmin()
+            }
         case .manual:
             return
         }
@@ -377,12 +356,123 @@ struct SettingsView: View {
         }
     }
     
+    func fetchWeightFromGarmin() async -> Double? {
+        // Fetch from WellnessManager (which gets Garmin data)
+        let wellnessManager = WellnessManager.shared
+        
+        // Get most recent wellness metrics
+        if let latestMetrics = wellnessManager.dailyMetrics.last,
+           let bodyMass = latestMetrics.bodyMass {
+            print("✅ Fetched weight from Garmin wellness: \(bodyMass) kg")
+            return bodyMass
+        }
+        
+        print("⚠️ No weight data found in Garmin wellness")
+        return nil
+    }
+
     // MARK: - UI Helpers
     
     private func updateStorageInfo() {
         trainingStorageText = TrainingLoadManager.shared.getStorageInfo()
         wellnessStorageText = WellnessManager.shared.getStorageInfo()
     }
+    
+    var weightManagementSection: some View {
+        Group {
+            // Current Weight Display
+            HStack {
+                Text("Body Weight")
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(viewModel.settings.bodyWeightInUserUnits, specifier: "%.1f") \(viewModel.settings.units.weightSymbol)")
+                        .foregroundStyle(.primary)
+                    
+                    // Source indicator
+                    HStack(spacing: 4) {
+                        Image(systemName: weightSourceIcon)
+                            .font(.caption2)
+                        Text(weightSourceLabel)
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(.secondary)
+                }
+            }
+            
+            // Manual slider (only if manual source)
+            if viewModel.settings.weightSource == .manual {
+                VStack(alignment: .leading, spacing: 8) {
+                    Slider(
+                        value: $viewModel.settings.bodyWeightInUserUnits,
+                        in: viewModel.settings.units == .metric ? 40...150 : 90...330,
+                        step: 0.1
+                    )
+                    
+                    Text("Adjust your weight manually")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            // Update Weight Button
+            Button {
+                showWeightSourcePicker = true
+            } label: {
+                Label("Change Weight Source", systemImage: "arrow.triangle.2.circlepath")
+            }
+        }
+    }
+
+    private var weightSourceLabel: String {
+        switch viewModel.settings.weightSource {
+        case .healthKit:
+            return healthManager.isAuthorized ? "From Apple Health" : "Health (Disconnected)"
+        case .strava:
+            return stravaService.isAuthenticated ? "From Strava" : "Strava (Disconnected)"
+        case .garmin:
+            return garminService.isAuthenticated ? "From Garmin" : "Garmin (Disconnected)"
+        case .manual:
+            return "Manual Entry"
+        }
+    }
+
+    private var weightSourceIcon: String {
+        switch viewModel.settings.weightSource {
+        case .healthKit:
+            return "heart.fill"
+        case .strava:
+            return "figure.run"
+        case .garmin:
+            return "figure.run.circle.fill"
+        case .manual:
+            return "hand.raised.fill"
+        }
+    }
+
+    func autoSelectWeightSourceIfNeeded() {
+        // Only auto-select if user has never explicitly chosen
+        let hasUserSetWeight = UserDefaults.standard.bool(forKey: "hasUserSetWeightSource")
+        
+        guard !hasUserSetWeight else { return }
+        
+        // Priority: Health > Strava > Manual
+        if healthManager.isAuthorized {
+            viewModel.settings.weightSource = .healthKit
+            Task {
+                await performWeightSync(source: .healthKit)
+            }
+        } else if stravaService.isAuthenticated {
+            viewModel.settings.weightSource = .strava
+            Task {
+                await performWeightSync(source: .strava)
+            }
+        }
+        // else stays manual (default)
+        
+        // Mark that we've done auto-selection
+        UserDefaults.standard.set(true, forKey: "hasUserSetWeightSource")
+    }
+
 }
 
 

@@ -137,6 +137,12 @@ struct RideWeatherProApp: App {
                 newWeight = await healthManager.fetchLatestWeight()
             }
             
+        case .garmin:
+            // Fetch from Garmin wellness data
+            if garminService.isAuthenticated {
+                newWeight = await fetchWeightFromGarmin()
+            }
+
         case .manual:
             // Do nothing - user wants to manage it manually
             return
@@ -153,5 +159,22 @@ struct RideWeatherProApp: App {
                 print("✅ Synced weight from \(source.rawValue): \(weight) kg")
             }
         }
+    }
+    
+    private func fetchWeightFromGarmin() async -> Double? {
+        // Fetch from WellnessManager (which gets Garmin data)
+        let wellnessManager = WellnessManager.shared
+        
+        // Get most recent wellness metrics that has body mass
+        if let latestMetrics = wellnessManager.dailyMetrics
+            .sorted(by: { $0.date > $1.date })
+            .first(where: { $0.bodyMass != nil }),
+           let bodyMass = latestMetrics.bodyMass {
+            print("✅ Fetched weight from Garmin wellness: \(bodyMass) kg")
+            return bodyMass
+        }
+        
+        print("⚠️ No weight data found in Garmin wellness")
+        return nil
     }
 }
