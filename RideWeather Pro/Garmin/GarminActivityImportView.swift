@@ -12,6 +12,7 @@ import SwiftUI
 struct GarminActivityImportView: View {
     @EnvironmentObject var garminService: GarminService
     @EnvironmentObject var rideViewModel: RideAnalysisViewModel
+    @EnvironmentObject var weatherViewModel: WeatherViewModel
     @Environment(\.dismiss) private var dismiss
     
     @State private var activities: [GarminActivitySummary] = []
@@ -138,7 +139,7 @@ struct GarminActivityImportView: View {
                 // Import into ride analysis
                 rideViewModel.importRideData(rideData)
                 
-                // ✅ Send notification with Garmin source
+                // Send notification with Garmin source
                 if let currentAnalysis = rideViewModel.currentAnalysis {
                     NotificationCenter.default.post(
                         name: NSNotification.Name("NewAnalysisImported"),

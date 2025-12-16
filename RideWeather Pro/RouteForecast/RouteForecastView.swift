@@ -18,7 +18,7 @@ enum RouteViewState {
 enum RouteForecastSheet: Identifiable {
     case stravaImport
     case wahooImport
-//    case garminImport
+    case garminImport
     case settings
     case datePicker
     case timePicker
@@ -121,10 +121,10 @@ struct RouteForecastView: View {
                     WahooRouteImportView(onDismiss: { activeSheet = nil })
                         .environmentObject(wahooService)
                         .environmentObject(viewModel)
-/*                case .garminImport:
+                case .garminImport:
                     GarminActivityImportView()
                         .environmentObject(garminService)
-                        .environmentObject(viewModel)*/
+                        .environmentObject(viewModel)
                case .settings:
                     SettingsView()
                         .environmentObject(viewModel)
@@ -221,7 +221,7 @@ struct RouteForecastView: View {
                         }
                         .buttonStyle(.plain)
                     }
- /*                   if garminService.isAuthenticated {
+                    if garminService.isAuthenticated {
                         Button { activeSheet = .garminImport } label: {
                             importButtonLabel(
                                 icon: "figure.outdoor.cycle",
@@ -230,7 +230,7 @@ struct RouteForecastView: View {
                             )
                         }
                         .buttonStyle(.plain)
-                    }*/
+                    }
                 }
                 .padding(.horizontal, 12)
                 
