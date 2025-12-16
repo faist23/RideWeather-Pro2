@@ -11,25 +11,21 @@ import SwiftUI
 extension HourlyForecast {
     /// Temperature in Fahrenheit - check if conversion is needed
     var tempF: Double {
-        if temp >= 30 && temp <= 120 { return temp }
-        return (temp * 9/5) + 32
+        return temp
     }
     
     /// Feels like temperature in Fahrenheit
     var feelsLikeF: Double {
-        if feelsLike >= 30 && feelsLike <= 120 { return feelsLike }
-        return (feelsLike * 9/5) + 32
+        return feelsLike
     }
     
     /// Temperature in Celsius - check if conversion is needed
     var tempC: Double {
-        if temp >= 30 && temp <= 120 { return (temp - 32) * 5/9 }
         return temp
     }
     
     /// Feels like temperature in Celsius
     var feelsLikeC: Double {
-        if feelsLike >= 30 && feelsLike <= 120 { return (feelsLike - 32) * 5/9 }
         return feelsLike
     }
 }

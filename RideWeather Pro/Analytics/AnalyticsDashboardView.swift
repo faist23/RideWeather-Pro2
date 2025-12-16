@@ -86,7 +86,7 @@ struct AnalyticsDashboardView: View {
         }
     }
 
-    // ✅ NEW: Computed property to format the best hour with the day
+    // Computed property to format the best hour with the day
     private var formattedBestHour: String {
         guard let best = bestHour else { return "N/A" }
         let formatter = DateFormatter()
@@ -300,7 +300,7 @@ struct AnalyticsDashboardView: View {
                 case .temperature:
                     let minVal = filteredData.map(\.temp).min() ?? 0
                     let maxVal = max(filteredData.map(\.feelsLike).max() ?? 0, minVal + 10)
-                    return (Double(minVal - 5))...(Double(maxVal + 5))
+                    return (Double(minVal - 10))...(Double(maxVal + 10))
                 case .wind:
                     let maxVal = filteredData.map(\.windSpeed).max() ?? 0
                     return 0...(maxVal * 1.2)

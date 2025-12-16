@@ -176,6 +176,9 @@ struct SettingsView: View {
                 // Update storage text
                 updateStorageInfo()
                 
+                // 🆕 Sync weight from current source
+                syncWeightFromCurrentSource()
+                
                 // Auto-configure data sources on first launch if needed
                 let status = dataSourceManager.validateConfiguration(
                     stravaConnected: stravaService.isAuthenticated,
@@ -200,8 +203,18 @@ struct SettingsView: View {
                     garminConnected: garminService.isAuthenticated,
                     onSourceChanged: { source in
                         await performWeightSync(source: source)
+                        // 🆕 Force UI refresh after sync
+                        await MainActor.run {
+                            lastRefresh = Date()
+                        }
                     }
                 )
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .wellnessDataUpdated)) { _ in
+                // Refresh weight display when wellness data changes
+                if viewModel.settings.weightSource == .garmin {
+                    syncWeightFromCurrentSource()
+                }
             }
         }
     }
@@ -357,14 +370,16 @@ struct SettingsView: View {
     }
     
     func fetchWeightFromGarmin() async -> Double? {
-        // Fetch from WellnessManager (which gets Garmin data)
         let wellnessManager = WellnessManager.shared
         
-        // Get most recent wellness metrics
-        if let latestMetrics = wellnessManager.dailyMetrics.last,
-           let bodyMass = latestMetrics.bodyMass {
-            print("✅ Fetched weight from Garmin wellness: \(bodyMass) kg")
-            return bodyMass
+        // Get most recent wellness metrics with weight
+        let metricsWithWeight = wellnessManager.dailyMetrics
+            .filter { $0.bodyMass != nil }
+            .sorted { $0.date > $1.date } // Most recent first
+        
+        if let latestWeight = metricsWithWeight.first?.bodyMass {
+            print("✅ Fetched weight from Garmin wellness: \(latestWeight) kg")
+            return latestWeight
         }
         
         print("⚠️ No weight data found in Garmin wellness")
@@ -446,6 +461,41 @@ struct SettingsView: View {
             return "figure.run.circle.fill"
         case .manual:
             return "hand.raised.fill"
+        }
+    }
+
+    private func syncWeightFromCurrentSource() {
+        Task {
+            switch viewModel.settings.weightSource {
+            case .garmin:
+                if let weight = await fetchWeightFromGarmin() {
+                    await MainActor.run {
+                        viewModel.settings.bodyWeight = weight
+                    }
+                }
+            case .healthKit:
+                if healthManager.isAuthorized {
+                    if let weight = await healthManager.fetchLatestWeight() {
+                        await MainActor.run {
+                            viewModel.settings.bodyWeight = weight
+                        }
+                    }
+                }
+            case .strava:
+                if stravaService.isAuthenticated {
+                    do {
+                        if let weight = try await stravaService.fetchAthleteWeight() {
+                            await MainActor.run {
+                                viewModel.settings.bodyWeight = weight
+                            }
+                        }
+                    } catch {
+                        print("Settings: Strava weight sync failed: \(error)")
+                    }
+                }
+            case .manual:
+                break // Don't sync for manual
+            }
         }
     }
 
@@ -991,5 +1041,7 @@ extension Bundle {
     }
 }
 
-
+extension Notification.Name {
+    static let wellnessDataUpdated = Notification.Name("wellnessDataUpdated")
+}
 

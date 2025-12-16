@@ -348,6 +348,7 @@ class WellnessDataService {
         print("   Parsed \(summaries.count) valid sleep records")
         return summaries
     }
+    
     // Fetch stress details
     func fetchStressData(forUser userId: String, garminUserId: String? = nil, days: Int = 7) async throws -> [StressSummary] {
         let rows = try await fetchWellnessData(forUser: userId, garminUserId: garminUserId, dataType: "stressDetails", daysBack: days)
@@ -369,6 +370,56 @@ class WellnessDataService {
         }
     }
     
+    /// Fetch body composition data from Supabase
+    func fetchBodyComposition(forUser userId: String, garminUserId: String? = nil, days: Int = 30) async throws -> [BodyCompositionSummary] {
+        print("\n⚖️ Fetching body composition data...")
+        let rows = try await fetchWellnessData(forUser: userId, garminUserId: garminUserId, dataType: "bodyComps", daysBack: days)
+        
+        print("   Processing \(rows.count) body composition rows...")
+        
+        let summaries = rows.compactMap { row -> BodyCompositionSummary? in
+            guard let dict = row.data.dictionary else {
+                print("   ⚠️ Row \(row.id): Failed to parse data dictionary")
+                return nil
+            }
+            
+            // Extract weight in grams and convert to kg
+            guard let weightGrams = dict["weightInGrams"] as? Int else {
+                print("   ⚠️ Row \(row.id): Missing weightInGrams")
+                return nil
+            }
+            
+            let weightKg = Double(weightGrams) / 1000.0
+            
+            // Extract measurement timestamp
+            let timestamp: Date
+            if let timestampSeconds = dict["measurementTimeInSeconds"] as? Int {
+                timestamp = Date(timeIntervalSince1970: TimeInterval(timestampSeconds))
+            } else {
+                timestamp = row.syncedAt
+            }
+            
+            // Log what we found
+            let dateStr = timestamp.formatted(date: .abbreviated, time: .shortened)
+            print("   ✅ \(dateStr): weight=\(String(format: "%.1f", weightKg))kg")
+            
+            return BodyCompositionSummary(
+                id: row.id,
+                measurementDate: timestamp,
+                weightKg: weightKg,
+                bmi: dict["bmi"] as? Double,
+                bodyFatPercentage: dict["bodyFatPercentage"] as? Double,
+                muscleMassKg: dict["muscleMassInGrams"] as? Int != nil ? Double((dict["muscleMassInGrams"] as! Int)) / 1000.0 : nil,
+                bodyWaterPercentage: dict["bodyWaterPercentage"] as? Double,
+                boneMassKg: dict["boneMassInGrams"] as? Int != nil ? Double((dict["boneMassInGrams"] as! Int)) / 1000.0 : nil,
+                syncedAt: row.syncedAt
+            )
+        }
+        
+        print("   Parsed \(summaries.count) valid body composition records")
+        return summaries
+    }
+
     // Map Garmin user to app user
     func linkGarminUser(appUserId: String, garminUserId: String) async throws {
         print("\n🔗 Linking Garmin user to app user...")
@@ -435,6 +486,18 @@ struct StressSummary: Identifiable {
     let lowStressDuration: Int?
     let mediumStressDuration: Int?
     let highStressDuration: Int?
+    let syncedAt: Date
+}
+
+struct BodyCompositionSummary: Identifiable {
+    let id: UUID
+    let measurementDate: Date
+    let weightKg: Double
+    let bmi: Double?
+    let bodyFatPercentage: Double?
+    let muscleMassKg: Double?
+    let bodyWaterPercentage: Double?
+    let boneMassKg: Double?
     let syncedAt: Date
 }
 
@@ -548,3 +611,249 @@ extension WellnessDataService {
     }
 }
 
+// MARK: - Garmin Activity Fetching from Supabase
+
+extension WellnessDataService {
+    
+    /// Fetch activities from Supabase (Garmin push notifications)
+    func fetchGarminActivities(
+        forUser userId: String,
+        garminUserId: String,
+        limit: Int = 50
+    ) async throws -> [GarminWellnessRow] {
+        print("\n📡 Fetching Garmin activities from Supabase...")
+        print("   app_user_id: \(userId)")
+        print("   garmin_user_id: \(garminUserId)")
+        print("   limit: \(limit)")
+        
+        do {
+            // First, try to get activities data type
+            let response: [GarminWellnessRow] = try await supabase
+                .from("garmin_wellness")
+                .select()
+                .eq("garmin_user_id", value: garminUserId)
+                .eq("data_type", value: "activities")
+                .order("synced_at", ascending: false)
+                .limit(limit)
+                .execute()
+                .value
+            
+            print("   Retrieved \(response.count) 'activities' rows")
+            
+            // If no activities, try manuallyUpdatedActivities
+            if response.isEmpty {
+                print("   No 'activities' found, trying 'manuallyUpdatedActivities'...")
+                
+                let manualResponse: [GarminWellnessRow] = try await supabase
+                    .from("garmin_wellness")
+                    .select()
+                    .eq("garmin_user_id", value: garminUserId)
+                    .eq("data_type", value: "manuallyUpdatedActivities")
+                    .order("synced_at", ascending: false)
+                    .limit(limit)
+                    .execute()
+                    .value
+                
+                print("   Retrieved \(manualResponse.count) 'manuallyUpdatedActivities' rows")
+                return filterCyclingActivities(manualResponse)
+            }
+            
+            return filterCyclingActivities(response)
+            
+        } catch {
+            print("❌ Failed to fetch activities: \(error)")
+            throw error
+        }
+    }
+    
+    private func filterCyclingActivities(_ rows: [GarminWellnessRow]) -> [GarminWellnessRow] {
+        let cyclingActivities = rows.filter { row in
+            guard let dict = row.data.dictionary,
+                  let activityType = dict["activityType"] as? String else {
+                return false
+            }
+            let type = activityType.uppercased()
+            
+            // Include outdoor cycling types only
+            let isOutdoorCycling = type.contains("ROAD") ||
+                                   type.contains("MOUNTAIN") ||
+                                   type.contains("GRAVEL") ||
+                                   type == "CYCLING" ||
+                                   type == "ROAD_BIKING"
+            
+            // Exclude indoor cycling
+            let isIndoor = type.contains("INDOOR")
+            
+            return isOutdoorCycling && !isIndoor
+        }
+        
+        print("   ✅ \(cyclingActivities.count) outdoor cycling activities after filtering")
+        return cyclingActivities
+    }
+
+    /// Fetch activity details including GPS samples
+    /// Fetch activity details including GPS samples
+    func fetchActivityDetail(
+        activityId: Int,
+        garminUserId: String
+    ) async throws -> GarminActivityDetail? {
+        print("\n📡 Fetching activity detail for \(activityId)...")
+        print("   garmin_user_id: \(garminUserId)")
+        
+        do {
+            // Fetch activityDetails rows
+            let detailRows: [GarminWellnessRow] = try await supabase
+                .from("garmin_wellness")
+                .select()
+                .eq("garmin_user_id", value: garminUserId)
+                .eq("data_type", value: "activityDetails")
+                .execute()
+                .value
+            
+            print("   Retrieved \(detailRows.count) activityDetails rows")
+            
+            // Find the matching activity by parsing each row
+            var matchingRow: GarminWellnessRow?
+            for row in detailRows {
+                guard let dict = row.data.dictionary else { continue }
+                
+                if let summary = dict["summary"] as? [String: Any],
+                   let id = summary["activityId"] as? Int,
+                   id == activityId {
+                    matchingRow = row
+                    print("   ✅ Found matching activity in 'summary' field")
+                    break
+                }
+                
+                if let id = dict["activityId"] as? Int, id == activityId {
+                    matchingRow = row
+                    print("   ✅ Found matching activity at root level")
+                    break
+                }
+            }
+            
+            guard let detailRow = matchingRow else {
+                print("   ⚠️ No activityDetails found for ID \(activityId)")
+                return nil
+            }
+            
+            guard let dict = detailRow.data.dictionary else {
+                print("   ❌ Failed to parse data dictionary")
+                return nil
+            }
+            
+            print("   🔍 Activity data structure:")
+            print("      Keys at root: \(dict.keys.sorted())")
+            
+            // Check if data is in summary field or at root
+            let activityDict: [String: Any]
+            if let summary = dict["summary"] as? [String: Any] {
+                print("      ✅ Found 'summary' field")
+                activityDict = summary
+            } else {
+                print("      ℹ️ No 'summary' field, using root")
+                activityDict = dict
+            }
+            
+            // Try to find samples array
+            let samplesArray: [[String: Any]]?
+            if let directSamples = dict["samples"] as? [[String: Any]] {
+                samplesArray = directSamples
+                print("      ✅ Found samples at root level")
+            } else if let jsonString = dict["samples"] as? String,
+                      let data = jsonString.data(using: .utf8),
+                      let parsed = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                samplesArray = parsed
+                print("      ✅ Parsed samples from JSON string")
+            } else {
+                samplesArray = nil
+                print("      ⚠️ No samples array found")
+            }
+            
+            // Parse samples
+            var samples: [GarminActivitySample] = []
+            var samplesWithGPS = 0
+            var samplesWithPower = 0
+            
+            if let samplesArray = samplesArray {
+                print("   Parsing \(samplesArray.count) samples...")
+                
+                // Debug first sample to see what keys are available
+                if let firstSample = samplesArray.first {
+                    print("   🔍 First sample keys: \(firstSample.keys.sorted())")
+                    if let powerValue = firstSample["powerInWatts"] {
+                        print("   🔍 Power value in first sample: \(powerValue) (type: \(type(of: powerValue)))")
+                    }
+                }
+                
+                for (index, sampleDict) in samplesArray.enumerated() {
+                    guard let timestamp = sampleDict["startTimeInSeconds"] as? Int else {
+                        continue
+                    }
+                    
+                    let lat = sampleDict["latitudeInDegree"] as? Double
+                    let lon = sampleDict["longitudeInDegree"] as? Double
+                    
+                    // Try both Double and Int for power (Garmin might send as Int)
+                    let power: Double?
+                    if let powerDouble = sampleDict["powerInWatts"] as? Double {
+                        power = powerDouble
+                    } else if let powerInt = sampleDict["powerInWatts"] as? Int {
+                        power = Double(powerInt)
+                    } else {
+                        power = nil
+                    }
+                    
+                    // Debug first few samples with power
+                    if index < 3 && power != nil && power! > 0 {
+                        print("   🔍 Sample \(index) power: \(power!)")
+                    }
+                    
+                    // Count valid data
+                    if lat != nil && lon != nil { samplesWithGPS += 1 }
+                    if let p = power, p > 0 { samplesWithPower += 1 }
+                    
+                    samples.append(GarminActivitySample(
+                        startTimeInSeconds: timestamp,
+                        latitude: lat,
+                        longitude: lon,
+                        elevation: sampleDict["elevationInMeters"] as? Double,
+                        heartRate: sampleDict["heartRate"] as? Int,
+                        power: power,
+                        speed: sampleDict["speedMetersPerSecond"] as? Double,
+                        cadence: sampleDict["bikeCadenceInRPM"] as? Int
+                    ))
+                }
+                
+                print("   ✅ Parsed \(samples.count) samples")
+                print("      - \(samplesWithGPS) with GPS coordinates")
+                print("      - \(samplesWithPower) with power > 0")
+            }
+            
+            if samples.isEmpty {
+                print("   ⚠️ No samples found in activity data")
+            }
+            
+            return GarminActivityDetail(
+                activityId: activityDict["activityId"] as? Int ?? activityId,
+                activityName: activityDict["activityName"] as? String,
+                activityType: activityDict["activityType"] as? String ?? "Cycling",
+                startTimeInSeconds: activityDict["startTimeInSeconds"] as? Int ?? 0,
+                durationInSeconds: activityDict["durationInSeconds"] as? Int ?? 0,
+                distanceInMeters: activityDict["distanceInMeters"] as? Double,
+                samples: samples.isEmpty ? nil : samples,
+                averageHeartRateInBeatsPerMinute: activityDict["averageHeartRateInBeatsPerMinute"] as? Int,
+                maxHeartRateInBeatsPerMinute: activityDict["maxHeartRateInBeatsPerMinute"] as? Int,
+                averagePowerInWatts: activityDict["averagePowerInWatts"] as? Double,
+                normalizedPowerInWatts: activityDict["normalizedPowerInWatts"] as? Double,
+                activeKilocalories: activityDict["activeKilocalories"] as? Double,
+                elevationGainInMeters: activityDict["totalElevationGainInMeters"] as? Double,
+                elevationLossInMeters: activityDict["totalElevationLossInMeters"] as? Double
+            )
+            
+        } catch {
+            print("❌ Failed to fetch activity detail: \(error)")
+            throw error
+        }
+    }
+}

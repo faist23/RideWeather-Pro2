@@ -1328,118 +1328,76 @@ extension GarminService {
         return activities
     }
     
-    /// Fetch a specific activity for ride analysis using Activity API
+    /// Fetch activity details from Supabase (where Garmin pushes data)
     func fetchActivityDetails(activityId: Int) async throws -> GarminActivityDetail {
-        // Not available via OAuth - users should export FIT files
-        print("ℹ️ Garmin activity details not available via OAuth API")
-        throw GarminError.notAuthenticated // Or create a specific error
-/*        try await refreshTokenIfNeededAsync()
+        print("📥 GarminService: Fetching activity \(activityId) from Supabase...")
         
-        guard let token = currentTokens?.accessToken else {
-            throw GarminError.notAuthenticated
+        let wellnessService = WellnessDataService()
+        
+        // Get Garmin user ID
+        guard let garminUserId = try await fetchGarminUserId() else {
+            throw GarminError.apiError(statusCode: 0, message: "Could not get Garmin user ID")
         }
         
-        // Use Activity API endpoint for detailed activity data
-        let urlString = "https://apis.garmin.com/activity-service/activity/\(activityId)"
+        print("   Garmin User ID: \(garminUserId)")
         
-        guard let url = URL(string: urlString) else {
-            throw GarminError.invalidURL
+        // Fetch activity details
+        guard let detail = try await wellnessService.fetchActivityDetail(
+            activityId: activityId,
+            garminUserId: garminUserId
+        ) else {
+            throw GarminError.apiError(statusCode: 404, message: "Activity not found")
         }
         
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        
-        print("GarminService: Fetching activity details for ID \(activityId)...")
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw GarminError.invalidResponse
-        }
-        
-        print("GarminService: Activity details response status: \(httpResponse.statusCode)")
-        
-        guard httpResponse.statusCode == 200 else {
-            let errorMsg = String(data: data, encoding: .utf8) ?? "Unknown error"
-            print("❌ GarminService fetchActivityDetails error:")
-            print("   Status: \(httpResponse.statusCode)")
-            print("   Response: \(errorMsg)")
-            throw GarminError.apiError(statusCode: httpResponse.statusCode, message: errorMsg)
-        }
-        
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        decoder.dateDecodingStrategy = .iso8601
-        
-        // Log response structure
-        if let jsonString = String(data: data, encoding: .utf8) {
-            print("GarminService: Activity detail structure: \(jsonString.prefix(1000))...")
-        }
-        
-        struct ActivityDetailResponse: Codable {
-            let activityId: Int?
-            let activityName: String?
-            let activityType: String?
-            let startTimeGMT: String?
-            let durationInSeconds: Int?
-            let distanceInMeters: Double?
-            let averageHR: Int?
-            let maxHR: Int?
-            let avgPower: Double?
-            let normalizedPower: Double?
-            let calories: Double?
-            let elevationGain: Double?
-            let elevationLoss: Double?
-            let samples: [GarminActivitySample]?
-        }
-        
-        do {
-            let detail = try decoder.decode(ActivityDetailResponse.self, from: data)
-            
-            let startTimeInSeconds: Int
-            if let startTimeGMT = detail.startTimeGMT {
-                let formatter = ISO8601DateFormatter()
-                if let date = formatter.date(from: startTimeGMT) {
-                    startTimeInSeconds = Int(date.timeIntervalSince1970)
-                } else {
-                    startTimeInSeconds = Int(Date().timeIntervalSince1970)
-                }
-            } else {
-                startTimeInSeconds = Int(Date().timeIntervalSince1970)
-            }
-            
-            let activityDetail = GarminActivityDetail(
-                activityId: detail.activityId ?? activityId,
-                activityName: detail.activityName,
-                activityType: detail.activityType ?? "Cycling",
-                startTimeInSeconds: startTimeInSeconds,
-                durationInSeconds: detail.durationInSeconds ?? 0,
-                distanceInMeters: detail.distanceInMeters,
-                samples: detail.samples,
-                averageHeartRateInBeatsPerMinute: detail.averageHR,
-                maxHeartRateInBeatsPerMinute: detail.maxHR,
-                averagePowerInWatts: detail.avgPower,
-                normalizedPowerInWatts: detail.normalizedPower,
-                activeKilocalories: detail.calories,
-                elevationGainInMeters: detail.elevationGain,
-                elevationLossInMeters: detail.elevationLoss
-            )
-            
-            print("GarminService: ✅ Fetched activity details with \(detail.samples?.count ?? 0) samples")
-            return activityDetail
-            
-        } catch {
-            print("❌ Failed to decode activity detail: \(error)")
-            throw error
-        }*/
+        print("✅ GarminService: Found activity with \(detail.samples?.count ?? 0) samples")
+        return detail
     }
     
-    /// Fetch activity list using Activity API (which you have access to)
+    /// Fetch activity list from Supabase (where Garmin pushes data)
     func fetchRecentActivities(limit: Int = 50) async throws -> [GarminActivitySummary] {
-        // Not available via OAuth - users should export FIT files
-        print("ℹ️ Garmin activity listing not available via OAuth API")
-        return []
+        print("📥 GarminService: Fetching activities from Supabase...")
+        
+        let wellnessService = WellnessDataService()
+        
+        // Get Garmin user ID
+        guard let garminUserId = try await fetchGarminUserId() else {
+            throw GarminError.apiError(statusCode: 0, message: "Could not get Garmin user ID")
+        }
+        
+        // Fetch from Supabase
+        let rows = try await wellnessService.fetchGarminActivities(
+            forUser: self.appUserId,
+            garminUserId: garminUserId,
+            limit: limit
+        )
+        
+        print("✅ GarminService: Found \(rows.count) activities in Supabase")
+        
+        // Convert to GarminActivitySummary
+        let summaries = rows.compactMap { row -> GarminActivitySummary? in
+            guard let dict = row.data.dictionary else { return nil }
+            
+            // Parse the activity data
+            guard let activityId = dict["activityId"] as? Int,
+                  let startTime = dict["startTimeInSeconds"] as? Int,
+                  let duration = dict["durationInSeconds"] as? Int else {
+                return nil
+            }
+            
+            return GarminActivitySummary(
+                activityId: activityId,
+                activityName: dict["activityName"] as? String,
+                activityType: dict["activityType"] as? String ?? "Unknown",
+                startTimeInSeconds: startTime,
+                durationInSeconds: duration,
+                distanceInMeters: dict["distanceInMeters"] as? Double,
+                averageHeartRateInBeatsPerMinute: dict["averageHeartRateInBeatsPerMinute"] as? Int,
+                averagePowerInWatts: dict["averagePowerInWatts"] as? Double,
+                activeKilocalories: dict["activeKilocalories"] as? Double
+            )
+        }
+        
+        return summaries
     }
     
     /*    // ✅ Use Activity API endpoint (not Wellness API)

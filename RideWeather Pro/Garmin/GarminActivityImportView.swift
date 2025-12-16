@@ -6,6 +6,7 @@
 //
 
 
+import CoreLocation
 import SwiftUI
 
 struct GarminActivityImportView: View {
@@ -22,7 +23,7 @@ struct GarminActivityImportView: View {
         if searchText.isEmpty {
             return activities
         }
-        return activities.filter { 
+        return activities.filter {
             ($0.activityName ?? "").localizedCaseInsensitiveContains(searchText) ||
             $0.activityType.localizedCaseInsensitiveContains(searchText)
         }
@@ -99,19 +100,8 @@ struct GarminActivityImportView: View {
     private func loadActivities() async {
         isLoading = true
         errorMessage = nil
-  
-        //----------------------------
-        print("📥 GarminActivityImportView: Testing endpoints...")
         
-        // ✅ Add this line to test
-        await garminService.testActivityEndpoints()
-        
-        isLoading = false
-    }
-    //------------------------
-    
-    
-/*        print("📥 GarminActivityImportView: Starting to load activities...")
+        print("📥 GarminActivityImportView: Starting to load activities...")
         
         do {
             activities = try await garminService.fetchRecentActivities(limit: 50)
@@ -131,7 +121,7 @@ struct GarminActivityImportView: View {
         }
         
         isLoading = false
-    }*/
+    }
     
     private func importActivity(_ activity: GarminActivitySummary) async {
         isLoading = true
@@ -170,38 +160,74 @@ struct GarminActivityImportView: View {
         var powerData: [PowerDataPoint] = []
         var heartRateData: [HeartRateDataPoint] = []
         
+        print("🔄 Converting Garmin activity to ride data...")
+        print("   Activity: \(activity.activityName ?? "Unnamed")")
+        print("   Samples: \(activity.samples?.count ?? 0)")
+        
         if let samples = activity.samples {
-            for sample in samples {
+            var cumulativeDistance: Double = 0
+            var previousLocation: (lat: Double, lon: Double)? = nil
+            
+            for (index, sample) in samples.enumerated() {
                 let timestamp = Date(timeIntervalSince1970: TimeInterval(sample.startTimeInSeconds))
                 
-                // GPS points
+                // Calculate distance from previous point
                 if let lat = sample.latitude, let lon = sample.longitude {
+                    if let prevLoc = previousLocation {
+                        let loc1 = CLLocation(latitude: prevLoc.lat, longitude: prevLoc.lon)
+                        let loc2 = CLLocation(latitude: lat, longitude: lon)
+                        let segmentDistance = loc1.distance(from: loc2)
+                        cumulativeDistance += segmentDistance
+                    }
+                    previousLocation = (lat, lon)
+                    
                     gpsPoints.append(GPSPoint(
                         timestamp: timestamp,
                         latitude: lat,
                         longitude: lon,
                         elevation: sample.elevation,
                         speed: sample.speed,
-                        distance: nil 
+                        distance: cumulativeDistance
                     ))
                 }
                 
-                // Power data
-                if let power = sample.power {
-                    powerData.append(PowerDataPoint(
-                        timestamp: timestamp,
-                        watts: power
-                    ))
-                }
+                // Power data - INCLUDE ALL SAMPLES
+                // If power is nil, treat it as 0 (coasting/no power meter for that second)
+                let powerValue = sample.power ?? 0.0
+                powerData.append(PowerDataPoint(
+                    timestamp: timestamp,
+                    watts: powerValue
+                ))
                 
                 // Heart rate data
-                if let hr = sample.heartRate {
+                if let hr = sample.heartRate, hr > 0 {
                     heartRateData.append(HeartRateDataPoint(
                         timestamp: timestamp,
                         bpm: hr
                     ))
                 }
+                
+                // Log first few samples for debugging
+                if index < 3 {
+                    print("   Sample \(index): lat=\(sample.latitude?.description ?? "nil"), lon=\(sample.longitude?.description ?? "nil"), power=\(powerValue), hr=\(sample.heartRate?.description ?? "nil")")
+                }
             }
+            
+            print("   📏 Total calculated distance: \(String(format: "%.2f", cumulativeDistance / 1000))km")
+        }
+        
+        let powerAboveZero = powerData.filter { $0.watts > 0 }.count
+        
+        print("   ✅ Converted:")
+        print("      - GPS points: \(gpsPoints.count)")
+        print("      - Power samples: \(powerData.count) (\(powerAboveZero) > 0W)")
+        print("      - Heart rate samples: \(heartRateData.count)")
+        
+        if gpsPoints.isEmpty {
+            print("   ⚠️ WARNING: No GPS points found!")
+        }
+        if powerData.isEmpty {
+            print("   ⚠️ WARNING: No power data found!")
         }
         
         return ImportedRideData(
@@ -226,34 +252,53 @@ struct GarminActivityImportView: View {
 struct GarminActivityRow: View {
     let activity: GarminActivitySummary
     let onImport: () -> Void
+    @EnvironmentObject var weatherViewModel: WeatherViewModel
     
     var body: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(activity.activityName ?? "Ride")
-                    .font(.headline)
-                
-                Text(formatDate(activity.startDate))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                
-                HStack(spacing: 16) {
-                    if let distance = activity.distanceInMeters {
-                        Label(formatDistance(distance), systemImage: "arrow.left.and.right")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+            VStack(alignment: .leading, spacing: 8) {
+                // Ride name and power indicator
+                HStack {
+                    Text(activity.activityName ?? "Garmin Ride")
+                        .font(.headline)
                     
-                    Label(formatDuration(activity.durationInSeconds), systemImage: "clock")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Spacer()
                     
-                    if let avgPower = activity.averagePowerInWatts {
-                        Label("\(Int(avgPower))W", systemImage: "bolt.fill")
+                    // Power meter indicator
+                    if let avgPower = activity.averagePowerInWatts, avgPower > 0 {
+                        Image(systemName: "bolt.fill")
+                            .foregroundColor(.orange)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 }
+                
+                // Duration, distance, and avg power
+                HStack(spacing: 16) {
+                    Label(formatDuration(activity.durationInSeconds), systemImage: "clock")
+                        .font(.caption)
+                    
+                    if let distance = activity.distanceInMeters {
+                        Label(
+                            weatherViewModel.settings.units == .metric ?
+                                formatDistance(distance) :
+                                formatDistanceMiles(distance),
+                            systemImage: "figure.outdoor.cycle"
+                        )
+                        .font(.caption)
+                    }
+                    
+                    if let avgPower = activity.averagePowerInWatts, avgPower > 0 {
+                        Label("\(Int(avgPower))W", systemImage: "bolt")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                }
+                .foregroundColor(.secondary)
+                
+                // Ride start date/time
+                Text(formatDate(activity.startDate))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
             
             Spacer()
@@ -263,7 +308,7 @@ struct GarminActivityRow: View {
             } label: {
                 Text("Import")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundColor(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                     .background(Color.blue, in: Capsule())
@@ -274,15 +319,17 @@ struct GarminActivityRow: View {
     }
     
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
+        date.formatted(date: .abbreviated, time: .shortened)
     }
     
     private func formatDistance(_ meters: Double) -> String {
         let km = meters / 1000
-        return String(format: "%.1f km", km)
+        return String(format: "%.2f km", km)
+    }
+    
+    private func formatDistanceMiles(_ meters: Double) -> String {
+        let miles = meters * 0.000621371
+        return String(format: "%.2f mi", miles)
     }
     
     private func formatDuration(_ seconds: Int) -> String {

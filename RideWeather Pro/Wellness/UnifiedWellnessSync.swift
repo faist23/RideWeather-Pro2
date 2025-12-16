@@ -304,6 +304,43 @@ class UnifiedWellnessSync: ObservableObject {
                  print("      ✅ Sleep data processed")
              }
              
+             // Process Body Composition Data (Weight)
+             print("\n⚖️ Processing \(bodyCompData.count) body composition records...")
+             for (index, bodyComp) in bodyCompData.enumerated() {
+                 print("   [\(index + 1)/\(bodyCompData.count)] Date: \(bodyComp.measurementDate.formatted(date: .abbreviated, time: .shortened))")
+                 
+                 // Use the measurement date to find the right day
+                 let startOfDay = calendar.startOfDay(for: bodyComp.measurementDate)
+                 print("      📅 Parsed to: \(startOfDay.formatted(date: .abbreviated, time: .omitted))")
+                 
+                 var metric = metricsByDate[startOfDay] ?? DailyWellnessMetrics(date: startOfDay)
+                 
+                 print("      ⚖️ Weight: \(String(format: "%.1f", bodyComp.weightKg)) kg")
+                 metric.bodyMass = bodyComp.weightKg
+                 
+                 if let bmi = bodyComp.bmi {
+                     print("      📊 BMI: \(String(format: "%.1f", bmi))")
+                 }
+                 
+                 if let bodyFat = bodyComp.bodyFatPercentage {
+                     print("      💪 Body Fat: \(String(format: "%.1f", bodyFat))%")
+                 }
+                 
+                 metricsByDate[startOfDay] = metric
+                 print("      ✅ Body composition processed")
+             }
+
+             // Print summary
+             if !bodyCompData.isEmpty {
+                 let avgWeight = bodyCompData.map { $0.weightKg }.reduce(0, +) / Double(bodyCompData.count)
+                 print("\n📊 Weight Summary:")
+                 print("   - Total measurements: \(bodyCompData.count)")
+                 print("   - Average weight: \(String(format: "%.1f", avgWeight)) kg")
+                 print("   - Date range: \(bodyCompData.last?.measurementDate.formatted(date: .abbreviated, time: .omitted) ?? "N/A") to \(bodyCompData.first?.measurementDate.formatted(date: .abbreviated, time: .omitted) ?? "N/A")")
+             } else {
+                 print("\n⚠️ No weight data found in Garmin wellness")
+             }
+
              // Step 3: Save to WellnessManager
              let allMetrics = Array(metricsByDate.values).sorted { $0.date < $1.date }
              
@@ -319,6 +356,9 @@ class UnifiedWellnessSync: ObservableObject {
              if !allMetrics.isEmpty {
                  await MainActor.run {
                      WellnessManager.shared.updateBulkMetrics(allMetrics)
+                     
+                     // 🆕 Notify that wellness data was updated
+                     NotificationCenter.default.post(name: .wellnessDataUpdated, object: nil)
                  }
                  print("\n✅ Successfully saved \(allMetrics.count) days to WellnessManager")
              } else {
