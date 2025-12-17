@@ -692,7 +692,6 @@ extension WellnessDataService {
     }
 
     /// Fetch activity details including GPS samples
-    /// Fetch activity details including GPS samples
     func fetchActivityDetail(
         activityId: Int,
         garminUserId: String
