@@ -47,6 +47,15 @@ struct GarminActivityImportView: View {
                         activitiesList
                     }
                 }
+                
+                // Show overlay during import (like Wahoo does)
+                if isLoading && !activities.isEmpty {
+                    ProcessingOverlay.importing(
+                        "Garmin Activity",
+                        subtitle: "Analyzing power and route data"
+                    )
+                    .zIndex(10)
+                }
             }
             .navigationTitle("Garmin Activities")
             .navigationBarTitleDisplayMode(.inline)
@@ -60,6 +69,9 @@ struct GarminActivityImportView: View {
                     await loadActivities()
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NewAnalysisImported"))) { _ in
+                dismiss()
+            }
         }
     }
     
@@ -67,7 +79,6 @@ struct GarminActivityImportView: View {
         List {
             ForEach(filteredActivities) { activity in
                 Button(action: {
-                    // Start import
                     handleImport(for: activity)
                 }) {
                     HStack {
@@ -76,18 +87,13 @@ struct GarminActivityImportView: View {
                         
                         Spacer()
                         
-                        if importingId == activity.id {
-                            ProgressView()
-                                .frame(width: 20)
-                        } else {
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.bold))
-                                .foregroundColor(.secondary.opacity(0.5))
-                        }
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(.secondary.opacity(0.5))
                     }
                 }
                 .buttonStyle(.plain)
-                .disabled(importingId != nil) // Disable interaction while any import is running
+                // Remove .disabled() - allow tapping during import
             }
         }
         .searchable(text: $searchText, prompt: "Search activities")
@@ -149,7 +155,8 @@ struct GarminActivityImportView: View {
     }
     
     private func handleImport(for activity: GarminActivitySummary) {
-        importingId = activity.id
+        // Set loading state for overlay
+        isLoading = true
         
         Task {
             do {
@@ -172,14 +179,13 @@ struct GarminActivityImportView: View {
                         )
                     }
                     
-                    importingId = nil
+                    isLoading = false
                     dismiss()
                 }
             } catch {
                 await MainActor.run {
-                    // Update error message to inform user, then clear loading state
                     errorMessage = "Failed to import: \(error.localizedDescription)"
-                    importingId = nil
+                    isLoading = false
                 }
             }
         }
@@ -250,16 +256,28 @@ struct GarminActivityRow: View {
     let activity: GarminActivitySummary
     @EnvironmentObject var weatherViewModel: WeatherViewModel
     
+    // Check if this activity likely has power data
+    // Since we don't have samples at summary level, we use a heuristic:
+    // If avgPower exists and is > 0, show bolt
+    var hasPowerData: Bool {
+        if let avgPower = activity.averagePowerInWatts, avgPower > 0 {
+            return true
+        }
+        // You could also add logic here to check if the activity type suggests power
+        // For now, assume cycling activities might have power in detail
+        return false
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(activity.activityName ?? "Garmin Ride")
                     .font(.headline)
-                    // Removed opacity logic here so rows always appear active
+                // Remove opacity - always show full brightness
                 
                 Spacer()
                 
-                // Only show bolt if we actually have the data in the summary
+                // Only show bolt if we have confirmed power in summary
                 if let avgPower = activity.averagePowerInWatts, avgPower > 0 {
                     Image(systemName: "bolt.fill")
                         .foregroundColor(.orange)
@@ -281,6 +299,7 @@ struct GarminActivityRow: View {
                     .font(.caption)
                 }
                 
+                // Show power if available
                 if let avgPower = activity.averagePowerInWatts, avgPower > 0 {
                     Label("\(Int(avgPower))W", systemImage: "bolt")
                         .font(.caption)
@@ -288,12 +307,10 @@ struct GarminActivityRow: View {
                 }
             }
             .foregroundColor(.secondary)
-            // Removed opacity logic here
             
             Text(activity.startDate.formatted(date: .abbreviated, time: .shortened))
                 .font(.caption2)
                 .foregroundColor(.secondary)
-                // Removed opacity logic here
         }
         .padding(.vertical, 4)
     }
