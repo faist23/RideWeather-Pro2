@@ -5,7 +5,6 @@
 //  Created by Craig Faist on 12/8/25.
 //
 
-
 import CoreLocation
 import SwiftUI
 
@@ -20,6 +19,9 @@ struct GarminActivityImportView: View {
     @State private var errorMessage: String?
     @State private var searchText = ""
     
+    // Track which specific row is currently importing
+    @State private var importingId: Int? = nil
+    
     var filteredActivities: [GarminActivitySummary] {
         if searchText.isEmpty {
             return activities
@@ -32,127 +34,154 @@ struct GarminActivityImportView: View {
     
     var body: some View {
         NavigationStack {
-            Group {
-                if isLoading {
-                    VStack(spacing: 16) {
-                        ProgressView()
-                            .controlSize(.large)
-                        Text("Loading your Garmin activities...")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+            ZStack {
+                // Main List
+                Group {
+                    if isLoading && activities.isEmpty {
+                        ProgressView("Loading Garmin activities...")
+                    } else if let error = errorMessage {
+                        errorView(error: error)
+                    } else if activities.isEmpty {
+                        emptyStateView
+                    } else {
+                        activitiesList
                     }
-                } else if let error = errorMessage {
-                    VStack(spacing: 16) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 50))
-                            .foregroundStyle(.orange)
-                        Text("Unable to load activities")
-                            .font(.headline)
-                        Text(error)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                        Button("Retry") {
-                            Task { await loadActivities() }
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                } else if activities.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "figure.outdoor.cycle")
-                            .font(.system(size: 50))
-                            .foregroundStyle(.blue)
-                        Text("No Activities Found")
-                            .font(.headline)
-                        Text("Complete cycling activities in Garmin Connect to import them here")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                    }
-                } else {
-                    List {
-                        ForEach(filteredActivities) { activity in
-                            GarminActivityRow(activity: activity) {
-                                Task {
-                                    await importActivity(activity)
-                                }
-                            }
-                        }
-                    }
-                    .searchable(text: $searchText, prompt: "Search activities")
-                    .listStyle(.insetGrouped)
                 }
             }
-            .navigationTitle("Import from Garmin")
+            .navigationTitle("Garmin Activities")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Done") { dismiss() }
                 }
             }
             .task {
-                await loadActivities()
+                if activities.isEmpty {
+                    await loadActivities()
+                }
             }
         }
     }
+    
+    private var activitiesList: some View {
+        List {
+            ForEach(filteredActivities) { activity in
+                Button(action: {
+                    // Start import
+                    handleImport(for: activity)
+                }) {
+                    HStack {
+                        GarminActivityRow(activity: activity)
+                            .environmentObject(weatherViewModel)
+                        
+                        Spacer()
+                        
+                        if importingId == activity.id {
+                            ProgressView()
+                                .frame(width: 20)
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(.secondary.opacity(0.5))
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(importingId != nil) // Disable interaction while any import is running
+            }
+        }
+        .searchable(text: $searchText, prompt: "Search activities")
+        .refreshable {
+            await loadActivities()
+        }
+    }
+    
+    private var emptyStateView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "figure.outdoor.cycle")
+                .font(.system(size: 60))
+                .foregroundStyle(.secondary)
+            Text("No Activities Found")
+                .font(.headline)
+            Text("Complete cycling activities in Garmin Connect to import them here")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+        }
+    }
+    
+    private func errorView(error: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 60))
+                .foregroundStyle(.orange)
+            Text("Unable to load activities")
+                .font(.headline)
+            Text(error)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Try Again") {
+                Task { await loadActivities() }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
+    }
+    
+    // MARK: - Logic
     
     private func loadActivities() async {
         isLoading = true
         errorMessage = nil
         
-        print("📥 GarminActivityImportView: Starting to load activities...")
-        
         do {
             activities = try await garminService.fetchRecentActivities(limit: 50)
-            print("✅ GarminActivityImportView: Successfully loaded \(activities.count) activities")
             if activities.isEmpty {
-                errorMessage = nil // Show empty state instead of error
-                print("ℹ️ GarminActivityImportView: No cycling activities found")
+                // Keep empty list, view handles empty state
             }
         } catch {
-            let errorMsg = error.localizedDescription
-            errorMessage = errorMsg
-            print("❌ GarminActivityImportView: Failed to load activities")
-            print("   Error: \(errorMsg)")
-            if let garminError = error as? GarminService.GarminError {
-                print("   Garmin Error Type: \(garminError)")
-            }
+            errorMessage = error.localizedDescription
         }
         
         isLoading = false
     }
     
-    private func importActivity(_ activity: GarminActivitySummary) async {
-        isLoading = true
-        errorMessage = nil
+    private func handleImport(for activity: GarminActivitySummary) {
+        importingId = activity.id
         
-        do {
-            // Fetch full activity details with GPS samples
-            let activityDetail = try await garminService.fetchActivityDetails(activityId: activity.activityId)
-            
-            // Convert to your app's format
-            let rideData = convertToRideData(activityDetail)
-            
-            await MainActor.run {
-                // Import into ride analysis
-                rideViewModel.importRideData(rideData)
+        Task {
+            do {
+                // Fetch full activity details with GPS samples
+                let activityDetail = try await garminService.fetchActivityDetails(activityId: activity.activityId)
                 
-                // Send notification with Garmin source
-                if let currentAnalysis = rideViewModel.currentAnalysis {
-                    NotificationCenter.default.post(
-                        name: NSNotification.Name("NewAnalysisImported"),
-                        object: currentAnalysis,
-                        userInfo: ["source": "garmin"]
-                    )
+                // Convert to your app's format
+                let rideData = convertToRideData(activityDetail)
+                
+                await MainActor.run {
+                    // Import into ride analysis
+                    rideViewModel.importRideData(rideData)
+                    
+                    // Send notification
+                    if let currentAnalysis = rideViewModel.currentAnalysis {
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("NewAnalysisImported"),
+                            object: currentAnalysis,
+                            userInfo: ["source": "garmin"]
+                        )
+                    }
+                    
+                    importingId = nil
+                    dismiss()
                 }
-                
-                dismiss()
+            } catch {
+                await MainActor.run {
+                    // Update error message to inform user, then clear loading state
+                    errorMessage = "Failed to import: \(error.localizedDescription)"
+                    importingId = nil
+                }
             }
-        } catch {
-            errorMessage = "Failed to import activity: \(error.localizedDescription)"
-            isLoading = false
         }
     }
     
@@ -161,24 +190,19 @@ struct GarminActivityImportView: View {
         var powerData: [PowerDataPoint] = []
         var heartRateData: [HeartRateDataPoint] = []
         
-        print("🔄 Converting Garmin activity to ride data...")
-        print("   Activity: \(activity.activityName ?? "Unnamed")")
-        print("   Samples: \(activity.samples?.count ?? 0)")
-        
         if let samples = activity.samples {
             var cumulativeDistance: Double = 0
             var previousLocation: (lat: Double, lon: Double)? = nil
             
-            for (index, sample) in samples.enumerated() {
+            for sample in samples {
                 let timestamp = Date(timeIntervalSince1970: TimeInterval(sample.startTimeInSeconds))
                 
-                // Calculate distance from previous point
+                // Calculate distance
                 if let lat = sample.latitude, let lon = sample.longitude {
                     if let prevLoc = previousLocation {
                         let loc1 = CLLocation(latitude: prevLoc.lat, longitude: prevLoc.lon)
                         let loc2 = CLLocation(latitude: lat, longitude: lon)
-                        let segmentDistance = loc1.distance(from: loc2)
-                        cumulativeDistance += segmentDistance
+                        cumulativeDistance += loc1.distance(from: loc2)
                     }
                     previousLocation = (lat, lon)
                     
@@ -192,43 +216,15 @@ struct GarminActivityImportView: View {
                     ))
                 }
                 
-                // Power data - INCLUDE ALL SAMPLES
-                // If power is nil, treat it as 0 (coasting/no power meter for that second)
+                // Power
                 let powerValue = sample.power ?? 0.0
-                powerData.append(PowerDataPoint(
-                    timestamp: timestamp,
-                    watts: powerValue
-                ))
+                powerData.append(PowerDataPoint(timestamp: timestamp, watts: powerValue))
                 
-                // Heart rate data
+                // Heart rate
                 if let hr = sample.heartRate, hr > 0 {
-                    heartRateData.append(HeartRateDataPoint(
-                        timestamp: timestamp,
-                        bpm: hr
-                    ))
-                }
-                
-                // Log first few samples for debugging
-                if index < 3 {
-                    print("   Sample \(index): lat=\(sample.latitude?.description ?? "nil"), lon=\(sample.longitude?.description ?? "nil"), power=\(powerValue), hr=\(sample.heartRate?.description ?? "nil")")
+                    heartRateData.append(HeartRateDataPoint(timestamp: timestamp, bpm: hr))
                 }
             }
-            
-            print("   📏 Total calculated distance: \(String(format: "%.2f", cumulativeDistance / 1000))km")
-        }
-        
-        let powerAboveZero = powerData.filter { $0.watts > 0 }.count
-        
-        print("   ✅ Converted:")
-        print("      - GPS points: \(gpsPoints.count)")
-        print("      - Power samples: \(powerData.count) (\(powerAboveZero) > 0W)")
-        print("      - Heart rate samples: \(heartRateData.count)")
-        
-        if gpsPoints.isEmpty {
-            print("   ⚠️ WARNING: No GPS points found!")
-        }
-        if powerData.isEmpty {
-            print("   ⚠️ WARNING: No power data found!")
         }
         
         return ImportedRideData(
@@ -252,75 +248,54 @@ struct GarminActivityImportView: View {
 
 struct GarminActivityRow: View {
     let activity: GarminActivitySummary
-    let onImport: () -> Void
     @EnvironmentObject var weatherViewModel: WeatherViewModel
     
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 8) {
-                // Ride name and power indicator
-                HStack {
-                    Text(activity.activityName ?? "Garmin Ride")
-                        .font(.headline)
-                    
-                    Spacer()
-                    
-                    // Power meter indicator
-                    if let avgPower = activity.averagePowerInWatts, avgPower > 0 {
-                        Image(systemName: "bolt.fill")
-                            .foregroundColor(.orange)
-                            .font(.caption)
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(activity.activityName ?? "Garmin Ride")
+                    .font(.headline)
+                    // Removed opacity logic here so rows always appear active
+                
+                Spacer()
+                
+                // Only show bolt if we actually have the data in the summary
+                if let avgPower = activity.averagePowerInWatts, avgPower > 0 {
+                    Image(systemName: "bolt.fill")
+                        .foregroundColor(.orange)
+                        .font(.caption)
+                }
+            }
+            
+            HStack(spacing: 16) {
+                Label(formatDuration(activity.durationInSeconds), systemImage: "clock")
+                    .font(.caption)
+                
+                if let distance = activity.distanceInMeters {
+                    Label(
+                        weatherViewModel.settings.units == .metric ?
+                            formatDistance(distance) :
+                            formatDistanceMiles(distance),
+                        systemImage: "figure.outdoor.cycle"
+                    )
+                    .font(.caption)
                 }
                 
-                // Duration, distance, and avg power
-                HStack(spacing: 16) {
-                    Label(formatDuration(activity.durationInSeconds), systemImage: "clock")
+                if let avgPower = activity.averagePowerInWatts, avgPower > 0 {
+                    Label("\(Int(avgPower))W", systemImage: "bolt")
                         .font(.caption)
-                    
-                    if let distance = activity.distanceInMeters {
-                        Label(
-                            weatherViewModel.settings.units == .metric ?
-                                formatDistance(distance) :
-                                formatDistanceMiles(distance),
-                            systemImage: "figure.outdoor.cycle"
-                        )
-                        .font(.caption)
-                    }
-                    
-                    if let avgPower = activity.averagePowerInWatts, avgPower > 0 {
-                        Label("\(Int(avgPower))W", systemImage: "bolt")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                    }
+                        .foregroundColor(.orange)
                 }
+            }
+            .foregroundColor(.secondary)
+            // Removed opacity logic here
+            
+            Text(activity.startDate.formatted(date: .abbreviated, time: .shortened))
+                .font(.caption2)
                 .foregroundColor(.secondary)
-                
-                // Ride start date/time
-                Text(formatDate(activity.startDate))
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            Button {
-                onImport()
-            } label: {
-                Text("Import")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.blue, in: Capsule())
-            }
-            .buttonStyle(.plain)
+                // Removed opacity logic here
         }
         .padding(.vertical, 4)
-    }
-    
-    private func formatDate(_ date: Date) -> String {
-        date.formatted(date: .abbreviated, time: .shortened)
     }
     
     private func formatDistance(_ meters: Double) -> String {

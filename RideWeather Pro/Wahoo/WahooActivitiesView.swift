@@ -13,78 +13,26 @@ struct WahooActivitiesView: View {
     
     var body: some View {
         NavigationStack {
-            Group {
-                if viewModel.isLoading && viewModel.activities.isEmpty {
-                    ProgressView("Loading activities...")
-                } else if let error = viewModel.errorMessage {
-                    VStack(spacing: 16) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 60))
-                            .foregroundColor(.orange)
-                        Text("Error Loading Activities")
-                            .font(.headline)
-                        Text(error)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                        Button("Try Again") {
-                            viewModel.loadActivities(service: wahooService)
-                        }
-                        .buttonStyle(.borderedProminent)
+            ZStack {
+                Group {
+                    if viewModel.isLoading && viewModel.activities.isEmpty {
+                        ProgressView("Loading activities...")
+                    } else if let error = viewModel.errorMessage {
+                        errorView(error: error)
+                    } else if viewModel.activities.isEmpty {
+                        emptyStateView
+                    } else {
+                        activitiesList
                     }
-                    .padding()
-                } else if viewModel.activities.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "bicycle")
-                            .font(.system(size: 60))
-                            .foregroundColor(.secondary)
-                        Text("No Activities Found")
-                            .font(.headline)
-                        Text("Your recent Wahoo cycling rides will appear here")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    List {
-                        ForEach(viewModel.activities) { activity in
-                            WahooActivityRow(activity: activity)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    // viewModel.selectActivity(activity, service: wahooService)
-                                    viewModel.selectedActivityDetail = activity
-                                    viewModel.importActivity(service: wahooService, weatherViewModel: weatherViewModel)
-                                    // Optionally show analysis results UI or update a @Published property to display results
-                                }
-                        }
-                        
-                        if viewModel.hasMorePages {
-                            Section {
-                                Button(action: {
-                                    viewModel.loadMoreActivities(service: wahooService)
-                                }) {
-                                    HStack {
-                                        Spacer()
-                                        if viewModel.isLoadingMore {
-                                            ProgressView()
-                                                .padding(.trailing, 8)
-                                            Text("Loading...")
-                                                .foregroundColor(.secondary)
-                                        } else {
-                                            Image(systemName: "arrow.down.circle")
-                                                .font(.title3)
-                                            Text("Load More Activities")
-                                        }
-                                        Spacer()
-                                    }
-                                    .padding(.vertical, 8)
-                                }
-                                .disabled(viewModel.isLoadingMore)
-                            }
-                        }
-                    }
-                    .refreshable {
-                        viewModel.loadActivities(service: wahooService)
-                    }
+                }
+                
+                // Processing overlay
+                if viewModel.isImporting {
+                    ProcessingOverlay.importing(
+                        "Wahoo Activity",
+                        subtitle: "Analyzing power and route data"
+                    )
+                    .zIndex(10)
                 }
             }
             .navigationTitle("Wahoo Activities")
@@ -115,30 +63,119 @@ struct WahooActivitiesView: View {
             }
         }
     }
+    
+    private var activitiesList: some View {
+        List {
+            ForEach(viewModel.activities) { activity in
+                Button(action: {
+                    // Trigger selection/sheet via ViewModel to maintain existing logic
+                    viewModel.selectedActivityDetail = activity
+                    viewModel.importActivity(service: wahooService, weatherViewModel: weatherViewModel)
+                }) {
+                    HStack {
+                        WahooActivityRow(activity: activity)
+                            .environmentObject(weatherViewModel)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(.secondary.opacity(0.5))
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            
+            if viewModel.hasMorePages {
+                Section {
+                    Button(action: {
+                        viewModel.loadMoreActivities(service: wahooService)
+                    }) {
+                        HStack {
+                            Spacer()
+                            if viewModel.isLoadingMore {
+                                ProgressView()
+                                    .padding(.trailing, 8)
+                                Text("Loading...")
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Image(systemName: "arrow.down.circle")
+                                    .font(.title3)
+                                Text("Load More Activities")
+                            }
+                            Spacer()
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    .disabled(viewModel.isLoadingMore)
+                }
+            }
+        }
+        .refreshable {
+            viewModel.loadActivities(service: wahooService)
+        }
+    }
+    
+    private var emptyStateView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "bicycle")
+                .font(.system(size: 60))
+                .foregroundColor(.secondary)
+            Text("No Activities Found")
+                .font(.headline)
+            Text("Your recent Wahoo cycling rides will appear here")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+    }
+    
+    private func errorView(error: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 60))
+                .foregroundColor(.orange)
+            Text("Error Loading Activities")
+                .font(.headline)
+            Text(error)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Try Again") {
+                viewModel.loadActivities(service: wahooService)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
+    }
 }
 
 struct WahooActivityRow: View {
     let activity: WahooWorkoutSummary
     @EnvironmentObject var weatherViewModel: WeatherViewModel
+    
+    var hasPower: Bool {
+        if let powerStr = activity.workoutSummary?.powerAvg, let power = Double(powerStr) {
+            return power > 0
+        }
+        return false
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Ride name and cycling device indicator
             HStack {
                 Text(activity.workoutSummary?.name ?? activity.name ?? "Wahoo Ride")
                     .font(.headline)
+                    .opacity(hasPower ? 1.0 : 0.6)
                 
                 Spacer()
                 
-                // Power meter indicator (if you have a boolean available; remove if N/A for Wahoo)
-                if let avgPower = Double(activity.workoutSummary?.powerAvg ?? "0"), avgPower > 0 {
+                if hasPower {
                     Image(systemName: "bolt.fill")
                         .foregroundColor(.orange)
                         .font(.caption)
                 }
             }
             
-            // Duration, distance, and (if available) avg power
             HStack(spacing: 16) {
                 Label(activity.movingTimeFormatted, systemImage: "clock")
                     .font(.caption)
@@ -151,19 +188,20 @@ struct WahooActivityRow: View {
                 )
                 .font(.caption)
                 
-                if let avgPower = Double(activity.workoutSummary?.powerAvg ?? "0"), avgPower > 0 {
-                    Label("\(Int(avgPower))W", systemImage: "bolt")
+                if hasPower, let powerStr = activity.workoutSummary?.powerAvg, let power = Double(powerStr) {
+                    Label("\(Int(power))W", systemImage: "bolt")
                         .font(.caption)
                         .foregroundColor(.orange)
                 }
             }
             .foregroundColor(.secondary)
+            .opacity(hasPower ? 1.0 : 0.6)
             
-            // Ride start date/time
-            if let startDate = activity.rideDate {
-                Text(startDate.formatted(date: .abbreviated, time: .shortened))
+            if let date = activity.rideDate {
+                Text(date.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption2)
                     .foregroundColor(.secondary)
+                    .opacity(hasPower ? 1.0 : 0.6)
             }
         }
         .padding(.vertical, 4)

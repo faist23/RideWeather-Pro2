@@ -1,14 +1,14 @@
-//
-//  GarminRouteImportView.swift
-//  RideWeather Pro
-//
-
 import SwiftUI
+import CoreLocation
 
 struct GarminRouteImportView: View {
     @EnvironmentObject var garminService: GarminService
     @EnvironmentObject var viewModel: WeatherViewModel
     @Environment(\.dismiss) private var dismiss
+    
+    // ✅ FIX: Include BOTH parameters so all call sites work
+    var onDismiss: (() -> Void)? = nil
+    var onImport: ((GarminCourse) -> Void)? = nil
     
     @State private var courses: [GarminCourse] = []
     @State private var isLoading = false
@@ -81,7 +81,13 @@ struct GarminRouteImportView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if let onDismiss = onDismiss {
+                            onDismiss()
+                        } else {
+                            dismiss()
+                        }
+                    }
                 }
             }
             .task {
@@ -94,22 +100,13 @@ struct GarminRouteImportView: View {
         isLoading = true
         errorMessage = nil
         
-        print("📥 GarminRouteImportView: Starting to load courses...")
-        
         do {
             courses = try await garminService.fetchCourses()
-            print("✅ GarminRouteImportView: Successfully loaded \(courses.count) courses")
             if courses.isEmpty {
-                errorMessage = nil // Show empty state instead of error
+                errorMessage = nil
             }
         } catch {
-            let errorMsg = error.localizedDescription
-            errorMessage = errorMsg
-            print("❌ GarminRouteImportView: Failed to load courses")
-            print("   Error: \(errorMsg)")
-            if let garminError = error as? GarminService.GarminError {
-                print("   Garmin Error Type: \(garminError)")
-            }
+            errorMessage = error.localizedDescription
         }
         
         isLoading = false
@@ -120,17 +117,24 @@ struct GarminRouteImportView: View {
         errorMessage = nil
         
         do {
-            // Fetch the full course details with GPS points
             let routePoints = try await garminService.fetchCourseDetails(courseId: course.courseId)
-            
-            // Convert RoutePoint to CLLocationCoordinate2D
             let coordinates = routePoints.map { $0.coordinate }
             
             await MainActor.run {
+                // 1. Update ViewModel directly (standard way)
                 viewModel.routePoints = coordinates
                 viewModel.routeDisplayName = course.courseName
                 viewModel.authoritativeRouteDistanceMeters = course.distance
-                dismiss()
+                
+                // 2. Call the legacy closure if it exists (for RideAnalysisView support)
+                onImport?(course)
+                
+                // 3. Dismiss
+                if let onDismiss = onDismiss {
+                    onDismiss()
+                } else {
+                    dismiss()
+                }
             }
         } catch {
             await MainActor.run {
@@ -192,11 +196,10 @@ struct CourseRow: View {
 }
 
 // MARK: - Models
-
 struct GarminCourse: Identifiable, Codable {
     let courseId: Int
     let courseName: String
-    let distance: Double // meters
+    let distance: Double
     let elevationGain: Double?
     let elevationLoss: Double?
     
