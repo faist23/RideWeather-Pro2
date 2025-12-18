@@ -122,7 +122,7 @@ struct RouteForecastView: View {
                         .environmentObject(wahooService)
                         .environmentObject(viewModel)
                 case .garminImport:
-                    GarminRouteImportView(onDismiss: { activeSheet = nil })
+                    GarminRouteImportView()
                         .environmentObject(garminService)
                         .environmentObject(viewModel)
                 case .settings:
