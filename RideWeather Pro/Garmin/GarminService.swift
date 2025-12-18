@@ -18,7 +18,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     private var clientId: String { configValue(forKey: "GarminClientID") ?? "INVALID_CLIENT_ID" }
     private var clientSecret: String { configValue(forKey: "GarminClientSecret") ?? "INVALID_CLIENT_SECRET" }
     
-    // ✅ Correct base URL
+    // Correct base URL
     private let authUrl = "https://connect.garmin.com/oauth2Confirm"
     private let tokenUrl = "https://diauth.garmin.com/di-oauth2-service/oauth/token"
     private let apiBaseUrl = "https://apis.garmin.com"
@@ -464,7 +464,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             }
         }
         
-        // ✅ Build a lookup map of segment boundaries
+        // Build a lookup map of segment boundaries
         var segmentBoundaries: [(start: Double, end: Double, power: Double)] = []
         if let plan = pacingPlan {
             var cumulativeDistance: Double = 0.0
@@ -477,7 +477,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             print("GarminService: Built \(segmentBoundaries.count) segment boundaries")
         }
         
-        // ✅ OPTIMIZATION: Reduce points to avoid 400 Bad Request (Limit Exceeded)
+        // OPTIMIZATION: Reduce points to avoid 400 Bad Request (Limit Exceeded)
         // Garmin API limit is ~3500-5000 points. We'll target 3500.
         let optimizedPoints = optimizeRoutePoints(
             routePoints,
@@ -486,7 +486,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         )
         print("GarminService: Optimized route from \(routePoints.count) to \(optimizedPoints.count) points")
         
-        // ✅ ADD: Calculate time checkpoints if enabled in settings
+        // Calculate time checkpoints if enabled in settings
         var timeCheckpoints: [(distance: Double, time: Double)] = []
         if let plan = pacingPlan, plan.summary.settings.enableTimeCheckpoints {
             let checkpointInterval = plan.summary.settings.timeCheckpointIntervalKm * 1000 // Convert to meters
@@ -506,7 +506,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             print("GarminService: Generated \(timeCheckpoints.count) time checkpoints")
         }
 
-        // ✅ NEW: Pre-calculate which point index should get each checkpoint
+        // Pre-calculate which point index should get each checkpoint
         // This ensures each checkpoint appears exactly once
         var checkpointAssignments: [Int: (distance: Double, time: Double)] = [:] // pointIndex -> checkpoint
         for checkpoint in timeCheckpoints {
@@ -544,7 +544,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             
             let pointDistance = point.distance
             
-            // ✅ PRIORITY 1: Check if this specific point was assigned a time checkpoint
+            // PRIORITY 1: Check if this specific point was assigned a time checkpoint
             if let checkpoint = checkpointAssignments[index] {
                 let hours = Int(checkpoint.time / 3600)
                 let minutes = Int((checkpoint.time.truncatingRemainder(dividingBy: 3600)) / 60)
@@ -562,7 +562,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                 
                 print("GarminService: Added time checkpoint at point \(index): \(String(format: "%.1f%@ %02d:%02d:%02d", displayDistance, unitSymbol, hours, minutes, seconds))")
             }
-            // ✅ PRIORITY 2: If no time checkpoint, check for power targets
+            // PRIORITY 2: If no time checkpoint, check for power targets
             else if !segmentBoundaries.isEmpty {
                 // Find which segment this point belongs to
                 for (start, end, power) in segmentBoundaries {
@@ -583,45 +583,6 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             
             geoPointsArray.append(geoPoint)
         }
-
-        
-        /*        // Build geoPoints array with power targets
-        var geoPointsArray: [[String: Any]] = []
-        
-        for point in optimizedPoints {
-            var geoPoint: [String: Any] = [
-                "latitude": point.coordinate.latitude,
-                "longitude": point.coordinate.longitude
-            ]
-            
-            // Add elevation if available
-            if let elevation = point.elevation {
-                geoPoint["elevation"] = elevation
-            }
-            
-            // Check if this point should have a power target marker
-            if !segmentBoundaries.isEmpty {
-                let pointDistance = point.distance
-                
-                // Find which segment this point belongs to
-                for (start, end, power) in segmentBoundaries {
-                    if pointDistance >= start && pointDistance < end {
-                        // Only add course point at segment starts (within 50m)
-                        let distanceFromStart = abs(pointDistance - start)
-                        if distanceFromStart < 50 {
-                            let coursePoint: [String: Any] = [
-                                "name": "Power \(Int(power))W",
-                                "coursePointType": "INFO"
-                            ]
-                            geoPoint["information"] = coursePoint
-                            break
-                        }
-                    }
-                }
-            }
-            
-            geoPointsArray.append(geoPoint)
-        } */
         
         // Build the course JSON payload
         let coursePayload: [String: Any] = [
@@ -666,11 +627,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             }
             
             print("GarminService: Response status: \(httpResponse.statusCode)")
-            
-//            if let responseBody = String(data: data, encoding: .utf8) {
-//                print("GarminService: Response body: \(responseBody)")
-//            }
-            
+                        
             switch httpResponse.statusCode {
             case 200:
                 print("GarminService: ✅ Course created successfully!")
@@ -1174,62 +1131,7 @@ extension GarminService {
         // Not available via OAuth - upload only
         print("ℹ️ Garmin course listing not available via OAuth API")
         return []
-/*        try await refreshTokenIfNeededAsync()
-        
-        guard let token = currentTokens?.accessToken else {
-            throw GarminError.notAuthenticated
-        }
-        
-        // ✅ Same endpoint as upload, but GET instead of POST
-        let urlString = "https://apis.garmin.com/training-api/courses/v1/course"
-        
-        guard let url = URL(string: urlString) else {
-            throw GarminError.invalidURL
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        
-        print("GarminService: Fetching courses from \(urlString)")
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw GarminError.invalidResponse
-        }
-        
-        print("GarminService: Response status: \(httpResponse.statusCode)")
-        
-        if let responseString = String(data: data, encoding: .utf8) {
-            print("GarminService: Full response: \(responseString)")
-        }
-        
-        guard httpResponse.statusCode == 200 else {
-            let errorMsg = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw GarminError.apiError(statusCode: httpResponse.statusCode, message: errorMsg)
-        }
-        
-        let decoder = JSONDecoder()
-        
-        // Try to decode
-        do {
-            let courses = try decoder.decode([GarminCourse].self, from: data)
-            print("GarminService: ✅ Fetched \(courses.count) courses")
-            return courses
-        } catch {
-            print("❌ Decode error: \(error)")
-            
-            // Log the actual structure
-            if let json = try? JSONSerialization.jsonObject(with: data),
-               let prettyData = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted),
-               let prettyString = String(data: prettyData, encoding: .utf8) {
-                print("Actual structure received:")
-                print(prettyString)
-            }
-            
-            throw error
-        }*/
+
     }
     
     /// Fetch detailed course data including GPS points
@@ -1399,91 +1301,7 @@ extension GarminService {
         
         return summaries
     }
-    
-    /*    // ✅ Use Activity API endpoint (not Wellness API)
-     // This is for OAuth apps to fetch user's activities
-     let urlString = "https://apis.garmin.com/activity-service/activities?limit=\(limit)&start=0"
-     
-     guard let url = URL(string: urlString) else {
-     throw GarminError.invalidURL
-     }
-     
-     var request = URLRequest(url: url)
-     request.httpMethod = "GET"
-     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-     
-     print("GarminService: Fetching activities from Activity API...")
-     print("GarminService: URL: \(urlString)")
-     
-     let (data, response) = try await URLSession.shared.data(for: request)
-     
-     guard let httpResponse = response as? HTTPURLResponse else {
-     throw GarminError.invalidResponse
-     }
-     
-     print("GarminService: Activity API response status: \(httpResponse.statusCode)")
-     
-     // Log response for debugging
-     if let responseString = String(data: data, encoding: .utf8) {
-     print("GarminService: Response preview: \(responseString.prefix(500))...")
-     }
-     
-     guard httpResponse.statusCode == 200 else {
-     let errorMsg = String(data: data, encoding: .utf8) ?? "Unknown error"
-     print("❌ GarminService Activity API error:")
-     print("   Status: \(httpResponse.statusCode)")
-     print("   Response: \(errorMsg)")
-     throw GarminError.apiError(statusCode: httpResponse.statusCode, message: errorMsg)
-     }
-     
-     // Parse the response
-     let decoder = JSONDecoder()
-     decoder.keyDecodingStrategy = .convertFromSnakeCase
-     decoder.dateDecodingStrategy = .iso8601
-     
-     do {
-     // Try to decode as array directly
-     let activities = try decoder.decode([GarminActivityAPIResponse].self, from: data)
-     
-     // Convert to GarminActivitySummary format and filter cycling
-     let summaries = activities
-     .filter { activity in
-     let type = activity.activityType?.lowercased() ?? ""
-     return type.contains("cycling") || type.contains("bike")
-     }
-     .compactMap { convertActivityAPIToSummary($0) }
-     .prefix(limit)
-     
-     print("GarminService: ✅ Fetched \(summaries.count) cycling activities")
-     return Array(summaries)
-     
-     } catch {
-     print("❌ Failed to decode as direct array: \(error)")
-     
-     // Try wrapped format
-     struct ActivitiesWrapper: Codable {
-     let activities: [GarminActivityAPIResponse]?
-     }
-     
-     if let wrapped = try? decoder.decode(ActivitiesWrapper.self, from: data),
-     let activities = wrapped.activities {
-     
-     let summaries = activities
-     .filter { activity in
-     let type = activity.activityType?.lowercased() ?? ""
-     return type.contains("cycling") || type.contains("bike")
-     }
-     .compactMap { convertActivityAPIToSummary($0) }
-     .prefix(limit)
-     
-     print("GarminService: ✅ Fetched \(summaries.count) cycling activities (wrapped)")
-     return Array(summaries)
-     }
-     
-     throw error
-     }
-     }*/
-    
+        
     /// Helper to convert Activity API response to our GarminActivitySummary format
     private func convertActivityAPIToSummary(_ activity: GarminActivityAPIResponse) -> GarminActivitySummary? {
         // Activity API returns activityId as Int
