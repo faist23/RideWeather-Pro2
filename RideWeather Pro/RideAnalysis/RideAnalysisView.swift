@@ -231,7 +231,7 @@ struct RideAnalysisView: View {
                         Image("strava_logo")
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 60, height: 20)
+                            .frame(width: 200, height: 50)
                         Text("Import from Strava")
                             .font(.headline)
                     }
@@ -727,7 +727,7 @@ struct CompactRideHeaderCard: View {
                 }
             }
         }
-        .padding(16)
+        .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
     

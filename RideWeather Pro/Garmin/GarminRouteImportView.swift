@@ -168,6 +168,7 @@ struct GarminRouteImportView: View {
                         activity.activityName ?? "Garmin Ride"
                     weatherViewModel.importedRouteDisplayName =
                         activity.activityName ?? "Garmin Ride"
+                    weatherViewModel.importSource = "Garmin" 
                 }
 
                 await weatherViewModel.finalizeRouteImport()

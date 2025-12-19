@@ -51,6 +51,7 @@ class WeatherViewModel: ObservableObject {
     // Filename tracking properties
     @Published var lastImportedFileName: String? = nil
     @Published var importedRouteDisplayName: String = ""
+    @Published var importSource: String? = nil
     
     // Advanced pacing properties
     @Published var advancedController: AdvancedCyclingController?
@@ -227,6 +228,8 @@ class WeatherViewModel: ObservableObject {
             let fileName = url.lastPathComponent
             self.lastImportedFileName = fileName
             self.importedRouteDisplayName = cleanFileName(fileName)
+
+            self.importSource = nil
             
             let parser = RouteParser()
             let isAccessing = url.startAccessingSecurityScopedResource()
@@ -733,6 +736,7 @@ extension WeatherViewModel {
         lastImportedFileName = ""
         authoritativeRouteDistanceMeters = nil 
         importedRouteDisplayName = "" // Explicitly reset the imported name
+        importSource = nil
         // Reset any other route-related state
     }
 }

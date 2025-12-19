@@ -516,37 +516,38 @@ class StravaRoutesViewModel: ObservableObject {
                 
                 print("🔵 Step 3: Updating weather view model")
                 
-                    // Clear the previous pacing plan when importing new route
-                     weatherViewModel.clearAdvancedPlan()
-                     
-                    print("🔵 Step 4: Setting route points (\(coordinates.count) points)")
-                    weatherViewModel.routePoints = coordinates
-
-                    // Set the authoritative distance
-                    weatherViewModel.authoritativeRouteDistanceMeters = totalDistance
-                    
-                    // Set elevation analysis if available
-                    weatherViewModel.elevationAnalysis = elevationAnalysis
-                    
-                    print("🔵 Step 5: Setting route name to '\(routeName)'")
-                    weatherViewModel.routeDisplayName = routeName
-                    
-                    // Set the internal display name so stem notes use it
-                    weatherViewModel.importedRouteDisplayName = routeName
-                    
-                    // If we have elevation analysis, trigger finalize to prepare for power analysis
-                    if elevationAnalysis != nil {
-                        await weatherViewModel.finalizeRouteImport()
-                    }
-                    
-                    print("🔵 Step 6: Import complete")
-                    self.isImporting = false
-                    
-                    let impact = UIImpactFeedbackGenerator(style: .medium)
-                    impact.impactOccurred()
-                    
-                    print("🔵 Step 7: Calling onSuccess callback")
-                    onSuccess()
+                // Clear the previous pacing plan when importing new route
+                weatherViewModel.clearAdvancedPlan()
+                
+                print("🔵 Step 4: Setting route points (\(coordinates.count) points)")
+                weatherViewModel.routePoints = coordinates
+                
+                // Set the authoritative distance
+                weatherViewModel.authoritativeRouteDistanceMeters = totalDistance
+                
+                // Set elevation analysis if available
+                weatherViewModel.elevationAnalysis = elevationAnalysis
+                
+                print("🔵 Step 5: Setting route name to '\(routeName)'")
+                weatherViewModel.routeDisplayName = routeName
+                
+                // Set the internal display name so stem notes use it
+                weatherViewModel.importedRouteDisplayName = routeName
+                weatherViewModel.importSource = "Strava"
+                
+                // If we have elevation analysis, trigger finalize to prepare for power analysis
+                if elevationAnalysis != nil {
+                    await weatherViewModel.finalizeRouteImport()
+                }
+                
+                print("🔵 Step 6: Import complete")
+                self.isImporting = false
+                
+                let impact = UIImpactFeedbackGenerator(style: .medium)
+                impact.impactOccurred()
+                
+                print("🔵 Step 7: Calling onSuccess callback")
+                onSuccess()
                 
             } catch {
                 print("❌ Import failed: \(error.localizedDescription)")
@@ -680,37 +681,38 @@ class StravaActivitiesImportViewModel: ObservableObject {
                 
                 print("🔵 Step 3: Updating weather view model")
                 
-                    // Clear the previous pacing plan when importing new route
-                     weatherViewModel.clearAdvancedPlan()
-                     
-                    print("🔵 Step 4: Setting route points (\(coordinates.count) points)")
-                    weatherViewModel.routePoints = coordinates
-                    
-                    // Set the authoritative distance
-                    weatherViewModel.authoritativeRouteDistanceMeters = totalDistance
-                    
-                    // Set the elevation analysis
-                    weatherViewModel.elevationAnalysis = elevationAnalysis
-                    
-                    print("🔵 Step 5: Setting route name to '\(activityName)'")
-                    weatherViewModel.routeDisplayName = activityName
-                    
-                    // Set the internal display name so stem notes use it
-                    weatherViewModel.importedRouteDisplayName = activityName
-                    
-                    // If we have elevation analysis, trigger finalize to prepare for power analysis
-                    if elevationAnalysis != nil {
-                        await weatherViewModel.finalizeRouteImport()
-                    }
-                    
-                    print("🔵 Step 7: Import complete")
-                    self.isImporting = false
-                    
-                    let impact = UIImpactFeedbackGenerator(style: .medium)
-                    impact.impactOccurred()
-                    
-                    print("🔵 Step 8: Calling onSuccess callback")
-                    onSuccess()
+                // Clear the previous pacing plan when importing new route
+                weatherViewModel.clearAdvancedPlan()
+                
+                print("🔵 Step 4: Setting route points (\(coordinates.count) points)")
+                weatherViewModel.routePoints = coordinates
+                
+                // Set the authoritative distance
+                weatherViewModel.authoritativeRouteDistanceMeters = totalDistance
+                
+                // Set the elevation analysis
+                weatherViewModel.elevationAnalysis = elevationAnalysis
+                
+                print("🔵 Step 5: Setting route name to '\(activityName)'")
+                weatherViewModel.routeDisplayName = activityName
+                
+                // Set the internal display name so stem notes use it
+                weatherViewModel.importedRouteDisplayName = activityName
+                weatherViewModel.importSource = "Strava"
+                
+                // If we have elevation analysis, trigger finalize to prepare for power analysis
+                if elevationAnalysis != nil {
+                    await weatherViewModel.finalizeRouteImport()
+                }
+                
+                print("🔵 Step 7: Import complete")
+                self.isImporting = false
+                
+                let impact = UIImpactFeedbackGenerator(style: .medium)
+                impact.impactOccurred()
+                
+                print("🔵 Step 8: Calling onSuccess callback")
+                onSuccess()
                 
             } catch {
                 print("❌ Import failed: \(error.localizedDescription)")

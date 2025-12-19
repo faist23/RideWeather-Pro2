@@ -297,6 +297,7 @@ class WahooActivitiesImportViewModel: ObservableObject {
                 weatherViewModel.routePoints = coordinates
                 weatherViewModel.routeDisplayName = activityName
                 weatherViewModel.importedRouteDisplayName = activityName
+                weatherViewModel.importSource = "Wahoo" 
                 
                 // Populate elevation data
                 weatherViewModel.elevationAnalysis = elevationAnalysis

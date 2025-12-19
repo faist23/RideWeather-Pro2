@@ -804,61 +804,70 @@ struct EmptyStateView: View {
 struct RouteInfoCardView: View {
     // This view takes the viewModel to get the data it needs.
     @ObservedObject var viewModel: WeatherViewModel
-
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Row 1: Route Title (Compact Headline)
             HStack {
                 Image(systemName: "map.fill")
                     .foregroundStyle(.blue)
                     .font(.title2)
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Route")
+                    Text("Route Forecast")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
-                    // Route Name
                     Text(viewModel.routeDisplayName)
-                        .font(.body)
                         .fontWeight(.semibold)
-
-                    // Date and Time display
-                    Text("\(formattedDate) at \(formattedTime)")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
-                
                 Spacer()
             }
             
-            if let fileName = viewModel.lastImportedFileName, !fileName.isEmpty {
-                HStack {
-                    Image(systemName: "doc.fill")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                    
-                    Text("Source: \(fileName)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            // Source Segment
+            HStack {
+                Image(systemName: sourceIcon)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                
+                Text("Source: \(sourceName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            // Date Segment
+            HStack {
+                Image(systemName: "calendar")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                
+                Text("Start Time: \(formattedDate)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
-        .padding(16)
+        .padding(12) // Compact padding
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
     
-    // Date/Time Formatters
-    private var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "E, MMM d"
-        return formatter.string(from: viewModel.rideDate)
+    // Logic: If it's an API import, use the fixed name ("Strava").
+    // If it's a file, show the full filename (e.g., "Morning_Ride.fit").
+    private var sourceName: String {
+        return viewModel.importSource ?? viewModel.lastImportedFileName ?? "Unknown Source"
     }
     
-    private var formattedTime: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: viewModel.rideDate)
+    // Standard SF Symbols for consistency
+    private var sourceIcon: String {
+        let name = sourceName.lowercased()
+        if name.contains("strava") { return "figure.outdoor.cycle" }
+        if name.contains("garmin") { return "figure.outdoor.cycle" }
+        if name.contains("wahoo") { return "figure.outdoor.cycle" }
+        return "doc.fill" // Standard file icon
+    }
+    
+    private var formattedDate: String {
+        viewModel.rideDate.formatted(date: .abbreviated, time: .shortened)
     }
 }
 
