@@ -297,7 +297,16 @@ class UnifiedWellnessSync: ObservableObject {
                  }
                  
                  // Calculate total sleep
-                 let totalSleep = (metric.sleepDeep ?? 0) + (metric.sleepREM ?? 0) + (metric.sleepCore ?? 0)
+                 var totalSleep = (metric.sleepDeep ?? 0) + (metric.sleepREM ?? 0) + (metric.sleepCore ?? 0)
+                 
+                 // If stages sum to 0 but we have total duration (e.g. Manual entries), use total
+                 if totalSleep == 0, let duration = summary.durationInSeconds, duration > 0 {
+                     print("      ⚠️ Sleep stages missing. Using total duration: \(duration)s")
+                     // Assign to Core/Light so it counts towards totals
+                     metric.sleepCore = TimeInterval(duration)
+                     totalSleep = TimeInterval(duration)
+                 }
+                 
                  print("      📊 Total sleep: \(String(format: "%.1f", totalSleep / 3600))h")
                  
                  metricsByDate[startOfDay] = metric

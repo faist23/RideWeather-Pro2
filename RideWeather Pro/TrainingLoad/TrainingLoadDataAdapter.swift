@@ -202,48 +202,39 @@ class UnifiedTrainingLoadSync: ObservableObject {
     
     // MARK: - 2. Garmin Sync Implementation
     private func syncFromGarmin(garminService: GarminService, userFTP: Double, userLTHR: Double?, startDate: Date?) async {
-        syncStatus = "Syncing from Garmin..."
+        syncStatus = "Syncing from Garmin (Supabase)..." // Update status text
         syncProgress = 0.1
-        do {
-            let syncStart = startDate ?? Calendar.current.date(byAdding: .day, value: -30, to: Date())!
-            let today = Date()
-            let calendar = Calendar.current
-            var allActivities: [GarminActivity] = []
-            var currentStart = syncStart
+        do {            
+            // New: Fetch recent activities from Supabase (defaults to limit 50, you might want more)
+            let activities = try await garminService.fetchRecentActivities(limit: 100)
             
-            while currentStart < today {
-                let currentEnd = min(calendar.date(byAdding: .day, value: 1, to: currentStart)!, today)
-                syncStatus = "Fetching Garmin data (\(currentStart.formatted(date: .abbreviated, time: .omitted)))..."
-                
-                let activities = try await garminService.fetchActivities(startDate: currentStart, endDate: currentEnd)
-                allActivities.append(contentsOf: activities)
-                currentStart = currentEnd
-                try? await Task.sleep(nanoseconds: 100_000_000)
-            }
-            guard !allActivities.isEmpty else {
+            guard !activities.isEmpty else {
                 syncStatus = "No new Garmin activities"
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 return
             }
+            
             syncProgress = 0.5
-            syncStatus = "Processing \(allActivities.count) activities..."
-            let universalActivities = allActivities.map { activity -> UniversalActivity in
+            syncStatus = "Processing \(activities.count) activities..."
+            
+            // Map GarminActivitySummary (from Supabase) to UniversalActivity
+            let universalActivities = activities.map { activity -> UniversalActivity in
                 UniversalActivity(
                     id: "\(activity.activityId)",
-                    name: activity.activityName,
+                    name: activity.activityName ?? "Garmin Activity",
                     type: mapGarminType(activity.activityType),
-                    startDate: activity.startTime,
-                    duration: TimeInterval(activity.duration),
-                    distance: activity.distance,
-                    averagePower: activity.avgPower,
-                    averageHeartRate: activity.avgHeartRate,
-                    maxHeartRate: activity.maxHeartRate,
-                    calories: activity.calories,
+                    startDate: Date(timeIntervalSince1970: TimeInterval(activity.startTimeInSeconds)),
+                    duration: TimeInterval(activity.durationInSeconds),
+                    distance: activity.distanceInMeters ?? 0,
+                    averagePower: activity.averagePowerInWatts,
+                    averageHeartRate: activity.averageHeartRateInBeatsPerMinute.map { Double($0) },
+                    maxHeartRate: nil, // Summary might not have max HR, that's okay
+                    calories: activity.activeKilocalories,
                     source: .garmin
                 )
             }
             await processActivities(universalActivities, userFTP: userFTP, userLTHR: userLTHR)
-            syncStatus = "✅ Synced \(allActivities.count) from Garmin"
+            syncStatus = "✅ Synced \(activities.count) from Garmin"
         } catch {
             syncStatus = "Garmin sync failed: \(error.localizedDescription)"
             print("Garmin Error: \(error)")

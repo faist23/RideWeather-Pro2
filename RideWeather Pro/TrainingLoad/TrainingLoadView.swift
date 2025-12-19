@@ -346,9 +346,15 @@ struct TrainingLoadView: View {
                         wellnessMetrics: wellnessManager.dailyMetrics
                     )
                 }
+                // Trigger initial refresh using both sources
+                viewModel.refresh(readiness: healthManager.readiness)
             }
             .onChange(of: selectedPeriod) { oldValue, newValue in
                 viewModel.loadPeriod(newValue)
+            }
+            // Add this new listener
+            .onReceive(wellnessManager.$dailyMetrics) { _ in
+                viewModel.refresh(readiness: healthManager.readiness)
             }
             .onChange(of: healthManager.readiness) {
                 viewModel.refresh(readiness: healthManager.readiness)
@@ -1142,9 +1148,41 @@ class TrainingLoadViewModel: ObservableObject {
     private var currentPeriodDays: Int = 0
     
     func refresh(readiness: PhysiologicalReadiness?) {
-        self.readiness = readiness
+        // 1. Start with Apple Health readiness (if any)
+        var unifiedReadiness = readiness ?? PhysiologicalReadiness()
+        
+        // 2. Overlay Garmin/Wellness data if available
+        // Check if we have wellness data from today
+        if let latestWellness = WellnessManager.shared.dailyMetrics.last,
+           Calendar.current.isDateInToday(latestWellness.date) {
+            
+            // Overwrite RHR if available
+            if let rhr = latestWellness.restingHeartRate {
+                unifiedReadiness.latestRHR = Double(rhr)
+                // Calculate average RHR from last 7 days of wellness metrics
+                let recentRHRs = WellnessManager.shared.dailyMetrics.suffix(7).compactMap { $0.restingHeartRate }
+                if !recentRHRs.isEmpty {
+                    unifiedReadiness.averageRHR = Double(recentRHRs.reduce(0, +)) / Double(recentRHRs.count)
+                }
+            }
+            
+            // Overwrite Sleep if available (This fixes your issue)
+            if let sleep = latestWellness.totalSleep, sleep > 0 {
+                unifiedReadiness.sleepDuration = sleep
+                // Calculate average Sleep from last 7 days
+                let recentSleeps = WellnessManager.shared.dailyMetrics.suffix(7).compactMap { $0.totalSleep }
+                if !recentSleeps.isEmpty {
+                    unifiedReadiness.averageSleepDuration = recentSleeps.reduce(0, +) / Double(recentSleeps.count)
+                }
+            }
+            
+            // Overwrite HRV if available (Garmin often doesn't send SDNN, but if you have it in custom fields)
+            // Note: Garmin usually provides "Stress" or "Body Battery" rather than raw SDNN via standard API.
+        }
+        
+        self.readiness = unifiedReadiness
         summary = manager.getCurrentSummary()
-        insights = manager.getInsights(readiness: readiness)
+        insights = manager.getInsights(readiness: unifiedReadiness)
         totalDaysInStorage = manager.loadAllDailyLoads().count
     }
     

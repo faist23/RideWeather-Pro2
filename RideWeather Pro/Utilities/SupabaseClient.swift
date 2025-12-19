@@ -622,13 +622,10 @@ extension WellnessDataService {
         limit: Int = 50
     ) async throws -> [GarminWellnessRow] {
         print("\n📡 Fetching Garmin activities from Supabase...")
-        print("   app_user_id: \(userId)")
-        print("   garmin_user_id: \(garminUserId)")
-        print("   limit: \(limit)")
         
         do {
-            // First, try to get activities data type
-            let response: [GarminWellnessRow] = try await supabase
+            // 1. Fetch standard activities
+            let activitiesResponse: [GarminWellnessRow] = try await supabase
                 .from("garmin_wellness")
                 .select()
                 .eq("garmin_user_id", value: garminUserId)
@@ -638,27 +635,47 @@ extension WellnessDataService {
                 .execute()
                 .value
             
-            print("   Retrieved \(response.count) 'activities' rows")
+            // 2. Fetch manual updates (often used for manual entries or edits)
+            let manualResponse: [GarminWellnessRow] = try await supabase
+                .from("garmin_wellness")
+                .select()
+                .eq("garmin_user_id", value: garminUserId)
+                .eq("data_type", value: "manuallyUpdatedActivities")
+                .order("synced_at", ascending: false)
+                .limit(limit)
+                .execute()
+                .value
             
-            // If no activities, try manuallyUpdatedActivities
-            if response.isEmpty {
-                print("   No 'activities' found, trying 'manuallyUpdatedActivities'...")
-                
-                let manualResponse: [GarminWellnessRow] = try await supabase
-                    .from("garmin_wellness")
-                    .select()
-                    .eq("garmin_user_id", value: garminUserId)
-                    .eq("data_type", value: "manuallyUpdatedActivities")
-                    .order("synced_at", ascending: false)
-                    .limit(limit)
-                    .execute()
-                    .value
-                
-                print("   Retrieved \(manualResponse.count) 'manuallyUpdatedActivities' rows")
-                return filterCyclingActivities(manualResponse)
+            print("   Retrieved \(activitiesResponse.count) 'activities'")
+            print("   Retrieved \(manualResponse.count) 'manuallyUpdatedActivities'")
+            
+            // 3. Combine unique activities (prefer manual updates if duplicates exist)
+            // Using a dictionary keyed by activityId to deduplicate
+            var combinedActivities: [Int: GarminWellnessRow] = [:]
+            
+            // Add standard first
+            for row in activitiesResponse {
+                if let dict = row.data.dictionary, let id = dict["activityId"] as? Int {
+                    combinedActivities[id] = row
+                }
             }
             
-            return filterCyclingActivities(response)
+            // Overwrite/Add manual (assuming manual is newer/better data)
+            for row in manualResponse {
+                if let dict = row.data.dictionary, let id = dict["activityId"] as? Int {
+                    combinedActivities[id] = row
+                }
+            }
+            
+            let allRows = Array(combinedActivities.values).sorted {
+                // Sort by calendar date (startTime) if possible, otherwise sync time
+                let time1 = $0.data.dictionary?["startTimeInSeconds"] as? Int ?? 0
+                let time2 = $1.data.dictionary?["startTimeInSeconds"] as? Int ?? 0
+                return time1 > time2
+            }
+            
+            // 4. Apply relaxed filter
+            return filterTrainingActivities(allRows)
             
         } catch {
             print("❌ Failed to fetch activities: \(error)")
@@ -666,29 +683,31 @@ extension WellnessDataService {
         }
     }
     
-    private func filterCyclingActivities(_ rows: [GarminWellnessRow]) -> [GarminWellnessRow] {
-        let cyclingActivities = rows.filter { row in
-            guard let dict = row.data.dictionary,
-                  let activityType = dict["activityType"] as? String else {
-                return false
-            }
-            let type = activityType.uppercased()
+    // Replace filterCyclingActivities with this permissive filter
+    private func filterTrainingActivities(_ rows: [GarminWellnessRow]) -> [GarminWellnessRow] {
+        let trainingActivities = rows.filter { row in
+            guard let dict = row.data.dictionary else { return false }
             
-            // Include outdoor cycling types only
-            let isOutdoorCycling = type.contains("ROAD") ||
-                                   type.contains("MOUNTAIN") ||
-                                   type.contains("GRAVEL") ||
-                                   type == "CYCLING" ||
-                                   type == "ROAD_BIKING"
+            // We want everything that contributes to Training Load:
+            // - Cycling (Indoor/Outdoor)
+            // - Manual entries (often type OTHER or specified)
+            // - Anything with Heart Rate or Power
             
-            // Exclude indoor cycling
-            let isIndoor = type.contains("INDOOR")
+            let type = (dict["activityType"] as? String)?.uppercased() ?? "UNKNOWN"
+            let hasHeartRate = (dict["averageHeartRateInBeatsPerMinute"] as? Int ?? 0) > 0
+            let hasPower = (dict["averagePowerInWatts"] as? Double ?? 0) > 0
+            let isManual = dict["manual"] as? Bool ?? false
             
-            return isOutdoorCycling && !isIndoor
+            // Allow specific types explicitly
+            let isCycling = type.contains("BIK") || type.contains("CYCL")
+            let isOther = type == "OTHER" // e.g. Shoveling Snow
+            
+            // Logic: Keep it if it's cycling, manual, "other", OR has training data
+            return isCycling || isManual || isOther || hasHeartRate || hasPower
         }
         
-        print("   ✅ \(cyclingActivities.count) outdoor cycling activities after filtering")
-        return cyclingActivities
+        print("   ✅ \(trainingActivities.count) valid training activities (Cycling/Indoor/Manual/Other)")
+        return trainingActivities
     }
 
     /// Fetch activity details including GPS samples
