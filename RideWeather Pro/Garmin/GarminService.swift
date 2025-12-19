@@ -1256,7 +1256,10 @@ extension GarminService {
     }
     
     /// Fetch activity list from Supabase (where Garmin pushes data)
-    func fetchRecentActivities(limit: Int = 50) async throws -> [GarminActivitySummary] {
+    func fetchRecentActivities(
+        limit: Int = 50,
+        filter: WellnessDataService.ActivityFilterMode = .outdoorCycling // Default to Strict
+    ) async throws -> [GarminActivitySummary] {
         print("📥 GarminService: Fetching activities from Supabase...")
         
         let wellnessService = WellnessDataService()
@@ -1270,7 +1273,8 @@ extension GarminService {
         let rows = try await wellnessService.fetchGarminActivities(
             forUser: self.appUserId,
             garminUserId: garminUserId,
-            limit: limit
+            limit: limit,
+            filter: filter
         )
         
         print("✅ GarminService: Found \(rows.count) activities in Supabase")

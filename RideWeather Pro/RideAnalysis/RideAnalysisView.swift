@@ -30,7 +30,18 @@ struct RideAnalysisView: View {
                 // Main Content
                 Group {
                     if viewModel.currentAnalysis == nil {
-                        emptyStateView
+//                        emptyStateView
+                        // Reuse the Hub for empty state, but embedded
+                        ImportSelectionHub(
+                            viewModel: viewModel,
+                            onImportFit: { viewModel.showingFilePicker = true },
+                            onImportStrava: { viewModel.showingStravaActivities = true },
+                            onImportWahoo: { viewModel.showingWahooActivities = true },
+                            onImportGarmin: { viewModel.showingGarminActivities = true },
+                            onViewHistory: { viewModel.showingHistory = true },
+                            onSavedPlans: { viewModel.showingSavedPlans = true }
+                        )
+
                     } else {
                         analysisResultsView
                     }
@@ -49,47 +60,59 @@ struct RideAnalysisView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button(action: { viewModel.showingHistory = true }) {
-                            Label("View History", systemImage: "clock")
-                        }
-                        Button(action: { viewModel.showingFilePicker = true }) {
-                            Label("Import FIT File", systemImage: "square.and.arrow.down")
-                        }
-                        if stravaService.isAuthenticated {
-                            Button(action: { viewModel.showingStravaActivities = true }) {
-                                Label("Import from Strava", systemImage: "square.and.arrow.down.on.square")
-                            }
-                        }
-                        if wahooService.isAuthenticated {
-                            Button(action: { viewModel.showingWahooActivities = true }) {
-                                Label("Import from Wahoo", systemImage: "square.and.arrow.down.on.square")
-                            }
-                        }
-                        if garminService.isAuthenticated {
-                            Button(action: { viewModel.showingGarminActivities = true }) {
-                                Label("Import from Garmin", systemImage: "square.and.arrow.down.on.square")
-                            }
-                        }
-                        Divider()
-                        Button(action: { viewModel.showingSavedPlans = true }) {
-                            Label("Saved Pacing Plans", systemImage: "list.bullet.rectangle")
-                        }
-                        if viewModel.currentAnalysis != nil {
-                            Divider()
-                            Button(action: {
-                                if let analysis = viewModel.currentAnalysis {
-                                    viewModel.compareToPlans(analysis)
-                                }
-                            }) {
-                                Label("Compare to Plan", systemImage: "chart.bar.xaxis")
-                            }
-                        }
-
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
+                    // Replaced "Menu" with a direct Button to open the Hub
+                    Button(action: { viewModel.showingImportHub = true }) {
+                        Image(systemName: "plus.circle.fill") // or "square.and.arrow.down"
+                            .font(.system(size: 22))
                     }
                 }
+            }
+            // MARK: - NEW IMPORT HUB SHEET
+            .sheet(isPresented: $viewModel.showingImportHub) {
+                ImportSelectionHub(
+                    viewModel: viewModel,
+                    onImportFit: {
+                        viewModel.showingImportHub = false
+                        // Slight delay to allow hub to dismiss before file picker opens
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            viewModel.showingFilePicker = true
+                        }
+                    },
+                    onImportStrava: {
+                        viewModel.showingImportHub = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            viewModel.showingStravaActivities = true
+                        }
+                    },
+                    onImportWahoo: {
+                        viewModel.showingImportHub = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            viewModel.showingWahooActivities = true
+                        }
+                    },
+                    onImportGarmin: {
+                        viewModel.showingImportHub = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            viewModel.showingGarminActivities = true
+                        }
+                    },
+                    onViewHistory: {
+                        viewModel.showingImportHub = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            viewModel.showingHistory = true
+                        }
+                    },
+                    onSavedPlans: {
+                        viewModel.showingImportHub = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            viewModel.showingSavedPlans = true
+                        }
+                    }
+                )
+                // Pass required environment objects to the Hub
+                .environmentObject(stravaService)
+                .environmentObject(wahooService)
+                .environmentObject(garminService)
             }
             .fileImporter(
                 isPresented: $viewModel.showingFilePicker,
@@ -2222,6 +2245,8 @@ class RideAnalysisViewModel: ObservableObject {
     @Published var showingPlanComparison = false
     @Published var showingComparisonSelection = false
 
+    @Published var showingImportHub = false
+
     // Track source information
     @Published var analysisSources: [UUID: RideSourceInfo] = [:]
 
@@ -2597,14 +2622,170 @@ extension RideAnalysisViewModel {
     }
 }
 
-/*// MARK: - Import Success State
+// MARK: - Import Selection Hub (Reusable)
 
-extension RideAnalysisViewModel {
-    var showingImportSuccess: Bool {
-        get { UserDefaults.standard.bool(forKey: "showingImportSuccess") }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "showingImportSuccess")
-            objectWillChange.send()
+struct ImportSelectionHub: View {
+    @ObservedObject var viewModel: RideAnalysisViewModel
+    @EnvironmentObject var stravaService: StravaService
+    @EnvironmentObject var wahooService: WahooService
+    @EnvironmentObject var garminService: GarminService
+    
+    // Actions to dismiss hub and trigger parent sheets
+    var onImportFit: () -> Void
+    var onImportStrava: () -> Void
+    var onImportWahoo: () -> Void
+    var onImportGarmin: () -> Void
+    var onViewHistory: () -> Void
+    var onSavedPlans: () -> Void
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                // Header
+                VStack(spacing: 8) {
+                    Image(systemName: "square.and.arrow.down.on.square")
+                        .font(.system(size: 48))
+                        .foregroundColor(.blue)
+                        .padding(.top, 20)
+                    
+                    Text("Load Ride Data")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Select a source to analyze")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                
+                VStack(spacing: 16) {
+                    // 1. File Import
+                    ImportOptionButton(
+                        title: "Import FIT File",
+                        icon: "doc.fill",
+                        color: .blue,
+                        action: onImportFit
+                    )
+                    
+                    // 2. Strava
+                    if stravaService.isAuthenticated {
+                        ImportOptionButton(
+                            title: "Import from Strava",
+                            imageName: "strava_logo",
+                            color: .orange,
+                            action: onImportStrava
+                        )
+                    }
+                    
+                    // 3. Wahoo
+                    if wahooService.isAuthenticated {
+                        ImportOptionButton(
+                            title: "Import from Wahoo",
+                            imageName: "wahoo_logo",
+                            color: .blue.opacity(0.8),
+                            action: onImportWahoo
+                        )
+                    }
+                    
+                    // 4. Garmin
+                    if garminService.isAuthenticated {
+                        ImportOptionButton(
+                            title: "Import from Garmin",
+                            imageName: "garmin_logo", 
+                            color: .black,
+                            action: onImportGarmin
+                        )
+                    }
+                }
+                .padding(.horizontal)
+                
+                Divider()
+                    .padding(.vertical)
+                
+                // Secondary Options
+                VStack(spacing: 12) {
+                    SecondaryOptionButton(
+                        title: "View History",
+                        icon: "clock",
+                        action: onViewHistory
+                    )
+                    
+                    SecondaryOptionButton(
+                        title: "Saved Pacing Plans",
+                        icon: "list.bullet.rectangle",
+                        action: onSavedPlans
+                    )
+                }
+                .padding(.horizontal)
+            }
+            .padding(.bottom)
+        }
+        .presentationDetents([.medium, .large]) // iOS 16+ / 26+ nice touch
+        .presentationDragIndicator(.visible)
+    }
+}
+
+// MARK: - Button Helpers
+
+struct ImportOptionButton: View {
+    let title: String
+    var icon: String? = nil
+    var imageName: String? = nil
+    let color: Color
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                if let imageName = imageName {
+                    Image(imageName)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 24, height: 24)
+                        // Invert color if needed or use original
+                        .colorMultiply(.white)
+                } else if let icon = icon {
+                    Image(systemName: icon)
+                        .font(.title3)
+                }
+                
+                Text(title)
+                    .font(.headline)
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            .foregroundColor(.white)
+            .padding()
+            .frame(maxWidth: .infinity)
+            .background(color)
+            .cornerRadius(12)
+            .shadow(color: color.opacity(0.3), radius: 5, x: 0, y: 3)
         }
     }
-}*/
+}
+
+struct SecondaryOptionButton: View {
+    let title: String
+    let icon: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Label(title, systemImage: icon)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+            }
+            .foregroundColor(.primary)
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
+        }
+    }
+}

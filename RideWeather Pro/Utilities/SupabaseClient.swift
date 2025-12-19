@@ -450,6 +450,11 @@ class WellnessDataService {
             throw error
         }
     }
+    
+    enum ActivityFilterMode {
+        case outdoorCycling // Strict: For Ride Analysis & Route Forecast
+        case allTraining    // Permissive: For Training Load
+    }
 }
 
 // MARK: - Domain Models
@@ -619,7 +624,8 @@ extension WellnessDataService {
     func fetchGarminActivities(
         forUser userId: String,
         garminUserId: String,
-        limit: Int = 50
+        limit: Int = 50,
+        filter: ActivityFilterMode = .outdoorCycling // Default to Strict
     ) async throws -> [GarminWellnessRow] {
         print("\n📡 Fetching Garmin activities from Supabase...")
         
@@ -674,15 +680,44 @@ extension WellnessDataService {
                 return time1 > time2
             }
             
-            // 4. Apply relaxed filter
-            return filterTrainingActivities(allRows)
-            
+            switch filter {
+            case .outdoorCycling:
+                return filterCyclingActivities(allRows)
+            case .allTraining:
+                return filterTrainingActivities(allRows)
+            }
         } catch {
             print("❌ Failed to fetch activities: \(error)")
             throw error
         }
     }
     
+    // RESTORE Strict Filter (for Ride Analysis)
+    private func filterCyclingActivities(_ rows: [GarminWellnessRow]) -> [GarminWellnessRow] {
+        let cyclingActivities = rows.filter { row in
+            guard let dict = row.data.dictionary,
+                  let activityType = dict["activityType"] as? String else {
+                return false
+            }
+            let type = activityType.uppercased()
+            
+            // Include outdoor cycling types only
+            let isOutdoorCycling = type.contains("ROAD") ||
+            type.contains("MOUNTAIN") ||
+            type.contains("GRAVEL") ||
+            type == "CYCLING" ||
+            type == "ROAD_BIKING"
+            
+            // Exclude indoor cycling
+            let isIndoor = type.contains("INDOOR")
+            
+            return isOutdoorCycling && !isIndoor
+        }
+        
+        print("   ✅ \(cyclingActivities.count) outdoor cycling activities (Strict)")
+        return cyclingActivities
+    }
+
     // Replace filterCyclingActivities with this permissive filter
     private func filterTrainingActivities(_ rows: [GarminWellnessRow]) -> [GarminWellnessRow] {
         let trainingActivities = rows.filter { row in
