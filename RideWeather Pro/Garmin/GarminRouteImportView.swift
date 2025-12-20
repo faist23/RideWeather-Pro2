@@ -286,22 +286,3 @@ enum GarminRouteImportError: LocalizedError {
     }
 }
 
-// MARK: - Models
-struct GarminCourse: Identifiable, Codable {
-    let courseId: Int
-    let courseName: String
-    let distance: Double
-    let elevationGain: Double?
-    let elevationLoss: Double?
-    
-    var id: Int { courseId }
-    
-    enum CodingKeys: String, CodingKey {
-        case courseId
-        case courseName
-        case distance
-        case elevationGain
-        case elevationLoss
-    }
-}
-

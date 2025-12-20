@@ -1127,12 +1127,12 @@ extension GarminService {
         }
     }
     
-    func fetchCourses() async throws -> [GarminCourse] {
+/*    func fetchCourses() async throws -> [GarminCourse] {
         // Not available via OAuth - upload only
         print("ℹ️ Garmin course listing not available via OAuth API")
         return []
 
-    }
+    }*/
     
     /// Fetch detailed course data including GPS points
     func fetchCourseDetails(courseId: Int) async throws -> [RoutePoint] {
@@ -1760,3 +1760,25 @@ extension GarminService {
         return Data(base64Encoded: base64)
     }
 }
+
+/*
+ // MARK: - Models
+struct GarminCourse: Identifiable, Codable {
+    let courseId: Int
+    let courseName: String
+    let distance: Double
+    let elevationGain: Double?
+    let elevationLoss: Double?
+    
+    var id: Int { courseId }
+    
+    enum CodingKeys: String, CodingKey {
+        case courseId
+        case courseName
+        case distance
+        case elevationGain
+        case elevationLoss
+    }
+}
+
+*/

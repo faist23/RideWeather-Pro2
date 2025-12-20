@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct CacheService {
+/*struct CacheService {
     // Determine your specific cache directory
     private static var cacheURL: URL? {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
@@ -34,3 +34,4 @@ struct CacheService {
         }
     }
 }
+*/
