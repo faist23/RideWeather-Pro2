@@ -489,41 +489,39 @@ private struct AIRouteSummaryCardContainer: View {
         
         return descriptions
     }
-    
-    // MARK: - Helper: Geocoding
+        
+    // MARK: - Helper: Geocoding (Optimized with Manager)
     
     private func locationName(for coordinate: CLLocationCoordinate2D?) async -> String? {
         guard let coord = coordinate else { return nil }
         
+        // 1. Check existing cache (Fastest)
         if let cached = RouteSummaryCacheManager.shared.getCachedLocationName(for: coord) {
             return cached
         }
         
-        // Use MKLocalSearch for reverse geocoding
-        let searchRequest = MKLocalSearch.Request()
-        searchRequest.naturalLanguageQuery = "location"
-        searchRequest.region = MKCoordinateRegion(
-            center: coord,
-            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-        )
-        
-        let search = MKLocalSearch(request: searchRequest)
+        // 2. Use the GeocodingManager Actor (Safe & Rate Limited)
+        let location = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
         
         do {
-            let response = try await search.start()
-            
-            if let mapItem = response.mapItems.first {
-                let placemark = mapItem.placemark
-                let name = placemark.locality ??
-                          placemark.subLocality ??
-                          placemark.administrativeArea ??
-                          "this area"
+            // Ensure your GeocodingManager.swift has a function like 'reverseGeocode(location:)'
+            if let placemark = try await GeocodingManager.shared.reverseGeocode(location: location) {
                 
-                RouteSummaryCacheManager.shared.cacheLocationName(name, for: coord)
-                return name
+                // Construct readable name
+                let name = [placemark.locality, placemark.administrativeArea]
+                    .compactMap { $0 }
+                    .joined(separator: ", ")
+                
+                if !name.isEmpty {
+                    // Cache the result to prevent future network calls
+                    RouteSummaryCacheManager.shared.cacheLocationName(name, for: coord)
+                    return name
+                }
             }
         } catch {
-            print("Geocoding failed: \(error.localizedDescription)")
+            // If we hit Error 4 (Rate Limit), we return nil.
+            // This tells the UI to fallback to "Physical Description" instead of "Generic Location".
+            print("⚠️ Geocoding Skipped: \(error.localizedDescription)")
         }
         
         return nil

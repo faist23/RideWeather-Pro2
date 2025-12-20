@@ -17,7 +17,9 @@ struct SettingsView: View {
     @State private var lastRefresh = Date() // Forces UI update
 
     @State private var showWeightSourcePicker = false
-
+    @State private var showingClearAlert = false
+    @State private var routeCacheSize: String = "Calculating..."
+    
     // Track storage strings manually to force updates
     @State private var trainingStorageText: String = ""
     @State private var wellnessStorageText: String = ""
@@ -137,30 +139,51 @@ struct SettingsView: View {
                 .id(lastRefresh)
                 
                 Section("AI Route Analysis") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Route Summary Cache")
-                            .font(.headline)
-                        
-                        Text("Route summaries and location names are cached to reduce processing time and API usage")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    Button(role: .destructive) {
-                        RouteSummaryCacheManager.shared.clearCache()
-                        // Force UI update
-                        lastRefresh = Date()
-                    } label: {
-                        Label("Clear Route Cache", systemImage: "trash")
-                            .foregroundStyle(.red)
-                    }
-                }
-                .alert("Cache Cleared", isPresented: .constant(false)) {
-                    Button("OK", role: .cancel) { }
-                } message: {
-                    Text("Route summaries will be regenerated on next load")
-                }
-
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Route Summary Cache")
+                                        .font(.headline)
+                                    Spacer()
+                                    // Display the calculated size
+                                    Text(routeCacheSize)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                
+                                Text("Route summaries and location names are cached to reduce processing time and API usage")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            Button(role: .destructive) {
+                                showingClearAlert = true
+                            } label: {
+                                Label("Clear Route Cache", systemImage: "trash")
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                        // Load size on appear
+                        .onAppear {
+                            routeCacheSize = RouteSummaryCacheManager.shared.getCacheSize()
+                        }
+                        .confirmationDialog("Clear Route Data?", isPresented: $showingClearAlert) {
+                            Button("Delete Cache", role: .destructive) {
+                                // Clear Files
+                                RouteSummaryCacheManager.shared.clearCache()
+                                
+                                // Recalculate Size (Should be 0 KB)
+                                routeCacheSize = RouteSummaryCacheManager.shared.getCacheSize()
+                                
+                                let generator = UINotificationFeedbackGenerator()
+                                generator.notificationOccurred(.success)
+                                
+                                lastRefresh = Date()
+                            }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("This will remove all generated route descriptions. They will be regenerated on the next load.")
+                        }
+                
                 Section("About") {
                     HStack {
                         Text("Version")
