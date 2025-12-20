@@ -312,6 +312,11 @@ struct RideAnalysisView: View {
                         // Quick Stats
                         QuickStatsCard(analysis: analysis, useMetric: weatherViewModel.settings.units == .metric)
                         
+                        AIRouteSummaryCard.forAnalysis(
+                            analysis: analysis,
+                            weatherViewModel: weatherViewModel
+                        )
+
                         // Power Metrics Card
                         PowerMetricsCard(analysis: analysis)
                         

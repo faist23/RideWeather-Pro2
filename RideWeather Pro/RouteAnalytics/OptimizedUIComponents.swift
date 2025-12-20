@@ -178,6 +178,8 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
                     // Allows users to quickly check if their start time works with daylight
                     SunTimesRow(daylight: analysis.daylightAnalysis)
                     
+                    AIRouteSummaryCard.forForecast(viewModel: viewModel)
+
                     OptimizedOverallScoreCard(analysis: analysis, settings: viewModel.settings)
                     
                     if let powerResult = analysis.powerAnalysis {

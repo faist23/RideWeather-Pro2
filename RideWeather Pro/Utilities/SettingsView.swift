@@ -136,6 +136,31 @@ struct SettingsView: View {
                 }
                 .id(lastRefresh)
                 
+                Section("AI Route Analysis") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Route Summary Cache")
+                            .font(.headline)
+                        
+                        Text("Route summaries and location names are cached to reduce processing time and API usage")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    Button(role: .destructive) {
+                        RouteSummaryCacheManager.shared.clearCache()
+                        // Force UI update
+                        lastRefresh = Date()
+                    } label: {
+                        Label("Clear Route Cache", systemImage: "trash")
+                            .foregroundStyle(.red)
+                    }
+                }
+                .alert("Cache Cleared", isPresented: .constant(false)) {
+                    Button("OK", role: .cancel) { }
+                } message: {
+                    Text("Route summaries will be regenerated on next load")
+                }
+
                 Section("About") {
                     HStack {
                         Text("Version")
