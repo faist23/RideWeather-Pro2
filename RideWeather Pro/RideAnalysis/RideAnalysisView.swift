@@ -1885,10 +1885,10 @@ struct RideHistoryView: View {
                         Section(header: Text("Past Analyses")) {
                             ForEach(viewModel.analysisHistory) { analysis in
                                 HistoryRow(analysis: analysis)
-                                    .tag(analysis.id) // ✅ Tag for selection
+                                    .tag(analysis.id) // Tag for selection
                                     .contentShape(Rectangle())
                                     .onTapGesture {
-                                        // ✅ Only navigate if NOT editing
+                                        // Only navigate if NOT editing
                                         if !isEditing {
                                             viewModel.selectAnalysis(analysis)
                                             dismiss()
@@ -1959,7 +1959,7 @@ struct RideHistoryView: View {
                     }
                 }
             }
-            // ✅ Delete confirmation alert
+            // Delete confirmation alert
             .alert("Delete \(selectedAnalysisIDs.count) Rides?", isPresented: $showingDeleteConfirmation) {
                 Button("Delete", role: .destructive) {
                     withAnimation {
