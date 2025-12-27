@@ -17,11 +17,11 @@ struct DataSourceSettingsView: View {
     @State private var showingRecommendations = false
     @State private var recommendedConfig: RecommendedConfiguration?
     @State private var verifyingSource: DataSourceConfiguration.TrainingLoadSource? = nil
-    
+    @State private var shouldShowAutoConfig = false
+
     var body: some View {
         Form {
-            // MARK: - NEW: Active Configuration Summary
-            // This clears up the confusion about "What is powering what?"
+            // MARK: - Active Configuration Summary
             activeConfigurationSection
             
             // Status Overview
@@ -43,32 +43,44 @@ struct DataSourceSettingsView: View {
         }
         .navigationTitle("Data Sources")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            generateRecommendations()
-        }
+//        .onAppear {
+//            generateRecommendations()
+//        }
         .onChange(of: stravaService.isAuthenticated) { _, _ in
-            generateRecommendations()
+            // Just mark that we need to regenerate, don't auto-show
+            recommendedConfig = nil
         }
         .onChange(of: garminService.isAuthenticated) { _, _ in
-            generateRecommendations()
+            recommendedConfig = nil
         }
         .onChange(of: healthManager.isAuthorized) { _, _ in
-            generateRecommendations()
+            recommendedConfig = nil
         }
         .onChange(of: dataSourceManager.configuration.trainingLoadSource) { oldValue, newValue in
-            // When source changes, request permissions if needed
             if newValue == .appleHealth && !healthManager.isAuthorized {
                 Task {
                     let authorized = await healthManager.requestAuthorization()
                     if authorized {
-                        // Post notification to trigger sync in TrainingLoadView
                         NotificationCenter.default.post(name: .dataSourceChanged, object: nil)
                     }
                 }
             } else {
-                // Post notification for other sources
                 NotificationCenter.default.post(name: .dataSourceChanged, object: nil)
             }
+        }
+        // FIXED: Properly unwrap optional before passing to sheet
+        .sheet(item: $recommendedConfig) { recommended in
+            AutoConfigurationSheet(
+                recommended: recommended,
+                onApply: {
+                    applyAutoConfiguration()
+                    recommendedConfig = nil  // Dismiss by setting to nil
+                },
+                onCancel: {
+                    recommendedConfig = nil  // Dismiss by setting to nil
+                }
+            )
+            .presentationDetents([.fraction(0.7), .large])  // 70% of screen or large
         }
     }
     
@@ -77,7 +89,6 @@ struct DataSourceSettingsView: View {
     private var activeConfigurationSection: some View {
         Section {
             HStack(spacing: 0) {
-                // Training Load Config
                 VStack(alignment: .leading, spacing: 4) {
                     Text("TRAINING LOAD")
                         .font(.caption2)
@@ -93,12 +104,10 @@ struct DataSourceSettingsView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 
-                // Vertical Divider
                 Divider()
                     .frame(height: 30)
                     .padding(.horizontal, 8)
                 
-                // Wellness Config
                 VStack(alignment: .leading, spacing: 4) {
                     Text("WELLNESS")
                         .font(.caption2)
@@ -155,7 +164,7 @@ struct DataSourceSettingsView: View {
                 }
             }
         } header: {
-            Text("Connection Status") // Renamed for clarity
+            Text("Connection Status")
         } footer: {
             Text("Connect services here to make them available as sources.")
         }
@@ -223,7 +232,7 @@ struct DataSourceSettingsView: View {
     private var trainingLoadSourceSection: some View {
         Section {
             ForEach(DataSourceConfiguration.TrainingLoadSource.allCases) { source in
-                HStack { // Wrap in HStack to add the spinner
+                HStack {
                     DataSourceOptionRow(
                         source: source,
                         isSelected: dataSourceManager.configuration.trainingLoadSource == source,
@@ -233,7 +242,6 @@ struct DataSourceSettingsView: View {
                         }
                     )
                     
-                    // SHOW SPINNER IF VERIFYING THIS SOURCE
                     if verifyingSource == source {
                         ProgressView()
                             .controlSize(.small)
@@ -249,13 +257,10 @@ struct DataSourceSettingsView: View {
         }
     }
     
-    // HELPER FUNCTION TO HANDLE THE TRANSITION
     private func handleSourceChange(to source: DataSourceConfiguration.TrainingLoadSource) {
-        // 1. Set Transition State
         withAnimation { verifyingSource = source }
         
         Task {
-            // 2. Perform the logic
             dataSourceManager.configuration.trainingLoadSource = source
             dataSourceManager.saveConfiguration()
             
@@ -263,12 +268,9 @@ struct DataSourceSettingsView: View {
                 _ = await healthManager.requestAuthorization()
             }
             
-            // Simulate a short "check" or perform actual sync
-            // This small delay feels "pro" - like the app is actually checking connections
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+            try? await Task.sleep(nanoseconds: 500_000_000)
             await performInitialSync(for: source)
             
-            // 3. Clear Transition State
             await MainActor.run {
                 withAnimation { verifyingSource = nil }
                 NotificationCenter.default.post(name: .dataSourceChanged, object: nil)
@@ -304,11 +306,10 @@ struct DataSourceSettingsView: View {
     private var quickActionsSection: some View {
         Section {
             Button {
-                dataSourceManager.autoConfigureFromConnections(
-                    stravaConnected: stravaService.isAuthenticated,
-                    healthConnected: healthManager.isAuthorized,
-                    garminConnected: garminService.isAuthenticated
-                )
+                // Generate recommendations
+                generateRecommendations()
+                // Explicitly show the sheet
+                shouldShowAutoConfig = true
             } label: {
                 Label("Auto-Configure from Connections", systemImage: "wand.and.stars")
             }
@@ -318,6 +319,8 @@ struct DataSourceSettingsView: View {
             }
         } header: {
             Text("Quick Actions")
+        } footer: {
+            Text("Auto-configure analyzes your connected services and suggests optimal data sources.")
         }
     }
     
@@ -354,6 +357,7 @@ struct DataSourceSettingsView: View {
             healthConnected: healthManager.isAuthorized,
             garminConnected: garminService.isAuthenticated
         )
+        print("📊 Generated recommendations: Training=\(recommendedConfig?.trainingLoadSource.rawValue ?? "nil"), Wellness=\(recommendedConfig?.wellnessSource.rawValue ?? "nil")")
     }
     
     private func applyRecommendedConfiguration() {
@@ -365,6 +369,21 @@ struct DataSourceSettingsView: View {
         dataSourceManager.saveConfiguration()
     }
     
+    private func applyAutoConfiguration() {
+        guard let recommended = recommendedConfig else { return }
+        
+        dataSourceManager.configuration.trainingLoadSource = recommended.trainingLoadSource
+        dataSourceManager.configuration.wellnessSource = recommended.wellnessSource
+        dataSourceManager.configuration.detectedEcosystem = recommended.detectedEcosystem
+        dataSourceManager.saveConfiguration()
+        
+        NotificationCenter.default.post(name: .dataSourceChanged, object: nil)
+        
+        print("📊 Data Sources: Auto-configuration applied")
+        print("   Training: \(dataSourceManager.configuration.trainingLoadSource.rawValue)")
+        print("   Wellness: \(dataSourceManager.configuration.wellnessSource.rawValue)")
+    }
+    
     private func performInitialSync(for source: DataSourceConfiguration.TrainingLoadSource) async {
         guard source == .appleHealth else { return }
         
@@ -374,14 +393,14 @@ struct DataSourceSettingsView: View {
             stravaService: stravaService,
             garminService: garminService,
             healthManager: healthManager,
-            userFTP: 200, // You'll need to pass this from settings
+            userFTP: 200,
             userLTHR: nil,
             startDate: Calendar.current.date(byAdding: .day, value: -90, to: Date())
         )
     }
 }
 
-// MARK: - Helper View: Source Icon
+// MARK: - Supporting Views (keep existing implementations)
 
 struct SourceIconView: View {
     let icon: String
@@ -400,8 +419,6 @@ struct SourceIconView: View {
         }
     }
 }
-
-// MARK: - Connection Status Row
 
 struct ConnectionStatusRow: View {
     let title: String
@@ -442,8 +459,6 @@ struct ConnectionStatusRow: View {
         }
     }
 }
-
-// MARK: - Data Source Option Row
 
 struct DataSourceOptionRow: View {
     let source: DataSourceConfiguration.TrainingLoadSource
@@ -493,8 +508,6 @@ struct DataSourceOptionRow: View {
         .opacity(isAvailable ? 1.0 : 0.6)
     }
 }
-
-// MARK: - Wellness Source Option Row
 
 struct WellnessSourceOptionRow: View {
     let source: DataSourceConfiguration.WellnessSource
@@ -546,8 +559,6 @@ struct WellnessSourceOptionRow: View {
     }
 }
 
-// MARK: - Recommendations Sheet
-
 struct RecommendationsSheetView: View {
     let recommended: RecommendedConfiguration
     let onApply: () -> Void
@@ -557,7 +568,6 @@ struct RecommendationsSheetView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-                    // Detected Ecosystem
                     VStack(spacing: 12) {
                         Image(systemName: "applewatch")
                             .font(.system(size: 50))
@@ -570,7 +580,6 @@ struct RecommendationsSheetView: View {
                     
                     Divider()
                     
-                    // Training Load Recommendation
                     RecommendationCard(
                         title: "Training Load",
                         source: recommended.trainingLoadSource.rawValue,
@@ -579,7 +588,6 @@ struct RecommendationsSheetView: View {
                         color: .blue
                     )
                     
-                    // Wellness Recommendation
                     RecommendationCard(
                         title: "Wellness Data",
                         source: recommended.wellnessSource.rawValue,
@@ -588,7 +596,6 @@ struct RecommendationsSheetView: View {
                         color: .green
                     )
                     
-                    // Apply Button
                     Button {
                         onApply()
                     } label: {
@@ -660,14 +667,131 @@ struct RecommendationCard: View {
     }
 }
 
-// MARK: - Preview
+// MARK: - Custom Auto-Configuration Sheet
 
-#Preview {
-    NavigationStack {
-        DataSourceSettingsView()
-            .environmentObject(StravaService())
-            .environmentObject(GarminService())
-            .environmentObject(HealthKitManager())
+struct AutoConfigurationSheet: View {
+    let recommended: RecommendedConfiguration  // FIXED: Not optional
+    let onApply: () -> Void
+    let onCancel: () -> Void
+    
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                // Header
+                VStack(spacing: 8) {
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 50))
+                        .foregroundColor(.blue)
+                    
+                    Text("Recommended Configuration")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Based on your connected services")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top)
+                
+                // Recommendations
+                VStack(spacing: 16) {
+                    ConfigurationRow(
+                        label: "Training Load",
+                        value: recommended.trainingLoadSource.rawValue,
+                        icon: recommended.trainingLoadSource.icon,
+                        description: recommended.trainingLoadReason
+                    )
+                    
+                    Divider()
+                    
+                    ConfigurationRow(
+                        label: "Wellness",
+                        value: recommended.wellnessSource.rawValue,
+                        icon: recommended.wellnessSource.icon,
+                        description: recommended.wellnessReason
+                    )
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(12)
+                .padding(.horizontal)
+                
+                Spacer()
+                
+                // Buttons
+                VStack(spacing: 12) {
+                    Button {
+                        onApply()
+                    } label: {
+                        Text("Apply These Settings")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .cornerRadius(12)
+                    }
+                    
+                    Button {
+                        onCancel()
+                    } label: {
+                        Text("Keep My Current Settings")
+                            .font(.headline)
+                            .foregroundColor(.blue)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct ConfigurationRow: View {
+    let label: String
+    let value: String
+    let icon: String
+    let description: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                if icon.contains("_logo") {
+                    Image(icon)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 24, height: 24)
+                } else {
+                    Image(systemName: icon)
+                        .font(.title3)
+                        .foregroundColor(.blue)
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(value)
+                        .font(.headline)
+                }
+            }
+            
+            Text(description)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
     }
 }
 

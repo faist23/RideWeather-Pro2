@@ -613,8 +613,24 @@ extension AIInsightsManager {
                 if let sleep = yesterday.totalSleep {
                     prompt += "\n- Sleep: \(String(format: "%.1f", sleep / 3600))h"
                 }
-                if let deep = yesterday.sleepDeep, let rem = yesterday.sleepREM {
-                    prompt += "\n- Sleep stages: \(String(format: "%.1f", deep / 3600))h deep, \(String(format: "%.1f", rem / 3600))h REM"
+                // Only include sleep stages if available (not all devices track this)
+                let hasStageData = yesterday.sleepDeep != nil || yesterday.sleepREM != nil || yesterday.sleepCore != nil
+                if hasStageData {
+                    var stages: [String] = []
+                    if let deep = yesterday.sleepDeep {
+                        stages.append("\(String(format: "%.1f", deep / 3600))h deep")
+                    }
+                    if let rem = yesterday.sleepREM {
+                        stages.append("\(String(format: "%.1f", rem / 3600))h REM")
+                    }
+                    if let core = yesterday.sleepCore {
+                        stages.append("\(String(format: "%.1f", core / 3600))h core")
+                    }
+                    if !stages.isEmpty {
+                        prompt += "\n- Sleep stages: \(stages.joined(separator: ", "))"
+                    }
+                } else {
+                    prompt += "\n- Sleep stages: Not available (device does not track sleep stages)"
                 }
             }
         }
@@ -623,10 +639,10 @@ extension AIInsightsManager {
         let recent = recentLoads.prefix(7)
         if !recent.isEmpty {
             prompt += """
-            
-            
-            Last 7 Days Training:
-            """
+                        
+                        
+                        Last 7 Days Training:
+                        """
             for load in recent {
                 let dateStr = load.date.formatted(date: .abbreviated, time: .omitted)
                 prompt += "\n- \(dateStr): \(String(format: "%.0f", load.tss)) TSS"
@@ -634,18 +650,20 @@ extension AIInsightsManager {
         }
         
         prompt += """
-        
-        
-        Analyze ALL the data together - training load, physiological signals, AND lifestyle factors.
-        Look for:
-        1. Conflicts between training math and real-world recovery (e.g., positive TSB but poor sleep/low activity)
-        2. Lifestyle factors undermining training (e.g., high TSS but inadequate daily movement)
-        3. Recovery opportunities (e.g., good sleep + low activity = ready for hard session)
-        4. Warning signs (e.g., low steps on rest days = not truly recovering)
-        
-        Be specific and actionable. Connect the dots between training load and lifestyle.
-        Respond ONLY with the JSON object, no other text.
-        """
+                    
+                    
+                    IMPORTANT: If sleep stages are marked "Not available", DO NOT mention deep sleep, REM, or sleep stages in your analysis. Focus only on total sleep duration and sleep efficiency.
+                    
+                    Analyze ALL the data together - training load, physiological signals, AND lifestyle factors.
+                    Look for:
+                    1. Conflicts between training math and real-world recovery (e.g., positive TSB but poor sleep/low activity)
+                    2. Lifestyle factors undermining training (e.g., high TSS but inadequate daily movement)
+                    3. Recovery opportunities (e.g., good sleep + low activity = ready for hard session)
+                    4. Warning signs (e.g., low steps on rest days = not truly recovering)
+                    
+                    Be specific and actionable. Connect the dots between training load and lifestyle.
+                    Respond ONLY with the JSON object, no other text.
+                    """
         
         return prompt
     }

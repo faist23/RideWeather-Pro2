@@ -24,6 +24,9 @@ struct SettingsView: View {
     @State private var trainingStorageText: String = ""
     @State private var wellnessStorageText: String = ""
     
+    @State private var showingFirstLaunchConfig = false
+    @State private var firstLaunchRecommendations: RecommendedConfiguration?
+    
     var body: some View {
         NavigationStack {
             Form {
@@ -262,6 +265,27 @@ struct SettingsView: View {
                 // Refresh weight display when wellness data changes
                 if viewModel.settings.weightSource == .garmin {
                     syncWeightFromCurrentSource()
+                }
+            }
+            // NEW: First launch auto-config dialog
+            .confirmationDialog("Configure Data Sources?", isPresented: $showingFirstLaunchConfig) {
+                Button("Apply Recommended Settings") {
+                    applyFirstLaunchConfig()
+                }
+                Button("Keep Current Settings", role: .cancel) {
+                    // Just mark as configured so we don't ask again
+                    UserDefaults.standard.set(true, forKey: "hasConfiguredDataSources")
+                }
+            } message: {
+                if let recommended = firstLaunchRecommendations {
+                    Text("""
+                    Based on your connected services, we recommend:
+                    
+                    Training Load: \(recommended.trainingLoadSource.rawValue)
+                    Wellness: \(recommended.wellnessSource.rawValue)
+                    
+                    You can always change this later in Settings → Data Sources.
+                    """)
                 }
             }
         }
@@ -571,6 +595,52 @@ struct SettingsView: View {
         UserDefaults.standard.set(true, forKey: "hasUserSetWeightSource")
     }
 
+    private func checkFirstLaunchAutoConfig() {
+        // Only auto-configure once, and only if needed
+        let hasConfigured = UserDefaults.standard.bool(forKey: "hasConfiguredDataSources")
+        guard !hasConfigured else { return }
+        
+        let status = dataSourceManager.validateConfiguration(
+            stravaConnected: stravaService.isAuthenticated,
+            healthConnected: healthManager.isAuthorized,
+            garminConnected: garminService.isAuthenticated
+        )
+        
+        // Only prompt if configuration is invalid or if user has connected services
+        let hasConnections = stravaService.isAuthenticated ||
+                            healthManager.isAuthorized ||
+                            garminService.isAuthenticated
+        
+        if !status.isValid && hasConnections {
+            firstLaunchRecommendations = dataSourceManager.getRecommendedConfiguration(
+                stravaConnected: stravaService.isAuthenticated,
+                healthConnected: healthManager.isAuthorized,
+                garminConnected: garminService.isAuthenticated
+            )
+            
+            // Small delay so the dialog doesn't appear before UI is ready
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                showingFirstLaunchConfig = true
+            }
+        }
+    }
+    
+    private func applyFirstLaunchConfig() {
+        guard let recommended = firstLaunchRecommendations else { return }
+        
+        dataSourceManager.configuration.trainingLoadSource = recommended.trainingLoadSource
+        dataSourceManager.configuration.wellnessSource = recommended.wellnessSource
+        dataSourceManager.configuration.detectedEcosystem = recommended.detectedEcosystem
+        dataSourceManager.saveConfiguration()
+        
+        // Mark as configured
+        UserDefaults.standard.set(true, forKey: "hasConfiguredDataSources")
+        
+        // Post notification to trigger sync
+        NotificationCenter.default.post(name: .dataSourceChanged, object: nil)
+        
+        print("📊 Data Sources: First launch configuration applied")
+    }
 }
 
 
@@ -829,7 +899,15 @@ struct IntegrationsSettingsView: View {
             } header: {
                 Text("Apple Health")
             } footer: {
-                Text("Syncs HRV, Resting HR, and Sleep for readiness insights.")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("What This Enables:")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                    
+                    Text("• Syncs HRV, Resting HR, Body Weight and Sleep for readiness insights.")
+                    Text("• Training load tracking from your activities")
+                }
+                .font(.caption)
             }
             
             // ==================================================================
@@ -965,17 +1043,9 @@ struct IntegrationsSettingsView: View {
                          .fontWeight(.semibold)
                      
                      Text("• Upload weather-aware pacing plans directly to your Garmin device")
-                         .fontWeight(.medium) // Highlight the main feature
-                     Text("• Wellness data sync (HRV, sleep, stress) for readiness insights")
+                     Text("• Wellness data sync (HRV, sleep, stress, body weight) for readiness insights")
                      Text("• Training load tracking from your activities")
-                     
-                     Divider()
-                         .padding(.vertical, 4)
-                     
-                     Text("Note: To import routes or analyze rides, export FIT files from Garmin Connect and use 'Import File'.")
-                         .font(.caption2)
-                         .foregroundStyle(.secondary)
-                         .italic()
+                     Text("• Import completed rides for performance analysis")
                  }
                  .font(.caption)
              }
@@ -1025,7 +1095,6 @@ struct IntegrationsSettingsView: View {
                          .fontWeight(.semibold)
                      
                      Text("• Upload weather-aware pacing plans directly to your Wahoo device")
-                         .fontWeight(.medium) // Highlight the main feature
                      Text("• Import saved routes for weather forecasting")
                      Text("• Import completed rides for performance analysis")
                      Text("• Access your workout library")

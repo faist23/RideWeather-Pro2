@@ -33,13 +33,13 @@ struct DataSourceConfiguration: Codable, Equatable {
         var description: String {
             switch self {
             case .strava:
-                return "Uses Strava activities with power/HR data for accurate TSS calculations"
+                return "Best for multi-platform users. Accurate TSS from power/HR data across all your devices"
             case .appleHealth:
-                return "Estimates TSS from Apple Health workouts using HR and duration"
+                return "Works with Apple Watch workouts and imported activities (Strava, Garmin, etc.). Can include power data"
             case .garmin:
-                return "Uses Garmin Connect activities with power/HR data"
+                return "Best for Garmin ecosystem users. Native integration with Garmin Connect activities"
             case .manual:
-                return "Manually log training sessions"
+                return "Manually log training sessions when automatic tracking isn't available"
             }
         }
         
@@ -138,38 +138,52 @@ class DataSourceManager: ObservableObject {
         )
         
         // Determine training load source
+        // Priority logic:
+        // 1. Match the ecosystem (Garmin users likely have all data in Garmin)
+        // 2. Strava for multi-platform users
+        // 3. Apple Health (may have power data from imports)
+        // 4. Manual fallback
+        
         let trainingSource: DataSourceConfiguration.TrainingLoadSource
         let trainingReason: String
         
-        if stravaConnected {
-            trainingSource = .strava
-            trainingReason = "Strava provides the most accurate TSS calculations with power and detailed activity data"
-        } else if garminConnected {
+        // KEY INSIGHT: If user has Garmin wellness, they likely have Garmin training too
+        if garminConnected && ecosystem == .garmin {
             trainingSource = .garmin
-            trainingReason = "Garmin Connect has your workout data with HR and power metrics"
+            trainingReason = "Garmin ecosystem detected. All your activities and wellness data are in one place"
+        } else if stravaConnected && !garminConnected {
+            // Only prefer Strava if Garmin ISN'T connected
+            trainingSource = .strava
+            trainingReason = "Strava works across platforms and typically has the most detailed activity data"
+        } else if stravaConnected && healthConnected {
+            // Both available - Strava slightly preferred for training accuracy
+            trainingSource = .strava
+            trainingReason = "Strava provides detailed power/HR analysis, complementing Apple Health wellness data"
         } else if healthConnected {
             trainingSource = .appleHealth
-            trainingReason = "Apple Health workouts will be used to estimate training load"
+            trainingReason = "Apple Health can estimate training load from workouts and imported activities"
         } else {
             trainingSource = .manual
             trainingReason = "No connected services - manual entry available"
         }
         
         // Determine wellness source
+        // Priority: match the ecosystem
         let wellnessSource: DataSourceConfiguration.WellnessSource
         let wellnessReason: String
         
         switch ecosystem {
         case .apple:
             wellnessSource = .appleHealth
-            wellnessReason = "Apple Health provides comprehensive wellness data including sleep stages, HRV, and daily activity"
+            wellnessReason = "Apple Watch provides comprehensive wellness: sleep stages, HRV, and daily activity"
         case .garmin:
             wellnessSource = .garmin
-            wellnessReason = "Garmin tracks wellness metrics including Body Battery, stress, and sleep"
+            wellnessReason = "Garmin watches track Body Battery, stress, sleep, and recovery metrics"
         case .none:
+            // No clear ecosystem - pick what's connected
             if healthConnected {
                 wellnessSource = .appleHealth
-                wellnessReason = "Apple Health is connected and can provide wellness insights"
+                wellnessReason = "Apple Health can provide wellness insights from your data"
             } else if garminConnected {
                 wellnessSource = .garmin
                 wellnessReason = "Garmin can provide wellness data"
@@ -255,15 +269,21 @@ class DataSourceManager: ObservableObject {
             warnings.append("Wellness tracking disabled - missing recovery insights")
         }
         
-        // Check for suboptimal configurations
-        if stravaConnected && configuration.trainingLoadSource != .strava {
-            warnings.append("Strava is connected but not being used - consider switching for better accuracy")
+        // Check for suboptimal configurations (but only suggest obvious improvements)
+        
+        // Only suggest Strava if user is using Manual (no power data at all)
+        if stravaConnected && configuration.trainingLoadSource == .manual {
+            warnings.append("Strava is connected - consider using it for automatic training load tracking")
         }
         
+        // Only suggest wellness tracking if it's disabled but Health/Garmin is available
         if healthConnected && configuration.wellnessSource == .none {
             warnings.append("Apple Health is connected - enable wellness tracking for recovery insights")
         }
         
+        if garminConnected && configuration.wellnessSource == .none {
+            warnings.append("Garmin is connected - enable wellness tracking for Body Battery and stress insights")
+        }
         return ConfigurationStatus(
             isValid: issues.isEmpty,
             issues: issues,
@@ -300,7 +320,8 @@ class DataSourceManager: ObservableObject {
 
 // MARK: - Supporting Types
 
-struct RecommendedConfiguration {
+struct RecommendedConfiguration: Identifiable {
+    let id = UUID()  // Add Identifiable conformance
     let trainingLoadSource: DataSourceConfiguration.TrainingLoadSource
     let trainingLoadReason: String
     let wellnessSource: DataSourceConfiguration.WellnessSource
