@@ -299,9 +299,6 @@ struct RideAnalysisView: View {
             ScrollView {
                 VStack(spacing: 20) {
                     if let analysis = viewModel.currentAnalysis {
-                        // Add an ID to the first element
-//                        RideMetadataCard(analysis: analysis, useMetric: weatherViewModel.settings.units == .metric)
-                        // Compact header replaces RideMetadataCard
                         CompactRideHeaderCard(
                             analysis: analysis,
                             source: viewModel.getRideSource(for: analysis)
@@ -387,12 +384,12 @@ struct RideAnalysisView: View {
                             .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
                         }
                         
-                        // NEW: Power Allocation Card (critical!)
+                        // Power Allocation Card (critical!)
                         if analysis.powerAllocation != nil {
                             PowerAllocationCard(analysis: analysis)
                         }
                         
-                        // NEW: Terrain Segments
+                        // Terrain Segments
                         if let segments = analysis.terrainSegments, !segments.isEmpty {
                             TerrainSegmentsCard(analysis: analysis)
                         }
@@ -537,145 +534,11 @@ struct QuickStatsCard: View {
     }
 }
 
-// MARK: - Ride Metadata Card
-
-struct RideMetadataCard: View {
-    let analysis: RideAnalysis
-    let useMetric: Bool
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(analysis.rideName)
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            if let metadata = analysis.metadata {
-                VStack(alignment: .leading, spacing: 16) {
-                    // DATE & TIME SECTION
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Date")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(metadata.date.formatted(date: .abbreviated, time: .shortened))
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                    }
-                    
-                    Divider()
-                    
-                    // DURATION BREAKDOWN (The Critical Fix!)
-                    HStack(spacing: 24) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Moving Time")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(formatDuration(metadata.movingTime))
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundColor(.primary)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Elapsed Time")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(formatDuration(metadata.totalTime))
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                        }
-                        
-                        if metadata.stoppedTime > 60 {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Stopped")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Text(formatDuration(metadata.stoppedTime))
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.orange)
-                            }
-                        }
-                    }
-                    
-                    // SHOW PERCENTAGE IF SIGNIFICANT STOP TIME
-                    if metadata.stoppedTime > 60 {
-                        let stoppedPct = (metadata.stoppedTime / metadata.totalTime) * 100
-                        HStack(spacing: 8) {
-                            Image(systemName: stoppedPct > 15 ? "exclamationmark.triangle.fill" : "info.circle.fill")
-                                .foregroundColor(stoppedPct > 15 ? .orange : .blue)
-                                .font(.caption)
-                            Text("Stopped for \(Int(stoppedPct))% of ride")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    
-                    Divider()
-                    
-                    // ELEVATION & GRADIENT
-                    HStack(spacing: 24) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Elevation Gain")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.up.right")
-                                    .font(.caption)
-                                Text(formatElevation(metadata.elevationGain, useMetric: useMetric))
-                            }
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        }
-                        
-                        if metadata.maxGradient > 5 {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Max Grade")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Text("\(String(format: "%.1f", metadata.maxGradient))%")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.orange)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(cardBackground)
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
-    }
-    
-    private func formatDuration(_ seconds: TimeInterval) -> String {
-        let hours = Int(seconds) / 3600
-        let minutes = (Int(seconds) % 3600) / 60
-        let secs = Int(seconds) % 60
-        
-        if hours > 0 {
-            return "\(hours):\(String(format: "%02d", minutes)):\(String(format: "%02d", secs))"
-        } else {
-            return "\(minutes):\(String(format: "%02d", secs))"
-        }
-    }
-    
-    private func formatElevation(_ meters: Double, useMetric: Bool) -> String {
-        if useMetric {
-            return "\(Int(meters))m"
-        } else {
-            let feet = meters * 3.28084
-            return "\(Int(feet))ft"
-        }
-    }
-}
-
 private var cardBackground: some View {
     Color(.systemBackground)
 }
 
-// MARK: - Compact Ride Header (replaces RideMetadataCard)
+// MARK: - Compact Ride Header
 
 struct CompactRideHeaderCard: View {
     let analysis: RideAnalysis
@@ -1020,50 +883,6 @@ struct ActionableSegmentInsightRow: View {
         .padding()
         .background(Color(.systemGray6))
         .cornerRadius(12)
-    }
-}
-
-struct TerrainSegmentRow: View {
-    let segment: TerrainSegment
-    
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Text(segment.type.emoji)
-                .font(.title3)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(segment.type.rawValue)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                
-                if segment.type == .climb || segment.type == .rolling {
-                    Text("\(String(format: "%.1f%%", segment.gradient)) grade")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            
-            Spacer()
-            
-            VStack(alignment: .trailing, spacing: 4) {
-                Text("\(Int(segment.averagePower))W")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
-                    .foregroundColor(efficiencyColor(segment.powerEfficiency))
-                
-                Text("\(Int(segment.powerEfficiency))% optimal")
-                    .font(.caption)
-                    .foregroundColor(efficiencyColor(segment.powerEfficiency))
-            }
-        }
-        .padding(.vertical, 4)
-    }
-    
-    private func efficiencyColor(_ efficiency: Double) -> Color {
-        if efficiency >= 90 { return .green }
-        if efficiency >= 75 { return .blue }
-        if efficiency >= 60 { return .orange }
-        return .red
     }
 }
 
@@ -1876,12 +1695,6 @@ struct RideHistoryView: View {
                     }
                 } else {
                     List (selection: $selectedAnalysisIDs) {
-                        /*                        Section {
-                         TrendChartView(trendData: viewModel.getTrendData())
-                         .frame(height: 200)
-                         .listRowInsets(EdgeInsets())
-                         }*/
-                        
                         Section(header: Text("Past Analyses")) {
                             ForEach(viewModel.analysisHistory) { analysis in
                                 HistoryRow(analysis: analysis)
@@ -1928,10 +1741,6 @@ struct RideHistoryView: View {
                             }
                         } else {
                             HStack(spacing: 16) {
-  /*                              Button(action: { viewModel.exportAllHistory() }) {
-                                    Image(systemName: "square.and.arrow.up")
-                                }*/
-                                
                                 Button("Select") {
                                     withAnimation { isEditing = true }
                                 }
@@ -2028,68 +1837,6 @@ struct HistoryRow: View {
     }
 }
 
-// MARK: - Trend Chart View
-
-struct TrendChartView: View {
-    let trendData: [TrendDataPoint]
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Performance Trend")
-                .font(.headline)
-                .padding(.horizontal)
-            
-            GeometryReader { geometry in
-                ZStack {
-                    // Grid lines
-                    Path { path in
-                        for i in 0...4 {
-                            let y = geometry.size.height * CGFloat(i) / 4
-                            path.move(to: CGPoint(x: 0, y: y))
-                            path.addLine(to: CGPoint(x: geometry.size.width, y: y))
-                        }
-                    }
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                    
-                    // Performance score line
-                    if !trendData.isEmpty {
-                        Path { path in
-                            let points = trendData.enumerated().map { index, data in
-                                CGPoint(
-                                    x: CGFloat(index) * (geometry.size.width / CGFloat(max(trendData.count - 1, 1))),
-                                    y: geometry.size.height * (1 - CGFloat(data.performanceScore / 100))
-                                )
-                            }
-                            
-                            if let first = points.first {
-                                path.move(to: first)
-                                for point in points.dropFirst() {
-                                    path.addLine(to: point)
-                                }
-                            }
-                        }
-                        .stroke(Color.blue, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                        
-                        // Data points
-                        ForEach(trendData.indices, id: \.self) { index in
-                            Circle()
-                                .fill(Color.blue)
-                                .frame(width: 6, height: 6)
-                                .position(
-                                    x: CGFloat(index) * (geometry.size.width / CGFloat(max(trendData.count - 1, 1))),
-                                    y: geometry.size.height * (1 - CGFloat(trendData[index].performanceScore / 100))
-                                )
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal)
-        }
-        .padding(.vertical)
-        .background(Color(.systemGray6))
-    }
-}
-
 // MARK: - Ride Analysis Share Sheet View (Renamed to avoid conflict)
 
 struct RideAnalysisExportView: View {
@@ -2156,8 +1903,6 @@ struct RideAnalysisExportView: View {
         }
     }
 }
-
-// Create new view for RideAnalysisView.swift:
 
 struct TrainingLoadContext: View {
     let analysis: RideAnalysis
