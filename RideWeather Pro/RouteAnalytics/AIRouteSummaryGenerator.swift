@@ -13,6 +13,380 @@ import Foundation
 import CoreLocation
 import MapKit
 
+// MARK: - Shared Intelligence Engine
+/// A standalone engine that can analyze ANY route (Forecast or History)
+actor RouteIntelligenceEngine {
+    static let shared = RouteIntelligenceEngine()
+    
+    // MARK: - Main Generation Interface
+    
+    func generateSummary(
+        coordinates: [CLLocationCoordinate2D],
+        distance: Double,
+        elevationGain: Double,
+        startCoord: CLLocationCoordinate2D?,
+        endCoord: CLLocationCoordinate2D?
+    ) async -> RouteSummaryResult {
+        
+        // 1. Check Cache
+        if let cached = RouteSummaryCacheManager.shared.getCachedSummary(start: startCoord, end: endCoord, distance: distance) {
+            return RouteSummaryResult(summary: cached.summary, routeType: cached.routeType, fromCache: true)
+        }
+        
+        let start = startCoord ?? coordinates.first ?? CLLocationCoordinate2D()
+        let end = endCoord ?? coordinates.last ?? CLLocationCoordinate2D()
+        
+        // 2. Intelligent Type Detection
+        let routeType = detectRouteType(
+            coordinates: coordinates,
+            totalDistance: distance,
+            start: start,
+            end: end
+        )
+        
+        // 3. Deep Analysis
+        async let trailAnalysis = analyzeTrailUsage(coordinates: coordinates)
+        async let startLocation = getRichLocationName(for: start)
+        async let endLocation = getRichLocationName(for: end)
+        async let turnaroundInfo = (routeType == .outAndBack) ? findTurnaroundContext(coordinates: coordinates, start: start) : nil
+        
+        let (trailInfo, startDetails, endDetails, turnaround) = await (trailAnalysis, startLocation, endLocation, turnaroundInfo)
+        
+        // 4. Craft Description
+        var parts: [String] = []
+        
+        // -- OPENING --
+        let direction = calculateInitialDirection(coordinates: coordinates)
+        
+        if let startName = startDetails?.shortName {
+            switch routeType {
+            case .loop:
+                if let trail = trailInfo.primaryTrail {
+                    parts.append("\(routeType.emoji) \(trail) Loop from \(startName)")
+                } else {
+                    parts.append("\(routeType.emoji) Loop route starting and ending at \(startName)")
+                }
+                
+            case .outAndBack:
+                if let turn = turnaround {
+                    // Use POI or Road Name, fallback to generic
+                    let destName = turn.poi ?? turn.roadName ?? "turnaround point"
+                    let distStr = formatDistance(turn.distance)
+                    
+                    if let trail = trailInfo.primaryTrail {
+                        parts.append("\(routeType.emoji) Out-and-back on \(trail) from \(startName) to \(destName) (\(distStr))")
+                    } else {
+                        parts.append("\(routeType.emoji) Out-and-back ride from \(startName), heading \(direction) to \(destName)")
+                    }
+                } else {
+                    parts.append("\(routeType.emoji) Out-and-back route from \(startName)")
+                }
+                
+            case .pointToPoint:
+                if let endName = endDetails?.shortName, endName != startName {
+                    parts.append("\(routeType.emoji) Point-to-point from \(startName) to \(endName)")
+                } else {
+                    parts.append("\(routeType.emoji) Point-to-point route starting from \(startName)")
+                }
+                
+            case .lollipop:
+                parts.append("\(routeType.emoji) Lollipop route from \(startName) with a mid-ride loop")
+                
+            case .figure8:
+                parts.append("\(routeType.emoji) Figure-8 route centered at \(startName)")
+            }
+        }
+        
+        // -- TERRAIN & CHARACTER --
+        let density = (elevationGain / distance) * 1000
+        let isHilly = density > 10
+        
+        if trailInfo.isLikelyTrail && trailInfo.primaryTrail == nil {
+            parts.append("The geometry suggests this is primarily a dedicated bike path or rail-trail")
+        }
+        
+        if isHilly {
+            parts.append("Features significant climbing totaling \(Int(elevationGain))m")
+        } else {
+            parts.append("Mostly flat terrain suitable for steady pacing")
+        }
+        
+        let fullSummary = parts.joined(separator: ". ") + "."
+        
+        // 5. Cache
+        RouteSummaryCacheManager.shared.cacheSummary(
+            fullSummary,
+            start: start,
+            end: end,
+            distance: distance,
+            routeType: routeType
+        )
+        
+        return RouteSummaryResult(summary: fullSummary, routeType: routeType, fromCache: false)
+    }
+    
+    // MARK: - Improved Geometric Detection
+    
+    private func detectRouteType(
+        coordinates: [CLLocationCoordinate2D],
+        totalDistance: Double,
+        start: CLLocationCoordinate2D,
+        end: CLLocationCoordinate2D
+    ) -> RouteType {
+        let startLoc = CLLocation(latitude: start.latitude, longitude: start.longitude)
+        let endLoc = CLLocation(latitude: end.latitude, longitude: end.longitude)
+        let gapDistance = endLoc.distance(from: startLoc)
+        
+        // A 50km ride ending 2km from start is likely a loop.
+        let loopThreshold = min(10000, max(2000, totalDistance * 0.10))
+        
+        if gapDistance > loopThreshold {
+            return .pointToPoint
+        }
+        
+        // Check for Figure-8
+        if coordinates.count > 100 {
+            let midIdx = coordinates.count / 2
+            let midLoc = CLLocation(latitude: coordinates[midIdx].latitude, longitude: coordinates[midIdx].longitude)
+            if startLoc.distance(from: midLoc) < 500 {
+                return .figure8
+            }
+        }
+        
+        let polygonPoints = coordinates.enumerated().filter { $0.offset % 20 == 0 }.map { $0.element }
+        let area = calculatePolygonArea(coordinates: polygonPoints)
+        let ratio = area / (totalDistance * totalDistance)
+        
+        if ratio > 0.02 {
+            return .loop
+        } else if detectLollipopGeometry(coordinates: coordinates) {
+            return .lollipop
+        } else {
+            return .outAndBack
+        }
+    }
+    
+    private func detectLollipopGeometry(coordinates: [CLLocationCoordinate2D]) -> Bool {
+        guard coordinates.count > 50 else { return false }
+        
+        let idxStick = Int(Double(coordinates.count) * 0.25)
+        let idxReturn = Int(Double(coordinates.count) * 0.75)
+        
+        let p1 = CLLocation(latitude: coordinates[idxStick].latitude, longitude: coordinates[idxStick].longitude)
+        let p2 = CLLocation(latitude: coordinates[idxReturn].latitude, longitude: coordinates[idxReturn].longitude)
+        
+        return p1.distance(from: p2) < 300
+    }
+    
+    // MARK: - Improved Turnaround Detection (FIXED: No Zip Codes)
+    
+    struct TurnaroundInfo {
+        let coordinate: CLLocationCoordinate2D
+        let distance: Double
+        let roadName: String?
+        let poi: String?
+    }
+    
+    private func findTurnaroundContext(coordinates: [CLLocationCoordinate2D], start: CLLocationCoordinate2D) async -> TurnaroundInfo? {
+        let startLoc = CLLocation(latitude: start.latitude, longitude: start.longitude)
+        var maxDist: Double = 0
+        var apexIndex = 0
+        
+        // Scan middle 60% of route
+        let startScan = Int(Double(coordinates.count) * 0.2)
+        let endScan = Int(Double(coordinates.count) * 0.8)
+        
+        for i in startScan..<endScan {
+            let loc = CLLocation(latitude: coordinates[i].latitude, longitude: coordinates[i].longitude)
+            let d = loc.distance(from: startLoc)
+            if d > maxDist {
+                maxDist = d
+                apexIndex = i
+            }
+        }
+        
+        guard maxDist > 0 else { return nil }
+        let apexCoord = coordinates[apexIndex]
+        
+        // Use rich location to get verified name (No Zips)
+        let details = await getRichLocationName(for: apexCoord)
+        
+        // You can check your TurnaroundInfo struct definition.
+        // If it requires roadName and poi separately:
+        return TurnaroundInfo(
+            coordinate: apexCoord,
+            distance: maxDist,
+            roadName: details?.shortName,
+            poi: nil // details.shortName handles the best name (POI or Road)
+        )
+    }
+    // MARK: - Trail Analysis
+    
+    struct TrailInfo {
+        let primaryTrail: String?
+        let isLikelyTrail: Bool
+    }
+    
+    private func analyzeTrailUsage(coordinates: [CLLocationCoordinate2D]) async -> TrailInfo {
+        let step = max(10, coordinates.count / 15)
+        var trailCounts: [String: Int] = [:]
+        
+        for i in stride(from: 0, to: coordinates.count, by: step) {
+            let loc = CLLocation(latitude: coordinates[i].latitude, longitude: coordinates[i].longitude)
+            if let placemark = try? await GeocodingManager.shared.reverseGeocode(location: loc) {
+                let candidates = [placemark.thoroughfare, placemark.areasOfInterest?.first]
+                for candidate in candidates.compactMap({ $0 }) {
+                    let lower = candidate.lowercased()
+                    if lower.contains("trail") || lower.contains("path") || lower.contains("greenway") || lower.contains("rail") {
+                        trailCounts[candidate, default: 0] += 1
+                    }
+                }
+            }
+        }
+        
+        if let best = trailCounts.max(by: { $0.value < $1.value }) {
+            if best.value >= 2 {
+                return TrailInfo(primaryTrail: best.key, isLikelyTrail: true)
+            }
+        }
+        
+        return TrailInfo(primaryTrail: nil, isLikelyTrail: false)
+    }
+    
+    // MARK: - Helper: Location Name (FIXED: Improved Fallbacks)
+    
+    struct LocationDetails {
+        let shortName: String
+        let fullName: String
+    }
+    
+    private func getRichLocationName(for coord: CLLocationCoordinate2D) async -> LocationDetails? {
+        if let cached = RouteSummaryCacheManager.shared.getCachedLocationName(for: coord) {
+            return LocationDetails(shortName: cached.components(separatedBy: ",").first ?? cached, fullName: cached)
+        }
+        
+        let location = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+        
+        do {
+            if let placemark = try await GeocodingManager.shared.reverseGeocode(location: location) {
+                var parts: [String] = []
+                var shortName = ""
+                
+                // 1. Try Area of Interest (Park, Trail)
+                if let poi = placemark.areasOfInterest?.first {
+                    shortName = poi
+                    parts.append(poi)
+                    if let city = placemark.locality { parts.append(city) }
+                }
+                // 2. Try Street Address
+                else if let street = placemark.thoroughfare {
+                    shortName = street
+                    parts.append(street)
+                    if let city = placemark.locality { parts.append(city) }
+                }
+                // 3. Fallback to Name (STRICT VALIDATION)
+                else if let rawName = placemark.name {
+                    // Check if it's a zip code or just numbers
+                    let isDigits = CharacterSet.decimalDigits.isSuperset(of: CharacterSet(charactersIn: rawName))
+                    let isZip = rawName == placemark.postalCode
+                    
+                    if !isDigits && !isZip {
+                        shortName = rawName
+                        parts.append(rawName)
+                        if let city = placemark.locality { parts.append(city) }
+                    } else {
+                        // It's a zip code or number, skip it and use city
+                        if let city = placemark.locality {
+                            shortName = city
+                            parts.append(city)
+                        } else {
+                            shortName = "Unknown Location"
+                        }
+                    }
+                }
+                // 4. Locality
+                else if let city = placemark.locality {
+                    shortName = city
+                    parts.append(city)
+                }
+                
+                // Add state/admin area
+                if let state = placemark.administrativeArea {
+                    parts.append(state)
+                }
+                
+                let fullName = parts.joined(separator: ", ")
+                
+                if !fullName.isEmpty {
+                    RouteSummaryCacheManager.shared.cacheLocationName(fullName, for: coord)
+                    // Simple logic for details - you can expand this if your struct requires more fields
+                    return LocationDetails(shortName: shortName, fullName: fullName)
+                }
+            }
+        } catch { }
+        
+        return nil
+    }
+    
+    // MARK: - Math Helpers
+    
+    private func calculatePolygonArea(coordinates: [CLLocationCoordinate2D]) -> Double {
+        guard coordinates.count > 2 else { return 0 }
+        var area: Double = 0
+        let kEarthRadius = 6378137.0
+        
+        for i in 0..<coordinates.count {
+            let p1 = coordinates[i]
+            let p2 = coordinates[(i + 1) % coordinates.count]
+            let x1 = p1.longitude * .pi / 180 * kEarthRadius * cos(p1.latitude * .pi / 180)
+            let y1 = p1.latitude * .pi / 180 * kEarthRadius
+            let x2 = p2.longitude * .pi / 180 * kEarthRadius * cos(p2.latitude * .pi / 180)
+            let y2 = p2.latitude * .pi / 180 * kEarthRadius
+            area += (x1 * y2) - (x2 * y1)
+        }
+        return abs(area / 2.0)
+    }
+    
+    private func calculateInitialDirection(coordinates: [CLLocationCoordinate2D]) -> String {
+        guard coordinates.count > 5 else { return "North" }
+        let start = coordinates[0]
+        let end = coordinates[min(10, coordinates.count-1)]
+        let dLon = (end.longitude - start.longitude)
+        let y = sin(dLon) * cos(end.latitude)
+        let x = cos(start.latitude) * sin(end.latitude) - sin(start.latitude) * cos(end.latitude) * cos(dLon)
+        let bearing = atan2(y, x) * 180 / .pi
+        let directions = ["North", "NE", "East", "SE", "South", "SW", "West", "NW"]
+        let index = Int(((bearing + 360).truncatingRemainder(dividingBy: 360) + 22.5) / 45.0) % 8
+        return directions[index]
+    }
+    
+    private func formatDistance(_ meters: Double) -> String {
+        return String(format: "%.1f km", meters / 1000)
+    }
+}
+
+struct CachedRouteSummary: Codable { let summary: String; let routeType: RouteType; let timestamp: Date }
+struct CachedGeocode: Codable { let locationName: String; let timestamp: Date }
+struct RouteSummaryResult { let summary: String; let routeType: RouteType; let fromCache: Bool }
+
+enum RouteType: String, Codable {
+    case outAndBack = "Out-and-Back"
+    case loop = "Loop"
+    case pointToPoint = "Point-to-Point"
+    case figure8 = "Figure-8"
+    case lollipop = "Lollipop"
+    
+    var emoji: String {
+        switch self {
+        case .outAndBack: return "↔️"
+        case .loop: return "🔄"
+        case .pointToPoint: return "➡️"
+        case .figure8: return "8️⃣"
+        case .lollipop: return "🍭"
+        }
+    }
+}
+
 // MARK: - Route Summary Cache Manager (File System Based)
 class RouteSummaryCacheManager {
     static let shared = RouteSummaryCacheManager()
@@ -26,7 +400,7 @@ class RouteSummaryCacheManager {
         try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
     }
     
-    // MARK: - Size Calculation
+    // MARK: - Size Calculation (Required for SettingsView)
     func getCacheSize() -> String {
         guard let urls = try? fileManager.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: [.fileSizeKey]) else {
             return "0 KB"
@@ -43,6 +417,7 @@ class RouteSummaryCacheManager {
         return ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
     }
     
+    // MARK: - Clear Cache (Required for SettingsView)
     func clearCache() {
         do {
             let urls = try fileManager.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil)
@@ -69,6 +444,7 @@ class RouteSummaryCacheManager {
         guard let data = try? Data(contentsOf: url),
               let cached = try? JSONDecoder().decode(CachedRouteSummary.self, from: data) else { return nil }
         
+        // Expire after 30 days
         if Date().timeIntervalSince(cached.timestamp) > (30 * 24 * 60 * 60) {
             try? fileManager.removeItem(at: url)
             return nil
@@ -107,93 +483,28 @@ class RouteSummaryCacheManager {
     }
 }
 
-struct CachedRouteSummary: Codable { let summary: String; let routeType: RouteType; let timestamp: Date }
-struct CachedGeocode: Codable { let locationName: String; let timestamp: Date }
-struct RouteSummaryResult { let summary: String; let routeType: RouteType; let fromCache: Bool }
-
-enum RouteType: String, Codable {
-    case outAndBack = "Out-and-Back"
-    case loop = "Loop"
-    case pointToPoint = "Point-to-Point"
-    case figure8 = "Figure-8"
-    case lollipop = "Lollipop"
-    
-    var emoji: String {
-        switch self {
-        case .outAndBack: return "↔️"
-        case .loop: return "🔄"
-        case .pointToPoint: return "➡️"
-        case .figure8: return "8️⃣"
-        case .lollipop: return "🍭"
-        }
-    }
-}
-
 // MARK: - Enhanced AI Generator
 
 extension AIWeatherPacingInsights {
     
     func generateRouteSummary(metadata: RideMetadata? = nil) async -> RouteSummaryResult? {
-        guard let powerAnalysis = powerAnalysis, let elevationAnalysis = elevationAnalysis, !weatherPoints.isEmpty else { return nil }
+        guard !weatherPoints.isEmpty else { return nil }
         
-        let totalDistance = powerAnalysis.segments.last?.endPoint.distance ?? 0
-        let startCoord = metadata?.startCoordinate ?? powerAnalysis.segments.first?.startPoint.coordinate
-        let endCoord = metadata?.endCoordinate ?? powerAnalysis.segments.last?.endPoint.coordinate
+        // FIX: Prefer dense power segments over sparse weather points
+        // This gives the Engine 100x more points to analyze for turns/loops
+        let denseCoords = powerAnalysis?.segments.map { $0.startPoint.coordinate }
+        let coords = (denseCoords?.count ?? 0) > 10 ? denseCoords! : weatherPoints.map { $0.coordinate }
         
-        // 1. CHECK CACHE
-        if let cached = RouteSummaryCacheManager.shared.getCachedSummary(start: startCoord, end: endCoord, distance: totalDistance) {
-            return RouteSummaryResult(summary: cached.summary, routeType: cached.routeType, fromCache: true)
-        }
+        let totalDist = powerAnalysis?.segments.last?.endPoint.distance ?? 0
+        let totalGain = elevationAnalysis?.totalGain ?? 0
         
-        print("🚴 Crafting cyclist-focused route description...")
-        
-        // 2. DETECT ROUTE TYPE
-        let routeType = await detectGeometricRouteType(
-            powerSegments: powerAnalysis.segments,
-            startCoord: startCoord,
-            endCoord: endCoord,
-            totalDistance: totalDistance
+        return await RouteIntelligenceEngine.shared.generateSummary(
+            coordinates: coords,
+            distance: totalDist,
+            elevationGain: totalGain,
+            startCoord: metadata?.startCoordinate ?? coords.first,
+            endCoord: metadata?.endCoordinate ?? coords.last
         )
-        
-        // 3. GENERATE CYCLIST-FOCUSED DESCRIPTION
-        var summaryComponents: [String] = []
-        var locationSuccess = false
-        
-        // A. Opening with direction and destination
-        if let openingDesc = await craftOpeningDescription(
-            startCoord: startCoord,
-            endCoord: endCoord,
-            routeType: routeType,
-            segments: powerAnalysis.segments
-        ) {
-            summaryComponents.append(openingDesc)
-            locationSuccess = true
-        }
-        
-        // B. Major climbs with road names
-        let climbs = await describeNamedClimbs(
-            powerSegments: powerAnalysis.segments,
-            elevationAnalysis: elevationAnalysis
-        )
-        summaryComponents.append(contentsOf: climbs)
-        
-        // C. Terrain character
-        if let terrain = describeTerrainCharacter(
-            powerSegments: powerAnalysis.segments,
-            elevationAnalysis: elevationAnalysis,
-            routeType: routeType
-        ) {
-            summaryComponents.append(terrain)
-        }
-        
-        let fullSummary = summaryComponents.joined(separator: ". ") + "."
-        
-        // 4. CACHE
-        if locationSuccess {
-            RouteSummaryCacheManager.shared.cacheSummary(fullSummary, start: startCoord, end: endCoord, distance: totalDistance, routeType: routeType)
-        }
-        
-        return RouteSummaryResult(summary: fullSummary, routeType: routeType, fromCache: false)
     }
     
     // MARK: - Cyclist-Focused Opening Description

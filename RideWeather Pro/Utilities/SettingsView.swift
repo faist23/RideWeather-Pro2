@@ -30,179 +30,13 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                // MARK: - Core Configuration
-                Section {
-                    Picker("Unit System", selection: $viewModel.settings.units) {
-                        ForEach(UnitSystem.allCases) { unit in
-                            Text(unit.description).tag(unit)
-                        }
-                    }
-                    .onChange(of: viewModel.settings.units) { _, newUnits in
-                        viewModel.settings.timeCheckpointIntervalKm = newUnits == .metric ? 10.0 : 8.05
-                    }
-                    Picker("Analysis Method", selection: $viewModel.settings.speedCalculationMethod) {
-                        ForEach(AppSettings.SpeedCalculationMethod.allCases) { method in
-                            Text(method.description).tag(method)
-                        }
-                    }
-                } header: {
-                    Text("Configuration")
-                } footer: {
-                    if viewModel.settings.speedCalculationMethod == .powerBased {
-                        Text("Power-based analysis accounts for terrain, wind, and weight.")
-                    } else {
-                        Text("Average speed provides a simple duration estimate.")
-                    }
-                }
-                
-                // MARK: - Rider Profile
-                Section("Rider Profile") {
-                    if viewModel.settings.speedCalculationMethod == .averageSpeed {
-                        averageSpeedSettings
-                    } else {
-                        powerProfileSettings
-                    }
-                }
-                
-                // MARK: - Sub-Menus for Details
-                Section("Customization") {
-                    NavigationLink(destination: PreferencesSettingsView(settings: $viewModel.settings)) {
-                        Label("Preferences", systemImage: "slider.horizontal.3")
-                    }
-                    
-                    NavigationLink(destination: RouteSettingsView(settings: $viewModel.settings)) {
-                        Label("Route Planning", systemImage: "map")
-                    }
-                }
-                
-                // MARK: - NEW: Data Sources Section
-                Section("Data & Tracking") {
-                    NavigationLink(destination: DataSourceSettingsView()) {
-                        HStack {
-                            Label("Data Sources", systemImage: "chart.bar.doc.horizontal")
-                            Spacer()
-                            dataSourceBadges
-                        }
-                    }
-                    
-                    NavigationLink(destination: IntegrationsSettingsView()) {
-                        HStack {
-                            Label("Integrations", systemImage: "link")
-                            Spacer()
-                            connectionBadges
-                        }
-                    }
-                }
-                
-                // MARK: - Data Management
-                Section("Storage") {
-                    NavigationLink {
-                        TrainingLoadView()
-                    } label: {
-                        Label("View Training Load", systemImage: "chart.line.uptrend.xyaxis")
-                    }
-                    
-                    HStack {
-                        Text("Training Data")
-                        Spacer()
-                        Text(trainingStorageText) // Use State
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    HStack {
-                        Text("Wellness Data")
-                        Spacer()
-                        Text(wellnessStorageText) // Use State
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    Button(role: .destructive) {
-                        // 1. Clear Data
-                        TrainingLoadManager.shared.clearAll()
-                        WellnessManager.shared.clearAll()
-                        
-                        // 2. Clear Sync State
-                        UserDefaults.standard.removeObject(forKey: "lastTrainingLoadSync")
-                        UserDefaults.standard.removeObject(forKey: "wellnessLastSync")
-                        UserDefaults.standard.removeObject(forKey: "lastWellnessSyncDate")
-                        
-                        print("🗑️ Cleared all training and wellness data")
-                        
-                        // 3. Force UI Update Immediately
-                        updateStorageInfo()
-                        
-                        // 4. Notify other views
-                        NotificationCenter.default.post(name: .dataSourceChanged, object: nil)
-                        
-                    } label: {
-                        Label("Reset All Data", systemImage: "trash")
-                            .foregroundStyle(.red)
-                    }
-                }
-                .id(lastRefresh)
-                
-                Section("AI Route Analysis") {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Text("Route Summary Cache")
-                                        .font(.headline)
-                                    Spacer()
-                                    // Display the calculated size
-                                    Text(routeCacheSize)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                
-                                Text("Route summaries and location names are cached to reduce processing time and API usage")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            Button(role: .destructive) {
-                                showingClearAlert = true
-                            } label: {
-                                Label("Clear Route Cache", systemImage: "trash")
-                                    .foregroundStyle(.red)
-                            }
-                        }
-                        // Load size on appear
-                        .onAppear {
-                            routeCacheSize = RouteSummaryCacheManager.shared.getCacheSize()
-                        }
-                        .confirmationDialog("Clear Route Data?", isPresented: $showingClearAlert) {
-                            Button("Delete Cache", role: .destructive) {
-                                // Clear Files
-                                RouteSummaryCacheManager.shared.clearCache()
-                                
-                                // Recalculate Size (Should be 0 KB)
-                                routeCacheSize = RouteSummaryCacheManager.shared.getCacheSize()
-                                
-                                let generator = UINotificationFeedbackGenerator()
-                                generator.notificationOccurred(.success)
-                                
-                                lastRefresh = Date()
-                            }
-                            Button("Cancel", role: .cancel) {}
-                        } message: {
-                            Text("This will remove all generated route descriptions. They will be regenerated on the next load.")
-                        }
-                
-                Section("About") {
-                    HStack {
-                        Text("Version")
-                        Spacer()
-                        Text("1.0.0")
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    HStack {
-                        Text("Build")
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        Text(Bundle.main.buildNumber ?? "Unknown")
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                coreConfigurationSection
+                riderProfileSection
+                customizationSection
+                dataTrackingSection
+                storageSection
+                aiRouteAnalysisSection
+                aboutSection
             }
             .scrollContentBackground(.hidden)
             .animatedBackground(
@@ -222,29 +56,7 @@ struct SettingsView: View {
                     .fontWeight(.semibold)
                 }
             }
-            .onAppear {
-                autoSelectWeightSourceIfNeeded() 
-                // Update storage text
-                updateStorageInfo()
-                
-                // 🆕 Sync weight from current source
-                syncWeightFromCurrentSource()
-                
-                // Auto-configure data sources on first launch if needed
-                let status = dataSourceManager.validateConfiguration(
-                    stravaConnected: stravaService.isAuthenticated,
-                    healthConnected: healthManager.isAuthorized,
-                    garminConnected: garminService.isAuthenticated
-                )
-                
-                if !status.isValid {
-                    dataSourceManager.autoConfigureFromConnections(
-                        stravaConnected: stravaService.isAuthenticated,
-                        healthConnected: healthManager.isAuthorized,
-                        garminConnected: garminService.isAuthenticated
-                    )
-                }
-            }
+            .onAppear(perform: handleOnAppear)
             .sheet(isPresented: $showWeightSourcePicker) {
                 WeightSourcePickerSheet(
                     currentSource: $viewModel.settings.weightSource,
@@ -254,41 +66,223 @@ struct SettingsView: View {
                     garminConnected: garminService.isAuthenticated,
                     onSourceChanged: { source in
                         await performWeightSync(source: source)
-                        // 🆕 Force UI refresh after sync
-                        await MainActor.run {
-                            lastRefresh = Date()
-                        }
+                        await MainActor.run { lastRefresh = Date() }
                     }
                 )
             }
             .onReceive(NotificationCenter.default.publisher(for: .wellnessDataUpdated)) { _ in
-                // Refresh weight display when wellness data changes
                 if viewModel.settings.weightSource == .garmin {
                     syncWeightFromCurrentSource()
                 }
             }
-            // NEW: First launch auto-config dialog
             .confirmationDialog("Configure Data Sources?", isPresented: $showingFirstLaunchConfig) {
-                Button("Apply Recommended Settings") {
-                    applyFirstLaunchConfig()
-                }
+                Button("Apply Recommended Settings") { applyFirstLaunchConfig() }
                 Button("Keep Current Settings", role: .cancel) {
-                    // Just mark as configured so we don't ask again
                     UserDefaults.standard.set(true, forKey: "hasConfiguredDataSources")
                 }
             } message: {
                 if let recommended = firstLaunchRecommendations {
-                    Text("""
-                    Based on your connected services, we recommend:
-                    
-                    Training Load: \(recommended.trainingLoadSource.rawValue)
-                    Wellness: \(recommended.wellnessSource.rawValue)
-                    
-                    You can always change this later in Settings → Data Sources.
-                    """)
+                    Text("Based on your connected services, we recommend:\n\nTraining Load: \(recommended.trainingLoadSource.rawValue)\nWellness: \(recommended.wellnessSource.rawValue)\n\nYou can always change this later in Settings → Data Sources.")
                 }
             }
         }
+    }
+    
+    // MARK: - Sections (Refactored to fix compiler timeout)
+    
+    private var coreConfigurationSection: some View {
+        Section {
+            Picker("Unit System", selection: $viewModel.settings.units) {
+                ForEach(UnitSystem.allCases) { unit in
+                    Text(unit.description).tag(unit)
+                }
+            }
+            .onChange(of: viewModel.settings.units) { _, newUnits in
+                viewModel.settings.timeCheckpointIntervalKm = newUnits == .metric ? 10.0 : 8.05
+            }
+            Picker("Analysis Method", selection: $viewModel.settings.speedCalculationMethod) {
+                ForEach(AppSettings.SpeedCalculationMethod.allCases) { method in
+                    Text(method.description).tag(method)
+                }
+            }
+        } header: {
+            Text("Configuration")
+        } footer: {
+            if viewModel.settings.speedCalculationMethod == .powerBased {
+                Text("Power-based analysis accounts for terrain, wind, and weight.")
+            } else {
+                Text("Average speed provides a simple duration estimate.")
+            }
+        }
+    }
+    
+    private var riderProfileSection: some View {
+        Section("Rider Profile") {
+            if viewModel.settings.speedCalculationMethod == .averageSpeed {
+                averageSpeedSettings
+            } else {
+                powerProfileSettings
+            }
+        }
+    }
+    
+    private var customizationSection: some View {
+        Section("Customization") {
+            NavigationLink(destination: PreferencesSettingsView(settings: $viewModel.settings)) {
+                Label("Preferences", systemImage: "slider.horizontal.3")
+            }
+            
+            NavigationLink(destination: RouteSettingsView(settings: $viewModel.settings)) {
+                Label("Route Planning", systemImage: "map")
+            }
+        }
+    }
+    
+    private var dataTrackingSection: some View {
+        Section("Data & Tracking") {
+            NavigationLink(destination: DataSourceSettingsView()) {
+                HStack {
+                    Label("Data Sources", systemImage: "chart.bar.doc.horizontal")
+                    Spacer()
+                    dataSourceBadges
+                }
+            }
+            
+            NavigationLink(destination: IntegrationsSettingsView()) {
+                HStack {
+                    Label("Integrations", systemImage: "link")
+                    Spacer()
+                    connectionBadges
+                }
+            }
+        }
+    }
+    
+    private var storageSection: some View {
+        Section("Storage") {
+            NavigationLink {
+                TrainingLoadView()
+            } label: {
+                Label("View Training Load", systemImage: "chart.line.uptrend.xyaxis")
+            }
+            
+            HStack {
+                Text("Training Data")
+                Spacer()
+                Text(trainingStorageText)
+                    .foregroundStyle(.secondary)
+            }
+            
+            HStack {
+                Text("Wellness Data")
+                Spacer()
+                Text(wellnessStorageText)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Button(role: .destructive, action: performResetAllData) {
+                Label("Reset All Data", systemImage: "trash")
+                    .foregroundStyle(.red)
+            }
+        }
+        .id(lastRefresh)
+    }
+    
+    private var aiRouteAnalysisSection: some View {
+        Section("AI Route Analysis") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Route Summary Cache")
+                        .font(.headline)
+                    Spacer()
+                    Text(routeCacheSize)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Text("Route summaries and location names are cached to reduce processing time and API usage")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Button(role: .destructive) {
+                showingClearAlert = true
+            } label: {
+                Label("Clear Route Cache", systemImage: "trash")
+                    .foregroundStyle(.red)
+            }
+        }
+        .onAppear {
+            routeCacheSize = RouteSummaryCacheManager.shared.getCacheSize()
+        }
+        .confirmationDialog("Clear Route Data?", isPresented: $showingClearAlert) {
+            Button("Delete Cache", role: .destructive) {
+                clearRouteCache()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will remove all generated route descriptions. They will be regenerated on the next load.")
+        }
+    }
+    
+    private var aboutSection: some View {
+        Section("About") {
+            HStack {
+                Text("Version")
+                Spacer()
+                Text("1.0.0").foregroundStyle(.secondary)
+            }
+            
+            HStack {
+                Text("Build").foregroundStyle(.primary)
+                Spacer()
+                Text(Bundle.main.buildNumber ?? "Unknown").foregroundStyle(.secondary)
+            }
+        }
+    }
+    
+    // MARK: - Actions & Logic
+    
+    private func handleOnAppear() {
+        autoSelectWeightSourceIfNeeded()
+        updateStorageInfo()
+        syncWeightFromCurrentSource()
+        
+        let status = dataSourceManager.validateConfiguration(
+            stravaConnected: stravaService.isAuthenticated,
+            healthConnected: healthManager.isAuthorized,
+            garminConnected: garminService.isAuthenticated
+        )
+        
+        if !status.isValid {
+            dataSourceManager.autoConfigureFromConnections(
+                stravaConnected: stravaService.isAuthenticated,
+                healthConnected: healthManager.isAuthorized,
+                garminConnected: garminService.isAuthenticated
+            )
+        }
+    }
+    
+    private func performResetAllData() {
+        TrainingLoadManager.shared.clearAll()
+        WellnessManager.shared.clearAll()
+        
+        UserDefaults.standard.removeObject(forKey: "lastTrainingLoadSync")
+        UserDefaults.standard.removeObject(forKey: "wellnessLastSync")
+        UserDefaults.standard.removeObject(forKey: "lastWellnessSyncDate")
+        
+        print("🗑️ Cleared all training and wellness data")
+        
+        updateStorageInfo()
+        NotificationCenter.default.post(name: .dataSourceChanged, object: nil)
+    }
+    
+    private func clearRouteCache() {
+        RouteSummaryCacheManager.shared.clearCache()
+        routeCacheSize = RouteSummaryCacheManager.shared.getCacheSize()
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+        lastRefresh = Date()
     }
     
     // MARK: - Data Source Badges

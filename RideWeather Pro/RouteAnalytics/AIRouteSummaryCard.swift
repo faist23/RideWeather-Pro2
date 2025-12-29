@@ -197,16 +197,13 @@ private struct AIRouteSummaryCardContainer: View {
     // MARK: - Data Loading
     
     @MainActor
-    private func loadSummary() async {
+    func loadSummary() async {
         switch source {
         case .forecast(let viewModel):
             await loadForecastSummary(viewModel: viewModel)
             
-        case .analysis(let analysis, let weatherViewModel):
-            await loadAnalysisSummary(
-                analysis: analysis,
-                weatherViewModel: weatherViewModel
-            )
+        case .analysis(let analysis, _):
+            await loadAnalysisSummary(analysis: analysis)
         }
     }
     
@@ -219,63 +216,41 @@ private struct AIRouteSummaryCardContainer: View {
             return
         }
         
-        // Check cache first
-        let totalDistance = powerAnalysis.segments.last?.endPoint.distance ?? 0
-        let startCoord = viewModel.weatherDataForRoute.first?.coordinate
-        let endCoord = viewModel.weatherDataForRoute.last?.coordinate
+        isLoading = true
         
-        let cached = RouteSummaryCacheManager.shared.getCachedSummary(
-            start: startCoord,
-            end: endCoord,
-            distance: totalDistance
+        // Use the new shared Engine
+        let coords = viewModel.weatherDataForRoute.map { $0.coordinate }
+        let dist = powerAnalysis.segments.last?.endPoint.distance ?? 0
+        
+        summaryResult = await RouteIntelligenceEngine.shared.generateSummary(
+            coordinates: coords,
+            distance: dist,
+            elevationGain: elevationAnalysis.totalGain,
+            startCoord: coords.first,
+            endCoord: coords.last
         )
         
-        if cached == nil {
-            isLoading = true
-        }
-        
-        let aiEngine = AIWeatherPacingInsights(
-            pacingPlan: viewModel.finalPacingPlan,
-            powerAnalysis: powerAnalysis,
-            weatherPoints: viewModel.weatherDataForRoute,
-            settings: viewModel.settings,
-            elevationAnalysis: elevationAnalysis
-        )
-        
-        summaryResult = await aiEngine.generateRouteSummary(metadata: nil)
         isLoading = false
     }
     
     @MainActor
-    private func loadAnalysisSummary(
-        analysis: RideAnalysis,
-        weatherViewModel: WeatherViewModel
-    ) async {
-        // For ride analysis, we have metadata with actual coordinates
-        guard let metadata = analysis.metadata else {
+    private func loadAnalysisSummary(analysis: RideAnalysis) async {
+        // Need coordinates to do intelligence work
+        guard let breadcrumbs = analysis.metadata?.routeBreadcrumbs, !breadcrumbs.isEmpty else {
+            // Fallback if no breadcrumbs (e.g. manual entry or really old file)
             summaryResult = nil
             return
         }
         
-        // Check cache first
-        let startCoord = metadata.startCoordinate
-        let endCoord = metadata.endCoordinate
-        let totalDistance = analysis.distance
+        isLoading = true
         
-        let cached = RouteSummaryCacheManager.shared.getCachedSummary(
-            start: startCoord,
-            end: endCoord,
-            distance: totalDistance
-        )
-        
-        if cached == nil {
-            isLoading = true
-        }
-        
-        // For completed rides, generate a simplified summary from metadata
-        summaryResult = await generateSimpleSummary(
-            metadata: metadata,
-            analysis: analysis
+        // Call the smart engine with Analysis data!
+        summaryResult = await RouteIntelligenceEngine.shared.generateSummary(
+            coordinates: breadcrumbs,
+            distance: analysis.distance,
+            elevationGain: analysis.metadata?.elevationGain ?? 0,
+            startCoord: analysis.metadata?.startCoordinate,
+            endCoord: analysis.metadata?.endCoordinate
         )
         
         isLoading = false
@@ -532,8 +507,7 @@ private struct AIRouteSummaryCardContainer: View {
     private var dataChangeKey: String {
         switch source {
         case .forecast(let viewModel):
-            return "\(viewModel.weatherDataForRoute.count)-\(viewModel.routePoints.count)"
-            
+            return "\(viewModel.weatherDataForRoute.count)"
         case .analysis(let analysis, _):
             return analysis.id.uuidString
         }
