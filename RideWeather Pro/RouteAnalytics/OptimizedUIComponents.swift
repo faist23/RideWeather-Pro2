@@ -11,6 +11,9 @@ import MapKit
 
 struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     @EnvironmentObject var viewModel: WeatherViewModel
+
+    @EnvironmentObject var weatherViewModel: WeatherViewModel
+
     @State private var selectedDistance: Double? = nil
     @State private var analysisResult: ComprehensiveRouteAnalysis? = nil
     @State private var isAnalyzing = true
@@ -18,7 +21,7 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     @State private var lastScrubUpdate = Date()
     
     @State private var mapCameraPosition = MapCameraPosition.automatic
-    
+
     // MARK: - New State for Map Control
     @State private var displayedAnnotations: [RouteWeatherPoint] = []
     @State private var scrubbingMarkerCoordinate: CLLocationCoordinate2D? = nil
@@ -137,6 +140,7 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     }
     
     // MARK: - Content View
+
     private func analysisContentView(_ analysis: ComprehensiveRouteAnalysis) -> some View {
         VStack(spacing: 0) {
             ZStack(alignment: .bottomTrailing) {

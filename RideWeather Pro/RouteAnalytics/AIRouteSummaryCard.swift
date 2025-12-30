@@ -26,7 +26,7 @@ struct AIRouteSummaryCard: View {
                     Text("Route Overview")
                         .font(.headline)
                         .fontWeight(.semibold)
-                    
+                        
                     if let routeType = summaryResult?.routeType {
                         HStack(spacing: 4) {
                             Text(routeType.emoji)
@@ -127,7 +127,7 @@ struct AIRouteSummaryCard: View {
     
     // MARK: - Route Type Explanations
     
-    private func routeTypeExplanation(_ type: RouteType) -> String {
+    private func routeTypeExplanation(_ type: CyclingRouteType) -> String {
         switch type {
         case .loop:
             return "Loop routes offer varied scenery while returning to your starting point."
@@ -208,30 +208,37 @@ private struct AIRouteSummaryCardContainer: View {
     }
     
     @MainActor
-    private func loadForecastSummary(viewModel: WeatherViewModel) async {
-        guard let powerAnalysis = viewModel.getPowerAnalysisResult(),
-              let elevationAnalysis = viewModel.elevationAnalysis,
-              !viewModel.weatherDataForRoute.isEmpty else {
-            summaryResult = nil
-            return
+        private func loadForecastSummary(viewModel: WeatherViewModel) async {
+            guard let powerAnalysis = viewModel.getPowerAnalysisResult(),
+                  let elevationAnalysis = viewModel.elevationAnalysis,
+                  !viewModel.weatherDataForRoute.isEmpty else {
+                summaryResult = nil
+                return
+            }
+            
+            isLoading = true
+            
+            // FIX: Use dense route points for accurate geometry (Turnarounds/Loops)
+            // Fallback to weather points only if routePoints is empty
+            let coords: [CLLocationCoordinate2D]
+            if !viewModel.routePoints.isEmpty {
+                coords = viewModel.routePoints
+            } else {
+                coords = viewModel.weatherDataForRoute.map { $0.coordinate }
+            }
+            
+            let dist = powerAnalysis.segments.last?.endPoint.distance ?? 0
+            
+            summaryResult = await RouteIntelligenceEngine.shared.generateSummary(
+                coordinates: coords,
+                distance: dist,
+                elevationGain: elevationAnalysis.totalGain,
+                startCoord: coords.first,
+                endCoord: coords.last
+            )
+            
+            isLoading = false
         }
-        
-        isLoading = true
-        
-        // Use the new shared Engine
-        let coords = viewModel.weatherDataForRoute.map { $0.coordinate }
-        let dist = powerAnalysis.segments.last?.endPoint.distance ?? 0
-        
-        summaryResult = await RouteIntelligenceEngine.shared.generateSummary(
-            coordinates: coords,
-            distance: dist,
-            elevationGain: elevationAnalysis.totalGain,
-            startCoord: coords.first,
-            endCoord: coords.last
-        )
-        
-        isLoading = false
-    }
     
     @MainActor
     private func loadAnalysisSummary(analysis: RideAnalysis) async {
@@ -265,7 +272,7 @@ private struct AIRouteSummaryCardContainer: View {
         var summary: [String] = []
         
         // Detect basic route type from coordinates
-        let routeType: RouteType
+        let routeType: CyclingRouteType
         if let start = metadata.startCoordinate,
            let end = metadata.endCoordinate {
             let startLoc = CLLocation(latitude: start.latitude, longitude: start.longitude)

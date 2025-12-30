@@ -15,7 +15,7 @@ struct RideAnalysisView: View {
     @EnvironmentObject var stravaService: StravaService
     @EnvironmentObject var wahooService: WahooService
     @EnvironmentObject var garminService: GarminService
-    
+
     private let trainingLoadManager = TrainingLoadManager.shared
 
     @MainActor init(weatherViewModel: WeatherViewModel) {
@@ -293,7 +293,7 @@ struct RideAnalysisView: View {
     }
     
     // MARK: - Analysis Results
-    
+// inside struct rideanalysisview
     private var analysisResultsView: some View {
         ScrollViewReader { proxy in
             ScrollView {

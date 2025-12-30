@@ -27,6 +27,7 @@ struct DailyWellnessMetrics: Identifiable, Codable {
     var sleepREM: TimeInterval?
     var sleepCore: TimeInterval?
     var sleepAwake: TimeInterval?
+    var sleepUnspecified: TimeInterval?
     var sleepEfficiency: Double? // Computed: (Deep+REM+Core)/TotalInBed
     
     // MARK: - Body Metrics
@@ -52,6 +53,7 @@ struct DailyWellnessMetrics: Identifiable, Codable {
         sleepREM: TimeInterval? = nil,
         sleepCore: TimeInterval? = nil,
         sleepAwake: TimeInterval? = nil,
+        sleepUnspecified: TimeInterval? = nil,
         bodyMass: Double? = nil,
         bodyFatPercentage: Double? = nil,
         leanBodyMass: Double? = nil,
@@ -71,6 +73,7 @@ struct DailyWellnessMetrics: Identifiable, Codable {
         self.sleepREM = sleepREM
         self.sleepCore = sleepCore
         self.sleepAwake = sleepAwake
+        self.sleepUnspecified = sleepUnspecified
         self.bodyMass = bodyMass
         self.bodyFatPercentage = bodyFatPercentage
         self.leanBodyMass = leanBodyMass
@@ -82,14 +85,14 @@ struct DailyWellnessMetrics: Identifiable, Codable {
     
     /// Total sleep time (all stages except awake)
     var totalSleep: TimeInterval? {
-        let components = [sleepDeep, sleepREM, sleepCore].compactMap { $0 }
+        let components = [sleepDeep, sleepREM, sleepCore, sleepUnspecified].compactMap { $0 }
         guard !components.isEmpty else { return nil }
         return components.reduce(0, +)
     }
     
     /// Total time in bed (including awake time)
     var totalTimeInBed: TimeInterval? {
-        let components = [sleepDeep, sleepREM, sleepCore, sleepAwake].compactMap { $0 }
+        let components = [sleepDeep, sleepREM, sleepCore, sleepAwake, sleepUnspecified].compactMap { $0 }
         guard !components.isEmpty else { return nil }
         return components.reduce(0, +)
     }

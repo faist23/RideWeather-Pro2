@@ -384,126 +384,153 @@ class UnifiedWellnessSync: ObservableObject {
      }
      
     // MARK: - Apple Health
-        private func syncAppleHealthWellness() async throws {
-            print("🍎 Syncing from Apple Health...")
-            
-            guard HKHealthStore.isHealthDataAvailable() else {
-                throw WellnessError.healthKitNotAvailable
-            }
-            
-            let calendar = Calendar.current
-            let endDate = Date()
-            let startOfToday = calendar.startOfDay(for: endDate)
-            let startDate = calendar.date(byAdding: .day, value: -7, to: startOfToday)!
-            
-            // Fetch data
-            async let hrv = fetchHRVData(start: startDate, end: endDate)
-            async let sleep = fetchSleepAnalysis(start: startDate, end: endDate)
-            async let steps = fetchStepsData(start: startDate, end: endDate)
-            async let restingHR = fetchRestingHeartRate(start: startDate, end: endDate)
-            async let activeEnergy = fetchActiveEnergy(start: startDate, end: endDate)
-            async let bodyMass = fetchBodyMass(start: startDate, end: endDate)
-            
-            let (hrvData, sleepData, stepsData, restingHRData, activeEnergyData, bodyMassData) = try await (hrv, sleep, steps, restingHR, activeEnergy, bodyMass)
-            
-            // ---------------------------------------------------------------------
-            // 1. NON-SLEEP DATA (Standard Daily Grouping)
-            // ---------------------------------------------------------------------
-            var metricsByDate: [Date: DailyWellnessMetrics] = [:]
-            
-            func getMetric(for date: Date) -> DailyWellnessMetrics {
-                let startOfDay = calendar.startOfDay(for: date)
-                return metricsByDate[startOfDay] ?? DailyWellnessMetrics(date: startOfDay)
-            }
-            
-            for sample in stepsData {
-                var metric = getMetric(for: sample.date)
-                metric.steps = sample.steps
-                metricsByDate[metric.date] = metric
-            }
-            for sample in activeEnergyData {
-                var metric = getMetric(for: sample.date)
-                metric.activeEnergyBurned = Double(sample.calories)
-                metricsByDate[metric.date] = metric
-            }
-            for sample in bodyMassData {
-                var metric = getMetric(for: sample.date)
-                metric.bodyMass = sample.value
-                metricsByDate[metric.date] = metric
-            }
-            for sample in restingHRData {
-                var metric = getMetric(for: sample.date)
-                metric.restingHeartRate = sample.bpm
-                metricsByDate[metric.date] = metric
-            }
-            
-            // ---------------------------------------------------------------------
-            // 2. SLEEP DATA (Smart "Sleep Night" Grouping & Explicit Source Selection)
-            // ---------------------------------------------------------------------
-            // Logic: Shift time +6 hours to assign "Night of 12/9" to "12/10".
-            let sleepBySleepDay = Dictionary(grouping: sleepData) { sample in
-                let adjustedDate = sample.startDate.addingTimeInterval(6 * 3600)
-                return calendar.startOfDay(for: adjustedDate)
-            }
-            
-            print("\n😴 Sleep Processing:")
-            
-            for (date, allSamples) in sleepBySleepDay {
-                var metric = getMetric(for: date)
-                
-                // --- SOURCE FILTERING FIX ---
-                // 1. Identify if AutoSleep is present (using strict bundle ID check)
-                let hasAutoSleep = allSamples.contains { $0.sourceBundleId.lowercased().contains("autosleep") }
-                
-                let targetSamples: [SleepAnalysisSample]
-                let usedSource: String
-                
-                if hasAutoSleep {
-                    // AutoSleep Mode: Use ONLY AutoSleep samples
-                    targetSamples = allSamples.filter { $0.sourceBundleId.lowercased().contains("autosleep") }
-                    usedSource = "AutoSleep"
-                } else {
-                    // ⌚️ Apple Watch Mode: Use everything else (likely Apple Watch)
-                    targetSamples = allSamples
-                    usedSource = "Apple Watch"
-                }
-                
-                // --- STAGE FILTERING ---
-                // Important: AutoSleep writes "In Bed" (0) and "Asleep" (1). We MUST ignore 0.
-                // "Unspecified" (1) from AutoSleep is treated as "Core" here to ensure it counts as sleep.
-                
-                let deepSamples = targetSamples.filter { $0.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue }
-                let remSamples = targetSamples.filter { $0.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue }
-                let coreSamples = targetSamples.filter {
-                    $0.value == HKCategoryValueSleepAnalysis.asleepCore.rawValue ||
-                    $0.value == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue // <-- AutoSleep "Asleep" falls here
-                }
-                let awakeSamples = targetSamples.filter { $0.value == HKCategoryValueSleepAnalysis.awake.rawValue }
-                
-                // Calculate unique duration for each stage
-                metric.sleepDeep = calculateUniqueDuration(deepSamples)
-                metric.sleepREM = calculateUniqueDuration(remSamples)
-                metric.sleepCore = calculateUniqueDuration(coreSamples)
-                metric.sleepAwake = calculateUniqueDuration(awakeSamples)
-                
-                let totalSleep = (metric.sleepDeep ?? 0) + (metric.sleepCore ?? 0) + (metric.sleepREM ?? 0)
-                
-                print("   👉 \(date.formatted(date: .numeric, time: .omitted)): \(String(format: "%.1f", totalSleep/3600))h | Source: \(usedSource)")
-                
-                metricsByDate[metric.date] = metric
-            }
-            
-            // ---------------------------------------------------------------------
-            // 3. SAVE
-            // ---------------------------------------------------------------------
-            let allMetrics = Array(metricsByDate.values)
-            if !allMetrics.isEmpty {
-                await MainActor.run {
-                    WellnessManager.shared.updateBulkMetrics(allMetrics)
-                }
-                print("💾 Saved \(allMetrics.count) days of wellness data.")
-            }
+    private func syncAppleHealthWellness() async throws {
+        print("🍎 Syncing from Apple Health...")
+        
+        guard HKHealthStore.isHealthDataAvailable() else {
+            throw WellnessError.healthKitNotAvailable
         }
+        
+        let calendar = Calendar.current
+        let endDate = Date()
+        let startOfToday = calendar.startOfDay(for: endDate)
+        let startDate = calendar.date(byAdding: .day, value: -7, to: startOfToday)!
+        
+        // Fetch data
+        async let hrv = fetchHRVData(start: startDate, end: endDate)
+        async let sleep = fetchSleepAnalysis(start: startDate, end: endDate)
+        async let steps = fetchStepsData(start: startDate, end: endDate)
+        async let restingHR = fetchRestingHeartRate(start: startDate, end: endDate)
+        async let activeEnergy = fetchActiveEnergy(start: startDate, end: endDate)
+        async let bodyMass = fetchBodyMass(start: startDate, end: endDate)
+        
+        let (hrvData, sleepData, stepsData, restingHRData, activeEnergyData, bodyMassData) = try await (hrv, sleep, steps, restingHR, activeEnergy, bodyMass)
+        
+        // ---------------------------------------------------------------------
+        // 1. NON-SLEEP DATA (Standard Daily Grouping)
+        // ---------------------------------------------------------------------
+        var metricsByDate: [Date: DailyWellnessMetrics] = [:]
+        
+        func getMetric(for date: Date) -> DailyWellnessMetrics {
+            let startOfDay = calendar.startOfDay(for: date)
+            return metricsByDate[startOfDay] ?? DailyWellnessMetrics(date: startOfDay)
+        }
+        
+        for sample in stepsData {
+            var metric = getMetric(for: sample.date)
+            metric.steps = sample.steps
+            metricsByDate[metric.date] = metric
+        }
+        for sample in activeEnergyData {
+            var metric = getMetric(for: sample.date)
+            metric.activeEnergyBurned = Double(sample.calories)
+            metricsByDate[metric.date] = metric
+        }
+        for sample in bodyMassData {
+            var metric = getMetric(for: sample.date)
+            metric.bodyMass = sample.value
+            metricsByDate[metric.date] = metric
+        }
+        for sample in restingHRData {
+            var metric = getMetric(for: sample.date)
+            metric.restingHeartRate = sample.bpm
+            metricsByDate[metric.date] = metric
+        }
+        
+        // ---------------------------------------------------------------------
+        // 2. SLEEP DATA (Smart Fallback Logic)
+        // ---------------------------------------------------------------------
+        // Logic: Shift time +6 hours to assign "Night of 12/9" to "12/10".
+        let sleepBySleepDay = Dictionary(grouping: sleepData) { sample in
+            let adjustedDate = sample.startDate.addingTimeInterval(6 * 3600)
+            return calendar.startOfDay(for: adjustedDate)
+        }
+        
+        print("\n😴 Sleep Processing:")
+        
+        for (date, allSamples) in sleepBySleepDay {
+            var metric = getMetric(for: date)
+            
+            // --- SMART SOURCE SELECTION ---
+            // 1. Split samples by source
+            let autoSleepSamples = allSamples.filter { $0.sourceBundleId.lowercased().contains("autosleep") }
+            let otherSamples = allSamples.filter { !$0.sourceBundleId.lowercased().contains("autosleep") }
+            
+            // 2. Calculate TOTAL sleep duration for each source (ignoring InBed/Awake)
+            let autoSleepDuration = calculateTotalSleepDuration(autoSleepSamples)
+            let otherDuration = calculateTotalSleepDuration(otherSamples)
+            
+            let targetSamples: [SleepAnalysisSample]
+            let usedSource: String
+            
+            // 3. Decide which to use
+            if autoSleepDuration > 0 {
+                // AutoSleep has data -> Use it (prevents double counting)
+                targetSamples = autoSleepSamples
+                usedSource = "AutoSleep"
+            } else if otherDuration > 0 {
+                // AutoSleep is 0h (or missing) -> Fallback to Apple Watch
+                targetSamples = otherSamples
+                usedSource = autoSleepSamples.isEmpty ? "Apple Watch" : "Apple Watch (Fallback)"
+                if !autoSleepSamples.isEmpty {
+                    print("   ⚠️ AutoSleep found but had 0h sleep. Falling back to Apple Watch.")
+                }
+            } else {
+                targetSamples = allSamples
+                usedSource = "None/Mixed"
+            }
+            
+            // --- STAGE MAPPING ---
+            let deepSamples = targetSamples.filter { $0.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue }
+            let remSamples = targetSamples.filter { $0.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue }
+            
+            // Map "Unspecified" (1) to Core (3) OR Unspecified so it counts as sleep
+            let coreSamples = targetSamples.filter { $0.value == HKCategoryValueSleepAnalysis.asleepCore.rawValue }
+            let unspecifiedSamples = targetSamples.filter { $0.value == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue }
+            
+            let awakeSamples = targetSamples.filter { $0.value == HKCategoryValueSleepAnalysis.awake.rawValue }
+            
+            // Calculate unique duration for each stage
+            metric.sleepDeep = calculateUniqueDuration(deepSamples)
+            metric.sleepREM = calculateUniqueDuration(remSamples)
+            metric.sleepCore = calculateUniqueDuration(coreSamples)
+            metric.sleepUnspecified = calculateUniqueDuration(unspecifiedSamples)
+            metric.sleepAwake = calculateUniqueDuration(awakeSamples)
+            
+            // COMPILER FIX: Break up the expression
+            let deep = metric.sleepDeep ?? 0
+            let core = metric.sleepCore ?? 0
+            let rem = metric.sleepREM ?? 0
+            let unspecified = metric.sleepUnspecified ?? 0
+            let totalSleep = deep + core + rem + unspecified
+            
+            print("   👉 \(date.formatted(date: .numeric, time: .omitted)): \(String(format: "%.1f", totalSleep/3600))h | Source: \(usedSource)")
+            
+            metricsByDate[metric.date] = metric
+        }
+        
+        // ---------------------------------------------------------------------
+        // 3. SAVE
+        // ---------------------------------------------------------------------
+        let allMetrics = Array(metricsByDate.values)
+        if !allMetrics.isEmpty {
+            await MainActor.run {
+                WellnessManager.shared.updateBulkMetrics(allMetrics)
+            }
+            print("💾 Saved \(allMetrics.count) days of wellness data.")
+        }
+    }
+    
+    /// Helper to check if a source has valid sleep data (ignoring InBed/Awake)
+    private func calculateTotalSleepDuration(_ samples: [SleepAnalysisSample]) -> TimeInterval {
+        let validSamples = samples.filter {
+            $0.value == HKCategoryValueSleepAnalysis.asleepCore.rawValue ||
+            $0.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
+            $0.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue ||
+            $0.value == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+        }
+        return calculateUniqueDuration(validSamples)
+    }
     
     /// Merges overlapping sleep intervals to prevent double counting (e.g. AutoSleep + Apple Watch)
     private func calculateUniqueDuration(_ samples: [SleepAnalysisSample]) -> TimeInterval {

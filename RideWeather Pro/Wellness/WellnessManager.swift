@@ -85,6 +85,12 @@ class WellnessManager: ObservableObject {
         
         let metrics = await healthManager.fetchWellnessMetrics(startDate: startDate, endDate: endDate)
         
+        if let last = metrics.last {
+            print("🏥 Debug Last Metric: Date=\(last.date), SleepDeep=\(last.sleepDeep ?? 0), SleepREM=\(last.sleepREM ?? 0)")
+        } else {
+            print("🏥 Debug: No metrics returned from HealthManager")
+        }
+        
         await MainActor.run {
             updateBulkMetrics(metrics)
             lastSyncDate = Date()
