@@ -1,5 +1,5 @@
 //
-//  AIRouteSummaryCard.swift
+//  RouteSummaryCard.swift
 //  RideWeather Pro
 //
 //  Universal AI route summary card for both forecast and analysis views
@@ -10,7 +10,7 @@ import MapKit
 
 // MARK: - Main Universal Card Component
 
-struct AIRouteSummaryCard: View {
+struct RouteSummaryCard: View {
     let summaryResult: RouteSummaryResult?
     let isLoading: Bool
     
@@ -145,10 +145,10 @@ struct AIRouteSummaryCard: View {
 
 // MARK: - Forecast Route Integration
 
-extension AIRouteSummaryCard {
+extension RouteSummaryCard {
     /// Create card for forecast routes
     static func forForecast(viewModel: WeatherViewModel) -> some View {
-        AIRouteSummaryCardContainer(
+        RouteSummaryCardContainer(
             source: .forecast(viewModel)
         )
     }
@@ -156,13 +156,13 @@ extension AIRouteSummaryCard {
 
 // MARK: - Ride Analysis Integration
 
-extension AIRouteSummaryCard {
+extension RouteSummaryCard {
     /// Create card for completed ride analysis
     static func forAnalysis(
         analysis: RideAnalysis,
         weatherViewModel: WeatherViewModel
     ) -> some View {
-        AIRouteSummaryCardContainer(
+        RouteSummaryCardContainer(
             source: .analysis(analysis, weatherViewModel)
         )
     }
@@ -170,7 +170,7 @@ extension AIRouteSummaryCard {
 
 // MARK: - Container with Data Loading Logic
 
-private struct AIRouteSummaryCardContainer: View {
+private struct RouteSummaryCardContainer: View {
     enum DataSource {
         case forecast(WeatherViewModel)
         case analysis(RideAnalysis, WeatherViewModel)
@@ -182,7 +182,7 @@ private struct AIRouteSummaryCardContainer: View {
     @State private var isLoading = false
     
     var body: some View {
-        AIRouteSummaryCard(
+        RouteSummaryCard(
             summaryResult: summaryResult,
             isLoading: isLoading
         )

@@ -1,5 +1,5 @@
 //
-//  AIRouteSummaryGenerator.swift
+//  RouteSummaryGenerator.swift
 //  RideWeather Pro
 //
 //  Enhanced Cyclist-Focused Route Descriptions

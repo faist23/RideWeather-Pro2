@@ -35,7 +35,7 @@ struct SettingsView: View {
                 customizationSection
                 dataTrackingSection
                 storageSection
-                aiRouteAnalysisSection
+                routeAnalysisSection
                 aboutSection
             }
             .scrollContentBackground(.hidden)
@@ -188,7 +188,7 @@ struct SettingsView: View {
         .id(lastRefresh)
     }
     
-    private var aiRouteAnalysisSection: some View {
+    private var routeAnalysisSection: some View {
         Section("AI Route Analysis") {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
