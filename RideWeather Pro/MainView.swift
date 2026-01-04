@@ -15,8 +15,12 @@ struct MainView: View {
     
     @State private var selectedTab = 0
     @State private var lastLiveWeatherTap = Date()
+    @State private var lastFitnessTap = Date()  // Track fitness tab taps
+
     @EnvironmentObject var wahooService: WahooService // Inherited from App
-    
+    @EnvironmentObject var healthManager: HealthKitManager  // Access HealthKit
+    @EnvironmentObject var garminService: GarminService    // Access Garmin
+
     var body: some View {
         ZStack(alignment: .topTrailing) { // WRAP IN ZSTACK
             TabView(selection: $selectedTab) {
@@ -56,29 +60,59 @@ struct MainView: View {
                 }
                 
                 TrainingLoadView()
-                    .environmentObject(viewModel)  // Pass the WeatherViewModel
+                    .environmentObject(viewModel)
                     .tabItem {
                         Label("Fitness", systemImage: "chart.line.uptrend.xyaxis")
                     }
                     .tag(3)
-                
+                    // Sync wellness data when Fitness tab appears
+                    .onAppear {
+                        let now = Date()
+                        // Only sync if it's been more than 5 minutes since last tap
+                        if now.timeIntervalSince(lastFitnessTap) > 300 {
+                            Task {
+                                await syncWellnessData()
+                            }
+                            lastFitnessTap = now
+                        }
+                    }
             }
         }
         .environmentObject(wahooService)
         .onChange(of: selectedTab) { oldValue, newValue in
-            // When user taps Live Weather tab, refresh the weather
+            // Refresh Live Weather when tapped
             if newValue == 0 && oldValue != 0 {
                 Task {
                     await viewModel.refreshWeather()
                 }
                 lastLiveWeatherTap = Date()
             }
+            
+            // Sync wellness when Fitness tab is tapped
+            if newValue == 3 && oldValue != 3 {
+                Task {
+                    await syncWellnessData()
+                }
+                lastFitnessTap = Date()
+            }
         }
         .task {
-            // Additional MapKit warming - create map components early
             await warmUpMapComponents()
         }
         .preferredColorScheme(.dark)
+    }
+    
+    // Wellness sync helper function
+    private func syncWellnessData() async {
+        let wellnessSync = UnifiedWellnessSync()
+        
+        await wellnessSync.syncFromConfiguredSource(
+            healthManager: healthManager,
+            garminService: garminService,
+            days: 7  // Sync last 7 days to capture today's steps
+        )
+        
+        print("🏋️ MainView: Wellness data synced from configured source")
     }
     
     private func warmUpMapComponents() async {

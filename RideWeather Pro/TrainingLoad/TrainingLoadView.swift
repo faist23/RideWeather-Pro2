@@ -50,17 +50,7 @@ struct TrainingLoadView: View {
                                 wellnessDaysCount: wellnessManager.dailyMetrics.count,
                                 onTrainingSync: {
                                     Task {
-                                        await trainingSync.syncFromConfiguredSource(
-                                            stravaService: stravaService,
-                                            garminService: garminService,
-                                            healthManager: healthManager,
-                                            userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                                            userLTHR: nil,
-                                            startDate: nil
-                                        )
-                                        // FIX: Force reload chart data after sync
-                                        viewModel.refresh(readiness: healthManager.readiness)
-                                        viewModel.loadPeriod(selectedPeriod, forceReload: true)
+                                        await syncBothTrainingAndWellness()
                                     }
                                 },
                                 onWellnessSync: {
@@ -126,16 +116,7 @@ struct TrainingLoadView: View {
                             Button {
                                 Task {
                                     let startDate = Calendar.current.date(byAdding: .day, value: -365, to: Date())
-                                    await trainingSync.syncFromConfiguredSource(
-                                        stravaService: stravaService,
-                                        garminService: garminService,
-                                        healthManager: healthManager,
-                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                                        userLTHR: nil,
-                                        startDate: startDate
-                                    )
-                                    viewModel.refresh(readiness: healthManager.readiness)
-                                    viewModel.loadPeriod(selectedPeriod, forceReload: true)
+                                    await syncBothTrainingAndWellness(startDate: startDate)
                                 }
                             } label: {
                                 HStack {
@@ -155,8 +136,8 @@ struct TrainingLoadView: View {
                                 )
                                 .cornerRadius(12)
                             }
-                            .disabled(trainingSync.isSyncing)
-                            
+                            .disabled(trainingSync.isSyncing || wellnessSync.isSyncing)
+
                             Text("You have \(viewModel.totalDaysInStorage) days of data. Sync more to see long-term trends.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
@@ -200,16 +181,7 @@ struct TrainingLoadView: View {
                             Button {
                                 Task {
                                     let startDate = Calendar.current.date(byAdding: .day, value: -30, to: Date())
-                                    await trainingSync.syncFromConfiguredSource(
-                                        stravaService: stravaService,
-                                        garminService: garminService,
-                                        healthManager: healthManager,
-                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                                        userLTHR: nil,
-                                        startDate: startDate
-                                    )
-                                    viewModel.refresh(readiness: healthManager.readiness)
-                                    viewModel.loadPeriod(selectedPeriod, forceReload: true)
+                                    await syncBothTrainingAndWellness(startDate: startDate)
                                 }
                             } label: {
                                 Label("Last 30 Days", systemImage: "calendar")
@@ -218,16 +190,7 @@ struct TrainingLoadView: View {
                             Button {
                                 Task {
                                     let startDate = Calendar.current.date(byAdding: .day, value: -90, to: Date())
-                                    await trainingSync.syncFromConfiguredSource(
-                                        stravaService: stravaService,
-                                        garminService: garminService,
-                                        healthManager: healthManager,
-                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                                        userLTHR: nil,
-                                        startDate: startDate
-                                    )
-                                    viewModel.refresh(readiness: healthManager.readiness)
-                                    viewModel.loadPeriod(selectedPeriod, forceReload: true)
+                                    await syncBothTrainingAndWellness(startDate: startDate)
                                 }
                             } label: {
                                 Label("Last 90 Days", systemImage: "calendar")
@@ -236,16 +199,7 @@ struct TrainingLoadView: View {
                             Button {
                                 Task {
                                     let startDate = Calendar.current.date(byAdding: .day, value: -365, to: Date())
-                                    await trainingSync.syncFromConfiguredSource(
-                                        stravaService: stravaService,
-                                        garminService: garminService,
-                                        healthManager: healthManager,
-                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                                        userLTHR: nil,
-                                        startDate: startDate
-                                    )
-                                    viewModel.refresh(readiness: healthManager.readiness)
-                                    viewModel.loadPeriod(selectedPeriod, forceReload: true)
+                                    await syncBothTrainingAndWellness(startDate: startDate)
                                 }
                             } label: {
                                 Label("Last Year", systemImage: "calendar.badge.clock")
@@ -255,16 +209,7 @@ struct TrainingLoadView: View {
                             
                             Button {
                                 Task {
-                                    await trainingSync.syncFromConfiguredSource(
-                                        stravaService: stravaService,
-                                        garminService: garminService,
-                                        healthManager: healthManager,
-                                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                                        userLTHR: nil,
-                                        startDate: nil
-                                    )
-                                    viewModel.refresh(readiness: healthManager.readiness)
-                                    viewModel.loadPeriod(selectedPeriod, forceReload: true)
+                                    await syncBothTrainingAndWellness()
                                 }
                             } label: {
                                 Label("Incremental Sync", systemImage: "arrow.triangle.2.circlepath")
@@ -317,20 +262,11 @@ struct TrainingLoadView: View {
                 Task {
                     // Sync training load if needed
                     if trainingSync.needsSync && (stravaService.isAuthenticated || garminService.isAuthenticated || healthManager.isAuthorized) {
-                        await trainingSync.syncFromConfiguredSource(
-                            stravaService: stravaService,
-                            garminService: garminService,
-                            healthManager: healthManager,
-                            userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                            userLTHR: nil,
-                            startDate: nil
-                        )
-                        viewModel.refresh(readiness: healthManager.readiness)
-                        viewModel.loadPeriod(selectedPeriod, forceReload: true)
+                        await syncBothTrainingAndWellness()  
                     }
                     
-                    // Sync wellness if needed
-                    if wellnessSync.needsSync && (healthManager.isAuthorized || garminService.isAuthenticated) {
+                    // Wellness will be synced above, but if ONLY wellness needs sync, do it separately
+                    if !trainingSync.needsSync && wellnessSync.needsSync && (healthManager.isAuthorized || garminService.isAuthenticated) {
                         await wellnessSync.syncFromConfiguredSource(
                             healthManager: healthManager,
                             garminService: garminService,
@@ -362,24 +298,10 @@ struct TrainingLoadView: View {
             
             .onReceive(NotificationCenter.default.publisher(for: .dataSourceChanged)) { _ in
                 Task {
-                    // Re-sync from new source
-                    await trainingSync.syncFromConfiguredSource(
-                        stravaService: stravaService,
-                        garminService: garminService,
-                        healthManager: healthManager,
-                        userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                        userLTHR: nil,
+                    // Re-sync from new source (both training AND wellness)
+                    await syncBothTrainingAndWellness(
                         startDate: Calendar.current.date(byAdding: .day, value: -90, to: Date())
                     )
-                    
-                    // Re-sync Wellness 
-                    await wellnessSync.syncFromConfiguredSource(
-                        healthManager: healthManager,
-                        garminService: garminService,
-                        days: 7
-                    )
-                    viewModel.refresh(readiness: healthManager.readiness)
-                    viewModel.loadPeriod(selectedPeriod, forceReload: true)
                 }
             }
 
@@ -453,18 +375,7 @@ struct TrainingLoadView: View {
                 Button {
                     Task {
                         let startDate = Calendar.current.date(byAdding: .day, value: -365, to: Date())
-                        
-                        await trainingSync.syncFromConfiguredSource(
-                            stravaService: stravaService,
-                            garminService: garminService,
-                            healthManager: healthManager,
-                            userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
-                            userLTHR: nil,
-                            startDate: startDate
-                        )
-                        
-                        viewModel.refresh(readiness: healthManager.readiness)
-                        viewModel.loadPeriod(selectedPeriod, forceReload: true)
+                        await syncBothTrainingAndWellness(startDate: startDate)
                     }
                 } label: {
                     HStack(spacing: 12) {
@@ -479,8 +390,8 @@ struct TrainingLoadView: View {
                     .cornerRadius(12)
                 }
                 .padding(.horizontal, 40)
-                .disabled(trainingSync.isSyncing)
-                
+                .disabled(trainingSync.isSyncing || wellnessSync.isSyncing)
+
                 if let lastSync = trainingSync.lastSyncDate {
                     Text("Last synced: \(lastSync.formatted(date: .abbreviated, time: .shortened))")
                         .font(.caption)
@@ -537,6 +448,34 @@ struct TrainingLoadView: View {
             
             Spacer()
         }
+    }
+  
+    // MARK: - Helper Methods
+
+    /// Syncs both training load AND wellness data together
+    private func syncBothTrainingAndWellness(startDate: Date? = nil) async {
+        // 1. Sync Training Load
+        await trainingSync.syncFromConfiguredSource(
+            stravaService: stravaService,
+            garminService: garminService,
+            healthManager: healthManager,
+            userFTP: Double(weatherViewModel.settings.functionalThresholdPower),
+            userLTHR: nil,
+            startDate: startDate
+        )
+        
+        // 2. Sync Wellness Data (ADDED)
+        await wellnessSync.syncFromConfiguredSource(
+            healthManager: healthManager,
+            garminService: garminService,
+            days: startDate == nil ? 7 : abs(Calendar.current.dateComponents([.day], from: startDate!, to: Date()).day ?? 7)
+        )
+        
+        // 3. Refresh UI
+        viewModel.refresh(readiness: healthManager.readiness)
+        viewModel.loadPeriod(selectedPeriod, forceReload: true)
+        
+        print("✅ Synced both Training Load AND Wellness data")
     }
 }
 
