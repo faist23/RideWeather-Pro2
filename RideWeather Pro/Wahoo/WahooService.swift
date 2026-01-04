@@ -277,6 +277,37 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
             return
         }
         
+        // ALWAYS deauthorize first to prevent token accumulation
+        print("WahooService: Starting authentication flow...")
+        
+        // Check if we have any stored tokens
+        if currentTokens != nil {
+            print("WahooService: Found stored tokens, deauthorizing first...")
+            Task {
+                do {
+                    try await deauthorize()
+                    print("WahooService: Successfully deauthorized old tokens")
+                    try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                    await MainActor.run {
+                        self.startAuthenticationFlow()
+                    }
+                } catch {
+                    print("WahooService: Deauthorization failed: \(error)")
+                    // Clear local tokens anyway and continue
+                    self.currentTokens = nil
+                    await MainActor.run {
+                        self.startAuthenticationFlow()
+                    }
+                }
+            }
+        } else {
+            // No stored tokens, proceed with auth
+            startAuthenticationFlow()
+        }
+    }
+    
+    // Extract the actual auth flow into a separate method
+    private func startAuthenticationFlow() {
         let pkce = generatePKCE()
         self.currentPkceVerifier = pkce.verifier
         
@@ -347,14 +378,44 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
             guard let self else { return }
             Task { @MainActor in
                 if let error = error {
-                    self.errorMessage = error.localizedDescription; return
+                    self.errorMessage = error.localizedDescription
+                    return
                 }
-                guard let data = data else { return }
                 
+                guard let data = data else {
+                    self.errorMessage = "No response from Wahoo"
+                    return
+                }
+                
+                // Check HTTP status first
+                if let httpResponse = response as? HTTPURLResponse {
+                    // Handle error responses (not 200)
+                    if httpResponse.statusCode != 200 {
+                        // Try to parse error response
+                        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let errorMsg = json["error"] as? String {
+                            print("🚨 WahooService: API Error: \(errorMsg)")
+                            
+                            // Special handling for token limit error
+                            if errorMsg.contains("Too many unrevoked access tokens") {
+                                self.errorMessage = "Too many active tokens. Please wait a moment and try again, or visit Wahoo settings to manage authorized apps."
+                            } else {
+                                self.errorMessage = errorMsg
+                            }
+                        } else {
+                            self.errorMessage = "Authentication failed (HTTP \(httpResponse.statusCode))"
+                        }
+                        return
+                    }
+                }
+                
+                // Only try to decode if we got a 200 response
                 do {
                     let decoder = JSONDecoder()
                     decoder.keyDecodingStrategy = .convertFromSnakeCase
                     let tokenResponse = try decoder.decode(WahooTokenResponse.self, from: data)
+                    
+                    print("✅ WahooService: Successfully authenticated")
                     
                     self.currentTokens = WahooTokens(
                         accessToken: tokenResponse.accessToken,
@@ -364,11 +425,46 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
                     self.errorMessage = nil
                     await self.fetchUserName()
                 } catch {
-                    print("WahooService: Token decoding error: \(error)")
-                    self.errorMessage = "Token decoding failed."
+                    print("🚨 WahooService: Token decoding error: \(error)")
+                    self.errorMessage = "Token decoding failed. Please try again."
                 }
             }
         }.resume()
+    }
+   
+    func deauthorize() async throws {
+        guard let token = currentTokens?.accessToken else {
+            print("WahooService: No token to deauthorize")
+            throw WahooError.notAuthenticated
+        }
+        
+        guard let url = URL(string: "\(apiBaseUrl)/oauth/deauthorize") else {
+            throw WahooError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        print("WahooService: Sending deauthorize request...")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw WahooError.invalidResponse
+        }
+        
+        print("WahooService: Deauthorize response status: \(httpResponse.statusCode)")
+        
+        if let responseBody = String(data: data, encoding: .utf8) {
+            print("WahooService: Deauthorize response: \(responseBody)")
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw WahooError.apiError(statusCode: httpResponse.statusCode)
+        }
+        
+        print("✅ WahooService: All tokens successfully deauthorized")
     }
     
     // MARK: - Safe Token Refresh
@@ -461,10 +557,33 @@ class WahooService: NSObject, ObservableObject, ASWebAuthenticationPresentationC
     }
     
     func disconnect() {
-        currentTokens = nil
-        athleteName = nil
-        deleteAthleteNameFromKeychain()
-        isAuthenticated = false
+        print("WahooService: Disconnecting...")
+        
+        // If we have tokens, deauthorize them on the server
+        if let tokens = currentTokens {
+            Task {
+                do {
+                    try await deauthorize()
+                    print("WahooService: Successfully deauthorized tokens on server")
+                } catch {
+                    print("WahooService: Failed to deauthorize on server: \(error)")
+                    // Continue with local cleanup anyway
+                }
+                
+                await MainActor.run {
+                    self.currentTokens = nil
+                    self.athleteName = nil
+                    self.deleteAthleteNameFromKeychain()
+                    self.isAuthenticated = false
+                }
+            }
+        } else {
+            // No tokens, just clear local state
+            currentTokens = nil
+            athleteName = nil
+            deleteAthleteNameFromKeychain()
+            isAuthenticated = false
+        }
     }
     
     // MARK: - Keychain

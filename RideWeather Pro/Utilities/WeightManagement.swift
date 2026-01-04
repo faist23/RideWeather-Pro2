@@ -2,7 +2,7 @@
 //  WeightManagement.swift
 //  RideWeather Pro
 //
-//  Apple-style weight management UI
+//  Apple-style weight management UI with wellness source alignment
 //
 
 import SwiftUI
@@ -21,10 +21,23 @@ struct WeightSourcePickerSheet: View {
     
     @State private var isSyncing = false
     @State private var syncStatus: String?
+    @State private var showConflictAlert = false
+    @State private var pendingSource: AppSettings.WeightSource?
+    
+    private var wellnessSource: DataSourceConfiguration.WellnessSource {
+        DataSourceManager.shared.configuration.wellnessSource
+    }
     
     var body: some View {
         NavigationStack {
             List {
+                // Show wellness source info if there's a potential conflict
+                if wellnessSource != .none {
+                    Section {
+                        WellnessSourceInfoBanner(wellnessSource: wellnessSource)
+                    }
+                }
+                
                 // Automatic Sync Options
                 Section {
                     if healthConnected {
@@ -32,11 +45,12 @@ struct WeightSourcePickerSheet: View {
                             icon: "heart.fill",
                             color: .red,
                             title: "Apple Health",
-                            subtitle: "Automatically syncs from Health app",
+                            subtitle: getSubtitle(for: .healthKit),
                             isSelected: currentSource == .healthKit,
-                            isConnected: true
+                            isConnected: true,
+                            showWarning: shouldWarn(for: .healthKit)
                         ) {
-                            await selectSource(.healthKit)
+                            await selectSourceWithValidation(.healthKit)
                         }
                     } else {
                         DisconnectedSourceOption(
@@ -52,11 +66,12 @@ struct WeightSourcePickerSheet: View {
                             icon: "figure.run.circle.fill",
                             color: .blue,
                             title: "Garmin",
-                            subtitle: "Syncs from Garmin Connect wellness data",
+                            subtitle: getSubtitle(for: .garmin),
                             isSelected: currentSource == .garmin,
-                            isConnected: true
+                            isConnected: true,
+                            showWarning: shouldWarn(for: .garmin)
                         ) {
-                            await selectSource(.garmin)
+                            await selectSourceWithValidation(.garmin)
                         }
                     } else {
                         DisconnectedSourceOption(
@@ -74,9 +89,10 @@ struct WeightSourcePickerSheet: View {
                             title: "Strava Profile",
                             subtitle: "Syncs from your Strava athlete profile",
                             isSelected: currentSource == .strava,
-                            isConnected: true
+                            isConnected: true,
+                            showWarning: false
                         ) {
-                            await selectSource(.strava)
+                            await selectSourceWithValidation(.strava)
                         }
                     } else {
                         DisconnectedSourceOption(
@@ -117,9 +133,10 @@ struct WeightSourcePickerSheet: View {
                         title: "Manual Entry",
                         subtitle: "Set and update weight manually",
                         isSelected: currentSource == .manual,
-                        isConnected: true
+                        isConnected: true,
+                        showWarning: false
                     ) {
-                        await selectSource(.manual)
+                        await selectSourceWithValidation(.manual)
                     }
                 } header: {
                     Text("Manual")
@@ -134,9 +151,86 @@ struct WeightSourcePickerSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .alert("Weight Source Mismatch", isPresented: $showConflictAlert) {
+                Button("Use Anyway") {
+                    if let source = pendingSource {
+                        Task { await selectSource(source) }
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingSource = nil
+                }
+            } message: {
+                Text(getConflictMessage())
+            }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func getSubtitle(for source: AppSettings.WeightSource) -> String {
+        switch source {
+        case .healthKit:
+            if wellnessSource == .appleHealth {
+                return "✓ Matches your wellness data source"
+            } else {
+                return "Automatically syncs from Health app"
+            }
+        case .garmin:
+            if wellnessSource == .garmin {
+                return "✓ Matches your wellness data source"
+            } else {
+                return "Syncs from Garmin Connect wellness data"
+            }
+        case .strava:
+            return "Syncs from your Strava athlete profile"
+        case .manual:
+            return "Set and update weight manually"
+        }
+    }
+    
+    private func shouldWarn(for source: AppSettings.WeightSource) -> Bool {
+        switch wellnessSource {
+        case .garmin:
+            return source == .healthKit
+        case .appleHealth:
+            return source == .garmin
+        case .none:
+            return false
+        }
+    }
+    
+    private func getConflictMessage() -> String {
+        guard let pending = pendingSource else { return "" }
+        
+        switch wellnessSource {
+        case .garmin:
+            if pending == .healthKit {
+                return "Your wellness data (sleep, HRV, etc.) comes from Garmin, but you're selecting Apple Health for weight. This may cause inconsistent data. Consider using Garmin for both, or change your wellness source in Data Sources settings."
+            }
+        case .appleHealth:
+            if pending == .garmin {
+                return "Your wellness data (sleep, HRV, etc.) comes from Apple Health, but you're selecting Garmin for weight. This may cause inconsistent data. Consider using Apple Health for both, or change your wellness source in Data Sources settings."
+            }
+        case .none:
+            break
+        }
+        
+        return "Using different sources for weight and wellness data may cause inconsistencies."
+    }
+    
+    private func selectSourceWithValidation(_ source: AppSettings.WeightSource) async {
+        // Check if this creates a mismatch with wellness source
+        let hasConflict = shouldWarn(for: source)
+        
+        if hasConflict {
+            pendingSource = source
+            showConflictAlert = true
+        } else {
+            await selectSource(source)
+        }
     }
     
     private func selectSource(_ source: AppSettings.WeightSource) async {
@@ -144,6 +238,10 @@ struct WeightSourcePickerSheet: View {
         syncStatus = nil
         
         currentSource = source
+        
+        // Mark that user has explicitly chosen a weight source
+        UserDefaults.standard.set(true, forKey: "hasUserSetWeightSource")
+        
         await onSourceChanged(source)
         
         // Show success message briefly
@@ -161,6 +259,33 @@ struct WeightSourcePickerSheet: View {
     }
 }
 
+// MARK: - Wellness Source Info Banner
+
+struct WellnessSourceInfoBanner: View {
+    let wellnessSource: DataSourceConfiguration.WellnessSource
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "info.circle.fill")
+                .foregroundColor(.blue)
+                .font(.title3)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Wellness Data Source")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Text("Currently using \(wellnessSource.rawValue)")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+            }
+            
+            Spacer()
+        }
+        .padding(.vertical, 8)
+    }
+}
+
 // MARK: - Weight Source Option Button
 
 struct WeightSourceOption: View {
@@ -170,6 +295,7 @@ struct WeightSourceOption: View {
     let subtitle: String
     let isSelected: Bool
     let isConnected: Bool
+    let showWarning: Bool
     let action: () async -> Void
     
     @State private var isProcessing = false
@@ -196,12 +322,21 @@ struct WeightSourceOption: View {
                 
                 // Text
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.body)
-                        .foregroundColor(.primary)
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(.body)
+                            .foregroundColor(.primary)
+                        
+                        if showWarning {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                    
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(showWarning ? .orange : .secondary)
                 }
                 
                 Spacer()

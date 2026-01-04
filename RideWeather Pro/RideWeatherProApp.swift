@@ -39,10 +39,6 @@ struct RideWeatherProApp: App {
                         showLaunchView = false
                     }
                 }
-                // Perform initial weight sync on first load
-                Task {
-                    await syncWeight()
-                }
             }
             .task {
                 // Initialize MapKit early to reduce first-time loading lag
@@ -73,15 +69,15 @@ struct RideWeatherProApp: App {
                 }
             }
             .onChange(of: scenePhase) { oldPhase, newPhase in
-                // When app becomes active (e.g., user returns to it)
                 if newPhase == .active && (oldPhase == .inactive || oldPhase == .background) {
-                    // Run the daily sync logic
                     Task {
-                        await syncWeight()
-                        await healthManager.fetchReadinessData() // <-- ADD THIS
+                        // ❌ REMOVE THIS: await syncWeight()
+                        
+                        // ✅ KEEP THIS: Fetch readiness data
+                        await healthManager.fetchReadinessData()
                     }
                     
-                    // Also run the training load fill logic
+                    // Keep training load fill logic
                     TrainingLoadManager.shared.fillMissingDays()
                 }
             }

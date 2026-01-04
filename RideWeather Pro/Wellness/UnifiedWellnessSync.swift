@@ -98,40 +98,18 @@ class UnifiedWellnessSync: ObservableObject {
         do {
             switch config.wellnessSource {
             case .garmin:
-                print("\n🟢 Garmin wellness sync selected")
-                print("   Checking authentication...")
-                
-                guard garminService.isAuthenticated else {
-                    let msg = "❌ Garmin selected but not authenticated"
-                    print(msg)
-                    syncStatus = "Garmin selected but not connected."
-                    return
-                }
-                
-                print("   ✅ Garmin authenticated")
-                print("   User ID: \(appUserId)")
-                
-                syncStatus = "Syncing wellness from Garmin..."
                 try await syncGarminWellnessFromSupabase(userId: appUserId)
                 
+                // ✅ UPDATE WEIGHT from Garmin data
+                await updateWeightFromLatestMetrics()
+                
             case .appleHealth:
-                print("\n🟢 Apple Health wellness sync selected")
-                print("   Checking authorization...")
-                
-                guard healthManager.isAuthorized else {
-                    let msg = "❌ Apple Health permissions missing"
-                    print(msg)
-                    syncStatus = "Apple Health permissions missing."
-                    return
-                }
-                
-                print("   ✅ Apple Health authorized")
-                syncStatus = "Syncing wellness from Apple Health..."
                 try await syncAppleHealthWellness()
                 
+                // ✅ UPDATE WEIGHT from Apple Health data
+                await updateWeightFromLatestMetrics()
+                
             case .none:
-                print("\n⚪️ Wellness sync disabled in settings")
-                syncStatus = "Wellness sync disabled."
                 return
             }
             
@@ -149,6 +127,25 @@ class UnifiedWellnessSync: ObservableObject {
             if let wellnessError = error as? WellnessError {
                 print("   Type: WellnessError")
                 print("   Details: \(wellnessError)")
+            }
+        }
+    }
+    
+    // ✅ ADD NEW METHOD to update app weight from synced metrics
+    private func updateWeightFromLatestMetrics() async {
+        await MainActor.run {
+            // Get the most recent weight from wellness metrics
+            if let latestWeight = WellnessManager.shared.dailyMetrics
+                .sorted(by: { $0.date > $1.date })
+                .first(where: { $0.bodyMass != nil })?.bodyMass {
+                
+                // Update the app settings
+                let settings = UserDefaultsManager.shared.loadSettings()
+                var updatedSettings = settings
+                updatedSettings.bodyWeight = latestWeight
+                UserDefaultsManager.shared.saveSettings(updatedSettings)
+                
+                print("✅ Updated weight from wellness metrics: \(latestWeight) kg")
             }
         }
     }

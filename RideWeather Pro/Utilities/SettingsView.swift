@@ -71,9 +71,14 @@ struct SettingsView: View {
                 )
             }
             .onReceive(NotificationCenter.default.publisher(for: .wellnessDataUpdated)) { _ in
-                if viewModel.settings.weightSource == .garmin {
-                    syncWeightFromCurrentSource()
-                }
+                // ✅ ONLY update weight display, don't sync
+                // The weight is already in the wellness data that was just synced
+                lastRefresh = Date()
+                
+                // ❌ REMOVE THIS:
+                // if viewModel.settings.weightSource == .garmin {
+                //     syncWeightFromCurrentSource()
+                // }
             }
             .confirmationDialog("Configure Data Sources?", isPresented: $showingFirstLaunchConfig) {
                 Button("Apply Recommended Settings") { applyFirstLaunchConfig() }
@@ -1075,9 +1080,48 @@ struct IntegrationsSettingsView: View {
                              Text("Connect with Wahoo")
                          }
                      }
-                 }
-                 if let error = wahooService.errorMessage {
-                     Text(error).font(.caption).foregroundStyle(.red)
+                     
+                     // Show error if present
+                     if let error = wahooService.errorMessage {
+                         if error.contains("Too many active tokens") {
+                             // Special UI for token limit error
+                             VStack(alignment: .leading, spacing: 12) {
+                                 HStack {
+                                     Image(systemName: "exclamationmark.triangle.fill")
+                                         .foregroundColor(.orange)
+                                     Text("Token Limit Reached")
+                                         .font(.headline)
+                                         .foregroundColor(.orange)
+                                 }
+                                 
+                                 Text("Wahoo limits apps to 10 tokens per user. This happens when authentication attempts fail repeatedly.")
+                                     .font(.subheadline)
+                                     .fixedSize(horizontal: false, vertical: true)
+                                 
+                                 VStack(alignment: .leading, spacing: 6) {
+                                     Text("To resolve:")
+                                         .font(.subheadline)
+                                         .fontWeight(.semibold)
+                                     
+                                     Text("• Visit developers.wahooligan.com/applications")
+                                     Text("• Find your app and check for a 'Tokens' or 'Users' section")
+                                     Text("• Revoke tokens for your test account")
+                                     Text("• Or email wahooapi@wahoofitness.com for help")
+                                 }
+                                 .font(.caption)
+                                 .padding(.leading, 8)
+                             }
+                             .padding()
+                             .background(Color.orange.opacity(0.1))
+                             .cornerRadius(8)
+                         } else {
+                             // Generic error display
+                             Text(error)
+                                 .font(.caption)
+                                 .foregroundStyle(.red)
+                                 .padding(.vertical, 4)
+                         }
+                     }
                  }
              } header: {
                  Text("Wahoo")

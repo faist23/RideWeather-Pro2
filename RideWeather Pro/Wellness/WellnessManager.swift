@@ -17,9 +17,7 @@ class WellnessManager: ObservableObject {
     @Published var currentSummary: WellnessSummary?
     @Published var lastSyncDate: Date?
     
-    private let userDefaults = UserDefaults.standard
-    private let metricsKey = "wellnessMetrics"
-    private let syncDateKey = "wellnessLastSync"
+    private let storage = WellnessStorage.shared
     
     private init() {
         loadMetrics()
@@ -195,38 +193,33 @@ class WellnessManager: ObservableObject {
     // MARK: - Persistence
     
     private func saveMetrics() {
-        if let encoded = try? JSONEncoder().encode(dailyMetrics) {
-            userDefaults.set(encoded, forKey: metricsKey)
-        }
+        storage.saveMetrics(dailyMetrics)
     }
     
     private func loadMetrics() {
-        if let data = userDefaults.data(forKey: metricsKey),
-           let decoded = try? JSONDecoder().decode([DailyWellnessMetrics].self, from: data) {
-            dailyMetrics = decoded
-            updateSummary()
-        }
+        dailyMetrics = storage.loadMetrics()
+        updateSummary()
     }
     
     private func saveSyncDate() {
         if let date = lastSyncDate {
-            userDefaults.set(date, forKey: syncDateKey)
+            storage.saveSyncDate(date)
         }
     }
     
     private func loadSyncDate() {
-        lastSyncDate = userDefaults.object(forKey: syncDateKey) as? Date
+        lastSyncDate = storage.loadSyncDate()
     }
     
     func clearAll() {
         dailyMetrics = []
         currentSummary = nil
         lastSyncDate = nil
-        userDefaults.removeObject(forKey: metricsKey)
-        userDefaults.removeObject(forKey: syncDateKey)
-
-        userDefaults.removeObject(forKey: "lastWellnessSyncDate")
-                
+        storage.clearAll()
+        
+        // Clean up any remaining UserDefaults keys
+        UserDefaults.standard.removeObject(forKey: "lastWellnessSyncDate")
+        
         print("🗑️ Wellness: Cleared all data")
     }
     
@@ -234,11 +227,8 @@ class WellnessManager: ObservableObject {
     
     func getStorageInfo() -> String {
         let count = dailyMetrics.count
-        if let data = try? JSONEncoder().encode(dailyMetrics) {
-            let kb = Double(data.count) / 1024.0
-            return "\(count) days (\(String(format: "%.1f", kb)) KB)"
-        }
-        return "\(count) days"
+        let size = storage.getStorageSizeFormatted()
+        return "\(count) days (\(size))"
     }
 }
 
