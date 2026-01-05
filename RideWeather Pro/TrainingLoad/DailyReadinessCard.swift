@@ -10,6 +10,7 @@ import SwiftUI
 
 struct DailyReadinessCard: View {
     let readiness: PhysiologicalReadiness
+    @ObservedObject private var wellnessManager = WellnessManager.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -18,6 +19,9 @@ struct DailyReadinessCard: View {
                     .font(.headline)
                 
                 Spacer()
+                
+                // NEW: Data source indicator
+                dataSourceBadge
                 
                 Text("\(readiness.readinessScore)%")
                     .font(.title2.weight(.bold))
@@ -62,6 +66,41 @@ struct DailyReadinessCard: View {
         .background(Color(.systemBackground))
         .cornerRadius(16)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+    
+    // NEW: Show where the data is coming from
+    private var dataSourceBadge: some View {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        // Check if today's data came from Garmin
+        let hasGarminData = wellnessManager.dailyMetrics.contains {
+            calendar.isDate($0.date, inSameDayAs: today)
+        }
+        
+        let config = DataSourceManager.shared.configuration
+        let isUsingGarmin = config.wellnessSource == .garmin
+        
+        return HStack(spacing: 4) {
+            if isUsingGarmin && hasGarminData {
+                Image(systemName: "heart.circle.fill")
+                    .font(.caption)
+                Text("Garmin")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+            } else {
+                Image(systemName: "applelogo")
+                    .font(.caption)
+                Text("Health")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+            }
+        }
+        .foregroundColor(isUsingGarmin && hasGarminData ? .red : .gray)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
     }
     
     private var readinessColor: Color {

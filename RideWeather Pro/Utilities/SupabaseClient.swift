@@ -276,35 +276,66 @@ class WellnessDataService {
 
     func fetchDailySummaries(forUser userId: String, garminUserId: String? = nil, days: Int = 7) async throws -> [DailySummary] {
         print("\n📊 Fetching daily summaries...")
-        let rows = try await fetchWellnessData(forUser: userId, garminUserId: garminUserId, dataType: "dailies", daysBack: days)
         
-        print("   Processing \(rows.count) daily summary rows...")
+        // Garmin webhook pushes activity summaries as "activities", not "dailies"
+        // We need to aggregate activity data to create daily summaries
+        let rows = try await fetchWellnessData(forUser: userId, garminUserId: garminUserId, dataType: "activities", daysBack: days)
         
-        let summaries = rows.compactMap { row -> DailySummary? in
+        print("   Processing \(rows.count) activity rows into daily summaries...")
+        
+        // Group activities by date and aggregate
+        let calendar = Calendar.current
+        var summariesByDate: [String: DailySummary] = [:]
+        
+        for row in rows {
             guard let dict = row.data.dictionary else {
                 print("   ⚠️ Row \(row.id): Failed to parse data dictionary")
-                return nil
+                continue
             }
             
-            // Log what we found
-            if let date = row.calendarDate {
-                print("   ✅ \(date): steps=\(dict["steps"] as? Int ?? 0), calories=\(dict["activeKilocalories"] as? Int ?? 0)")
+            // Get calendar date from activity
+            let date: String
+            if let calDate = row.calendarDate {
+                date = calDate
+            } else if let startTime = dict["startTimeInSeconds"] as? Int {
+                let activityDate = Date(timeIntervalSince1970: TimeInterval(startTime))
+                let formatter = DateFormatter()
+                formatter.dateFormat = "yyyy-MM-dd"
+                date = formatter.string(from: activityDate)
+            } else {
+                continue
             }
             
-            return DailySummary(
-                id: row.id,
-                calendarDate: row.calendarDate ?? "",
-                steps: dict["steps"] as? Int,
-                activeKilocalories: dict["activeKilocalories"] as? Int,
-                distanceInMeters: dict["distanceInMeters"] as? Double,
-                durationInSeconds: dict["durationInSeconds"] as? Int,
-                averageHeartRate: dict["averageHeartRateInBeatsPerMinute"] as? Int,
-                restingHeartRate: dict["restingHeartRateInBeatsPerMinute"] as? Int,
+            // Aggregate data by date
+            var summary = summariesByDate[date] ?? DailySummary(
+                id: UUID(),
+                calendarDate: date,
+                steps: nil,
+                activeKilocalories: nil,
+                distanceInMeters: nil,
+                durationInSeconds: nil,
+                averageHeartRate: nil,
+                restingHeartRate: nil,
                 syncedAt: row.syncedAt
             )
+            
+            // Accumulate values
+            if let calories = dict["activeKilocalories"] as? Int {
+                summary.activeKilocalories = (summary.activeKilocalories ?? 0) + calories
+            }
+            if let distance = dict["distanceInMeters"] as? Double {
+                summary.distanceInMeters = (summary.distanceInMeters ?? 0) + distance
+            }
+            if let duration = dict["durationInSeconds"] as? Int {
+                summary.durationInSeconds = (summary.durationInSeconds ?? 0) + duration
+            }
+            
+            summariesByDate[date] = summary
         }
         
-        print("   Parsed \(summaries.count) valid summaries")
+        let summaries = Array(summariesByDate.values).sorted { $0.calendarDate > $1.calendarDate }
+        print("   Created \(summaries.count) daily summaries from activities")
+        
         return summaries
     }
 
@@ -462,9 +493,9 @@ struct DailySummary: Identifiable {
     let id: UUID
     let calendarDate: String
     let steps: Int?
-    let activeKilocalories: Int?
-    let distanceInMeters: Double?
-    let durationInSeconds: Int?
+    var activeKilocalories: Int?
+    var distanceInMeters: Double?
+    var durationInSeconds: Int?
     let averageHeartRate: Int?
     let restingHeartRate: Int?
     let syncedAt: Date
