@@ -605,25 +605,32 @@ extension AIInsightsManager {
             prompt += "\n- Average active calories: \(Int(avgActiveCalories)) kcal/day"
             
             // Add yesterday's specific data for context
-            if let yesterday = wellnessMetrics.last {
+            // Add yesterday's specific data for context
+            let calendar = Calendar.current
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: Date())!
+            let yesterdayData = wellnessMetrics
+                .filter { calendar.isDate($0.date, inSameDayAs: yesterday) }
+                .first
+            
+            if let yesterdayData = yesterdayData {
                 prompt += "\n\nYesterday's Activity:"
-                if let steps = yesterday.steps {
+                if let steps = yesterdayData.steps {
                     prompt += "\n- Steps: \(steps)"
                 }
-                if let sleep = yesterday.totalSleep {
+                if let sleep = yesterdayData.totalSleep {
                     prompt += "\n- Sleep: \(String(format: "%.1f", sleep / 3600))h"
                 }
                 // Only include sleep stages if available (not all devices track this)
-                let hasStageData = yesterday.sleepDeep != nil || yesterday.sleepREM != nil || yesterday.sleepCore != nil
+                let hasStageData = yesterdayData.sleepDeep != nil || yesterdayData.sleepREM != nil || yesterdayData.sleepCore != nil
                 if hasStageData {
                     var stages: [String] = []
-                    if let deep = yesterday.sleepDeep {
+                    if let deep = yesterdayData.sleepDeep {
                         stages.append("\(String(format: "%.1f", deep / 3600))h deep")
                     }
-                    if let rem = yesterday.sleepREM {
+                    if let rem = yesterdayData.sleepREM {
                         stages.append("\(String(format: "%.1f", rem / 3600))h REM")
                     }
-                    if let core = yesterday.sleepCore {
+                    if let core = yesterdayData.sleepCore {
                         stages.append("\(String(format: "%.1f", core / 3600))h core")
                     }
                     if !stages.isEmpty {

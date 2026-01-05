@@ -159,6 +159,17 @@ struct TrainingLoadView: View {
                         // Key Metrics
                         MetricsGrid(summary: summary)
                         
+                        // Wellness Trends Chart
+                        if !wellnessManager.dailyMetrics.isEmpty {
+                            WellnessTrendChart(
+                                metrics: wellnessManager.dailyMetrics
+                            )
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .move(edge: .bottom)),
+                                removal: .opacity
+                            ))
+                        }
+                        
                     } else {
                         // Empty states
                         if !healthManager.isAuthorized && !stravaService.isAuthenticated && !garminService.isAuthenticated {
