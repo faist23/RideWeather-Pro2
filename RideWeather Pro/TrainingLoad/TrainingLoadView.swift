@@ -553,7 +553,7 @@ struct DataSourceHeader: View {
         } else {
             Image(systemName: iconName)
                 .font(.system(size: 18))
-                .foregroundColor(isWellness ? .red : .blue)
+                .foregroundColor(isWellness ? .red : .red) //is not wellness was .blue
         }
     }
 }
