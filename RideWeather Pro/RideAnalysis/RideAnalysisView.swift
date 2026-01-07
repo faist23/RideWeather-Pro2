@@ -1030,18 +1030,18 @@ struct PowerAllocationCard: View {
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
     
-    private func efficiencyColor(_ efficiency: Double) -> Color {
+/*    private func efficiencyColor(_ efficiency: Double) -> Color {
         if efficiency >= 90 { return .green }
         if efficiency >= 75 { return .blue }
         if efficiency >= 60 { return .orange }
         return .red
-    }
+    }*/
     
-    private func formatTimeSaved(_ seconds: TimeInterval) -> String {
+/*    private func formatTimeSaved(_ seconds: TimeInterval) -> String {
         let mins = Int(seconds) / 60
         let secs = Int(seconds) % 60
         return "\(mins):\(String(format: "%02d", secs))"
-    }
+    }*/
 }
 
 struct PowerBreakdownBar: View {
@@ -2201,9 +2201,9 @@ class RideAnalysisViewModel: ObservableObject {
         loadHistory()
     }
     
-    func getTrendData() -> [TrendDataPoint] {
+/*    func getTrendData() -> [TrendDataPoint] {
         return storage.getAnalysisTrend(limit: 10)
-    }
+    }*/
     
     func exportCSV(_ analysis: RideAnalysis) {
         let csv = analysis.exportToCSV()
@@ -2217,11 +2217,11 @@ class RideAnalysisViewModel: ObservableObject {
         shareItem = ShareItem(url: url)
     }
     
-    func exportAllHistory() {
+/*    func exportAllHistory() {
         let csv = storage.exportAllToCSV()
         let url = saveToTempFile(text: csv, filename: "all-rides-\(Date().timeIntervalSince1970).csv")
         shareItem = ShareItem(url: url)
-    }
+    }*/
     
     private func saveToTempFile(text: String, filename: String) -> URL {
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)

@@ -26,7 +26,7 @@ class WellnessManager: ObservableObject {
     
     // MARK: - Data Management
     
-    func updateMetrics(_ metrics: DailyWellnessMetrics) {
+/*    func updateMetrics(_ metrics: DailyWellnessMetrics) {
         let calendar = Calendar.current
         
         // Remove existing entry for this day if present
@@ -44,7 +44,7 @@ class WellnessManager: ObservableObject {
         
         saveMetrics()
         updateSummary()
-    }
+    }*/
     
     func updateBulkMetrics(_ metrics: [DailyWellnessMetrics]) {
         for metric in metrics {
@@ -74,7 +74,7 @@ class WellnessManager: ObservableObject {
     
     // MARK: - Sync
     
-    func syncFromHealthKit(healthManager: HealthKitManager, days: Int = 7) async {
+/*    func syncFromHealthKit(healthManager: HealthKitManager, days: Int = 7) async {
         let calendar = Calendar.current
         let endDate = calendar.startOfDay(for: Date())
         guard let startDate = calendar.date(byAdding: .day, value: -days, to: endDate) else { return }
@@ -95,19 +95,19 @@ class WellnessManager: ObservableObject {
             saveSyncDate()
             print("🏥 Wellness: Synced \(metrics.count) days")
         }
-    }
+    }*/
     
-    var needsSync: Bool {
+/*    var needsSync: Bool {
         guard let lastSync = lastSyncDate else { return true }
         return Date().timeIntervalSince(lastSync) > 3600 // 1 hour
-    }
+    }*/
     
     // MARK: - Insights
     
-    func getWellnessInsights() -> [WellnessInsight] {
+/*    func getWellnessInsights() -> [WellnessInsight] {
         guard let summary = currentSummary else { return [] }
         return summary.generateInsights()
-    }
+    }*/
     
     /// Combined insights with training load context
     func getCombinedInsights(trainingLoadSummary: TrainingLoadSummary?) -> [CombinedInsight] {
@@ -201,11 +201,11 @@ class WellnessManager: ObservableObject {
         updateSummary()
     }
     
-    private func saveSyncDate() {
+/*    private func saveSyncDate() {
         if let date = lastSyncDate {
             storage.saveSyncDate(date)
         }
-    }
+    }*/
     
     private func loadSyncDate() {
         lastSyncDate = storage.loadSyncDate()

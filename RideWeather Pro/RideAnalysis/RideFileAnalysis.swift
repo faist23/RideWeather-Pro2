@@ -1429,13 +1429,13 @@ class RideFileAnalyzer {
         case mixed = "Mixed Terrain"
     }
     
-    struct RideCharacteristics {
+/*    struct RideCharacteristics {
         let rideType: RideType
         let highPowerPercentage: Double
         let accelerationCount: Int
         let averageToNormalizedRatio: Double
         let stoppedTime: TimeInterval
-    }
+    }*/
     
     // MARK: - Power Calculations
     
@@ -2080,7 +2080,7 @@ class AnalysisStorageManager {
         }
     }
     
-    func getAnalysisTrend(limit: Int = 10) -> [TrendDataPoint] {
+/*    func getAnalysisTrend(limit: Int = 10) -> [TrendDataPoint] {
         let analyses = loadAllAnalyses().prefix(limit)
         return analyses.map { analysis in
             TrendDataPoint(
@@ -2090,9 +2090,9 @@ class AnalysisStorageManager {
                 consistency: analysis.consistencyScore
             )
         }.reversed()
-    }
+    }*/
     
-    func exportAllToCSV() -> String {
+/*    func exportAllToCSV() -> String {
         let analyses = loadAllAnalyses()
         var csv = "Date,Ride Name,Duration,Distance(km),Avg Power,NP,IF,TSS,VI,Consistency,Performance Score\n"
         
@@ -2111,16 +2111,16 @@ class AnalysisStorageManager {
         }
         
         return csv
-    }
+    }*/
 }
 
-struct TrendDataPoint: Identifiable {
+/*struct TrendDataPoint: Identifiable {
     let id = UUID()
     let date: Date
     let performanceScore: Double
     let tss: Double
     let consistency: Double
-}
+}*/
 
 // MARK: - Terrain-Aware Analysis Models
 

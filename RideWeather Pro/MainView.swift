@@ -11,7 +11,7 @@ import CoreLocation
 struct MainView: View {
     @StateObject private var viewModel = WeatherViewModel()
     // OBSERVE THE DATA SOURCE MANAGER
-    @ObservedObject private var dataSourceManager = DataSourceManager.shared
+//    @ObservedObject private var dataSourceManager = DataSourceManager.shared
     
     @State private var selectedTab = 0
     @State private var lastLiveWeatherTap = Date()
@@ -135,10 +135,10 @@ struct MainView: View {
     }
 }
 
-// SUBVIEW FOR THE BADGE
+/*// SUBVIEW FOR THE BADGE
 struct DataSourceBadge: View {
     let source: DataSourceConfiguration.TrainingLoadSource
-    
+
     var body: some View {
         HStack(spacing: 6) {
             // Icon
@@ -167,4 +167,4 @@ struct DataSourceBadge: View {
         )
         .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
     }
-}
+}*/

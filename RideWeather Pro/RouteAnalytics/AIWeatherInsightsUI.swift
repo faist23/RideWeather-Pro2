@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-// MARK: - Compact Card for Dashboard
+/*// MARK: - Compact Card for Dashboard
 
 struct AIInsightsCompactCard: View {
     let insights: WeatherPacingInsightResult
@@ -124,7 +124,7 @@ struct AIInsightsCompactCard: View {
             $0.impactLevel == .high || $0.impactLevel == .critical
         }.count + insights.criticalSegments.filter { $0.severity >= 7 }.count
     }
-}
+}*/
 
 struct CompactStatBadge: View {
     let value: String
@@ -447,7 +447,7 @@ struct StrategicGuidanceCard: View {
     }
 }
 
-// MARK: - Preview Helper
+/*// MARK: - Preview Helper
 
 #if DEBUG
 struct AIWeatherInsightsUI_Previews: PreviewProvider {
@@ -499,3 +499,4 @@ struct AIWeatherInsightsUI_Previews: PreviewProvider {
     }
 }
 #endif
+*/

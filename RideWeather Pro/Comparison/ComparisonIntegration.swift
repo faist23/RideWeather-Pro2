@@ -10,7 +10,7 @@ import Charts
 
 // Add Comparison Card to Analysis Results
 
-struct ComparisonPromptCard: View {
+/*struct ComparisonPromptCard: View {
     let analysis: RideAnalysis
     let onCompare: () -> Void
     
@@ -48,12 +48,12 @@ struct ComparisonPromptCard: View {
         .cornerRadius(16)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
-}
+}*/
 
 
 // MARK: - 5. Updated ComparisonSelectionViewModel
 
-@MainActor
+/*@MainActor
 class ComparisonSelectionViewModelComplete: ObservableObject {
     @Published var availablePlans: [StoredPacingPlan] = []
     @Published var isLoading = false
@@ -93,11 +93,11 @@ class ComparisonSelectionViewModelComplete: ObservableObject {
         
         comparisonResult = comparison
     }
-}
+}*/
 
 // Comparison History View
 
-struct ComparisonHistoryView: View {
+/*struct ComparisonHistoryView: View {
     @StateObject private var viewModel = ComparisonHistoryViewModel()
     @Environment(\.dismiss) private var dismiss
     
@@ -149,9 +149,9 @@ struct ComparisonHistoryView: View {
             viewModel.loadComparisons()
         }
     }
-}
+}*/
 
-struct ComparisonHistoryRow: View {
+/*struct ComparisonHistoryRow: View {
     let comparison: PacingPlanComparison
     
     var body: some View {
@@ -218,9 +218,9 @@ struct ComparisonHistoryRow: View {
             return "\(minutes)min"
         }
     }
-}
+}*/
 
-@MainActor
+/*@MainActor
 class ComparisonHistoryViewModel: ObservableObject {
     @Published var comparisons: [PacingPlanComparison] = []
     @Published var selectedComparison: PacingPlanComparison?
@@ -237,11 +237,11 @@ class ComparisonHistoryViewModel: ObservableObject {
         }
         loadComparisons()
     }
-}
+}*/
 
 // MARK: - 8. Quick Comparison from Ride History
 
-extension RideHistoryView {
+/*extension RideHistoryView {
     
     // Add this to your existing RideHistoryView
     func addComparisonButton() {
@@ -257,11 +257,11 @@ extension RideHistoryView {
         }
         */
     }
-}
+}*/
 
 // MARK: - 9. Automatic Matching (Smart Feature)
 
-class SmartComparisonMatcher {
+/*class SmartComparisonMatcher {
     
     /// Automatically find the best matching plan for a ride
     func findBestMatch(
@@ -272,15 +272,15 @@ class SmartComparisonMatcher {
         let matcher = SmartPlanMatcher()
         return matcher.findBestMatch(for: analysis, from: plans)
     }
-}
+}*/
 
 
 // MARK: - 10. Notification Integration
 
-extension ComparisonSelectionViewModel {
+/*extension ComparisonSelectionViewModel {
     
     // Auto-suggest comparison after ride import
-    func checkForAutoComparison(analysis: RideAnalysis) {
+/*    func checkForAutoComparison(analysis: RideAnalysis) {
         let plans = controller.loadSavedPlans()
         let matcher = SmartComparisonMatcher()
         
@@ -288,7 +288,7 @@ extension ComparisonSelectionViewModel {
             // Show notification/banner
             showComparisonSuggestion(plan: matchedPlan, analysis: analysis)
         }
-    }
+    }*/
     
     private func showComparisonSuggestion(plan: StoredPacingPlan, analysis: RideAnalysis) {
         // Post notification or show banner
@@ -297,11 +297,11 @@ extension ComparisonSelectionViewModel {
             object: ["plan": plan, "analysis": analysis]
         )
     }
-}
+}*/
 
 // MARK: - 11. Widget/Summary Card
 
-struct QuickComparisonSummaryCard: View {
+/*struct QuickComparisonSummaryCard: View {
     let comparison: PacingPlanComparison
     
     var body: some View {
@@ -364,11 +364,11 @@ struct QuickComparisonSummaryCard: View {
         let secs = Int(seconds) % 60
         return minutes > 0 ? "\(minutes)m \(secs)s" : "\(secs)s"
     }
-}
+}*/
 
 // MARK: - 12. Analytics & Trends
 
-struct ComparisonTrendsView: View {
+/*struct ComparisonTrendsView: View {
     let comparisons: [PacingPlanComparison]
     
     var body: some View {
@@ -437,7 +437,7 @@ struct ComparisonTrendsView: View {
         case .f: return 1.0
         }
     }
-}
+}*/
 
 struct StatBox: View {
     let label: String

@@ -95,9 +95,9 @@ class WellnessStorage {
         return UserDefaults.standard.object(forKey: legacySyncDateKey) as? Date
     }
     
-    func saveSyncDate(_ date: Date) {
+/*    func saveSyncDate(_ date: Date) {
         UserDefaults.standard.set(date, forKey: legacySyncDateKey)
-    }
+    }*/
     
     // MARK: - Migration
     

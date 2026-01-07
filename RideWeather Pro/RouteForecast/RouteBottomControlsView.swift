@@ -5,7 +5,7 @@
 import SwiftUI
 import CoreLocation
 
-struct ModernRouteBottomControlsView: View {
+/*struct ModernRouteBottomControlsView: View {
     @State private var showingStravaImport = false
     @State private var showingWahooImport = false
     @EnvironmentObject var viewModel: WeatherViewModel
@@ -354,4 +354,4 @@ struct ModernRouteBottomControlsView: View {
         formatter.dateFormat = "h:mm a"
         return formatter.string(from: viewModel.rideDate)
     }
-}
+}*/
