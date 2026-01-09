@@ -490,7 +490,7 @@ class TrainingLoadManager {
         
         print("===============================\n")
     }
-
+    
     func getProjectedLoads(for days: Int) -> [DailyTrainingLoad] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -542,6 +542,47 @@ class TrainingLoadManager {
         }
         
         return projectedLoads
+    }
+    
+    // MARK: - Readiness Calculation
+    
+    /// Returns a recommended intensity multiplier (0.85 to 1.0) based on TSB and Wellness.
+    /// Uses data from WellnessManager if available.
+    func getCurrentReadinessFactor() -> Double {
+        // 1. Base factor on Training Stress Balance (TSB)
+        // Default to 1.0 (Fresh) if no data
+        var factor = 1.0
+        
+        if let summary = getCurrentSummary() {
+            let tsb = summary.currentTSB
+            
+            if tsb < -30 {
+                print("⚠️ Training Load: Severe fatigue (TSB \(Int(tsb))). Starting at 90%.")
+                factor = 0.90
+            } else if tsb < -10 {
+                print("⚠️ Training Load: Moderate fatigue (TSB \(Int(tsb))). Starting at 95%.")
+                factor = 0.95
+            }
+        }
+        
+        // 2. Adjust based on Wellness Data (Sleep)
+        // We access the singleton directly to pull the latest synced health data
+        if let wellness = WellnessManager.shared.currentSummary {
+            // Penalize for Sleep Debt > 4 hours
+            if let sleepDebt = wellness.sleepDebt, sleepDebt < -4 {
+                print("⚠️ Training Load: High sleep debt (\(Int(sleepDebt))h). reducing -3%.")
+                factor -= 0.03
+            }
+            
+            // Penalize for very poor recent sleep average (< 5h)
+            if let avgSleep = wellness.averageSleepHours, avgSleep < 5.0 {
+                print("⚠️ Training Load: Poor sleep avg (\(String(format: "%.1f", avgSleep))h). reducing -2%.")
+                factor -= 0.02
+            }
+        }
+        
+        // Cap the reduction to prevent creating an impossibly slow plan (floor 85%)
+        return max(0.85, factor)
     }
 }
 

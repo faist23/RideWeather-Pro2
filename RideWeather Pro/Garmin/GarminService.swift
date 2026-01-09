@@ -33,7 +33,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     private var webAuthSession: ASWebAuthenticationSession?
     private var currentPkceVerifier: String?
     
-/*    private */var currentTokens: GarminTokens? {
+    /*    private */var currentTokens: GarminTokens? {
         didSet {
             isAuthenticated = currentTokens != nil
             saveTokensToKeychain()
@@ -103,7 +103,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             URLQueryItem(name: "code_challenge", value: pkce.challenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "scope", value: "HEALTH_READ ACTIVITY_READ")
-       ]
+        ]
         
         guard let authURL = components.url else { return }
         
@@ -233,7 +233,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                         print("GarminService: ⚠️ Failed to link to Supabase: \(error.localizedDescription)")
                         // Don't fail the whole auth flow if Supabase linking fails
                     }
-
+                    
                 } catch {
                     print("GarminService: Token decoding error: \(error)")
                     self.errorMessage = "Token exchange failed. Please try again."
@@ -371,7 +371,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     }
     
     // MARK: - Supabase Integration (Add this section to GarminService.swift)
-
+    
     /// Link the Garmin user to your app user in Supabase after successful OAuth
     func linkToSupabase(appUserId: String) async throws {
         // Get the Garmin user ID from the wellness API
@@ -387,7 +387,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         
         print("GarminService: ✅ Successfully linked to Supabase")
     }
-
+    
     /// Fetch the Garmin user ID from the wellness API
     private func fetchGarminUserId() async throws -> String? {
         try await refreshTokenIfNeededAsync()
@@ -421,12 +421,13 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         
         return nil
     }
-
+    
     func uploadCourse(
         routePoints: [EnhancedRoutePoint],
         courseName: String,
         pacingPlan: PacingPlan? = nil,
-        settings: AppSettings? = nil, 
+        fuelingStrategy: FuelingStrategy? = nil,
+        settings: AppSettings? = nil,
         activityType: String = "ROAD_CYCLING"
     ) async throws {
         try await refreshTokenIfNeededAsync()
@@ -505,7 +506,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             
             print("GarminService: Generated \(timeCheckpoints.count) time checkpoints")
         }
-
+        
         // Pre-calculate which point index should get each checkpoint
         // This ensures each checkpoint appears exactly once
         var checkpointAssignments: [Int: (distance: Double, time: Double)] = [:] // pointIndex -> checkpoint
@@ -525,12 +526,57 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             // Assign this checkpoint to the closest point
             checkpointAssignments[closestIndex] = checkpoint
         }
-
+        
         print("GarminService: Assigned \(checkpointAssignments.count) checkpoints to specific points")
-
+        
+        // 1. Calculate Fuel Checkpoints
+        var nutritionCheckpoints: [(distance: Double, label: String, type: String)] = []
+        
+        if let strategy = fuelingStrategy, let plan = pacingPlan {
+            for fuelPoint in strategy.schedule {
+                // Reuse the logic to find distance from time (re-implement helper locally or make shared)
+                let targetTimeSeconds = fuelPoint.timeMinutes * 60
+                let dist = calculateDistanceAtTime(targetTime: targetTimeSeconds, pacingPlan: plan)
+                
+                let label: String
+                let type: String
+                
+                switch fuelPoint.fuelType {
+                case .drink, .electrolytes:
+                    label = "DRINK"
+                    type = "WATER" // Garmin API specific type
+                default:
+                    let amountStr = fuelPoint.amount.components(separatedBy: " ").first ?? ""
+                    label = "EAT \(amountStr)"
+                    type = "FOOD" // Garmin API specific type
+                }
+                
+                nutritionCheckpoints.append((dist, label, type))
+            }
+            print("GarminService: Generated \(nutritionCheckpoints.count) nutrition checkpoints")
+        }
+        
+        // 2. Pre-assign checkpoints to point indices (just like time checkpoints)
+        var nutritionAssignments: [Int: (label: String, type: String)] = [:]
+        
+        for checkpoint in nutritionCheckpoints {
+            // Find closest point index in optimizedPoints (not routePoints, to match what's uploaded)
+            var closestIndex = 0
+            var closestDistance = Double.greatestFiniteMagnitude
+            
+            for (index, point) in optimizedPoints.enumerated() {
+                let diff = abs(point.distance - checkpoint.distance)
+                if diff < closestDistance {
+                    closestDistance = diff
+                    closestIndex = index
+                }
+            }
+            nutritionAssignments[closestIndex] = (checkpoint.label, checkpoint.type)
+        }
+        
         // Build geoPoints array with power targets AND time checkpoints
         var geoPointsArray: [[String: Any]] = []
-
+        
         for (index, point) in optimizedPoints.enumerated() {
             var geoPoint: [String: Any] = [
                 "latitude": point.coordinate.latitude,
@@ -544,8 +590,14 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             
             let pointDistance = point.distance
             
-            // PRIORITY 1: Check if this specific point was assigned a time checkpoint
-            if let checkpoint = checkpointAssignments[index] {
+            if let nutrition = nutritionAssignments[index] {
+                let coursePoint: [String: Any] = [
+                    "name": nutrition.label,
+                    "coursePointType": nutrition.type
+                ]
+                geoPoint["information"] = coursePoint
+            }
+            else if let checkpoint = checkpointAssignments[index] {
                 let hours = Int(checkpoint.time / 3600)
                 let minutes = Int((checkpoint.time.truncatingRemainder(dividingBy: 3600)) / 60)
                 let seconds = Int(checkpoint.time.truncatingRemainder(dividingBy: 60))
@@ -627,7 +679,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             }
             
             print("GarminService: Response status: \(httpResponse.statusCode)")
-                        
+            
             switch httpResponse.statusCode {
             case 200:
                 print("GarminService: ✅ Course created successfully!")
@@ -662,6 +714,21 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             print("GarminService: Network error: \(error.localizedDescription)")
             throw GarminError.networkError(error)
         }
+    }
+    
+    private func calculateDistanceAtTime(targetTime: Double, pacingPlan: PacingPlan) -> Double {
+        var currentTime: Double = 0
+        var currentDistance: Double = 0
+        for segment in pacingPlan.segments {
+            if currentTime + segment.estimatedTime >= targetTime {
+                let timeInSegment = targetTime - currentTime
+                let percentOfSegment = timeInSegment / segment.estimatedTime
+                return currentDistance + (segment.originalSegment.distanceMeters * percentOfSegment)
+            }
+            currentTime += segment.estimatedTime
+            currentDistance += segment.originalSegment.distanceMeters
+        }
+        return currentDistance
     }
     
     /// Calculates the elapsed time to reach a specific distance in the route
@@ -803,7 +870,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     }
     
     // MARK: - Helpers
-/*    private */func refreshTokenIfNeededAsync() async throws {
+    /*    private */func refreshTokenIfNeededAsync() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             refreshTokenIfNeeded { result in
                 continuation.resume(with: result)
@@ -868,7 +935,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: athleteNameKey]
         SecItemDelete(query as CFDictionary)
     }
- 
+    
     private func logAPIError(_ response: HTTPURLResponse, data: Data, context: String) {
         print("❌ GarminService Error - \(context)")
         print("   Status Code: \(response.statusCode)")
@@ -879,11 +946,11 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             print("   Headers: \(headers)")
         }
     }
-
+    
     // ==============================================================================
     // ADD this struct to handle Activity API response format
     // ==============================================================================
-
+    
     struct GarminActivityAPIResponse: Codable {
         let activityId: Int?
         let activityName: String?
@@ -1013,7 +1080,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         
         print("🏁 Testing complete!\n")
     }
-
+    
 }
 
 // MARK: - Data Models
@@ -1127,12 +1194,12 @@ extension GarminService {
         }
     }
     
-/*    func fetchCourses() async throws -> [GarminCourse] {
-        // Not available via OAuth - upload only
-        print("ℹ️ Garmin course listing not available via OAuth API")
-        return []
-
-    }*/
+    /*    func fetchCourses() async throws -> [GarminCourse] {
+     // Not available via OAuth - upload only
+     print("ℹ️ Garmin course listing not available via OAuth API")
+     return []
+     
+     }*/
     
     /// Fetch detailed course data including GPS points
     func fetchCourseDetails(courseId: Int) async throws -> [RoutePoint] {
@@ -1305,7 +1372,7 @@ extension GarminService {
         
         return summaries
     }
-        
+    
     /// Helper to convert Activity API response to our GarminActivitySummary format
     private func convertActivityAPIToSummary(_ activity: GarminActivityAPIResponse) -> GarminActivitySummary? {
         // Activity API returns activityId as Int
@@ -1761,24 +1828,3 @@ extension GarminService {
     }
 }
 
-/*
- // MARK: - Models
-struct GarminCourse: Identifiable, Codable {
-    let courseId: Int
-    let courseName: String
-    let distance: Double
-    let elevationGain: Double?
-    let elevationLoss: Double?
-    
-    var id: Int { courseId }
-    
-    enum CodingKeys: String, CodingKey {
-        case courseId
-        case courseName
-        case distance
-        case elevationGain
-        case elevationLoss
-    }
-}
-
-*/

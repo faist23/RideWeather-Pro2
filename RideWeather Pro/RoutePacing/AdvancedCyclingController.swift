@@ -40,7 +40,8 @@ final class AdvancedCyclingController: ObservableObject {
         strategy: PacingStrategy = .balanced,
         fuelingPreferences: FuelingPreferences = FuelingPreferences(),
         startTime: Date = Date().addingTimeInterval(7200), // 2 hours from now
-        routeName: String = "My Route"
+        routeName: String = "My Route",
+        readinessFactor: Double = 1.0
     ) async {
         
         isGeneratingPlan = true
@@ -52,7 +53,8 @@ final class AdvancedCyclingController: ObservableObject {
         let pacing = pacingEngine.generatePacingPlan(
             from: powerAnalysis,
             strategy: strategy,
-            startTime: startTime
+            startTime: startTime,
+            readinessFactor: readinessFactor
         )
         
         // Step 2: Calculate energy expenditure
@@ -80,7 +82,7 @@ final class AdvancedCyclingController: ObservableObject {
         
         isGeneratingPlan = false
     }
-       
+    
     // MARK: - Export Functions
     
     /// Export complete race plan as CSV
@@ -88,7 +90,7 @@ final class AdvancedCyclingController: ObservableObject {
         guard let energy = energyExpenditure else {
             return "Energy data not available"
         }
-
+        
         let headers = [
             "Segment", "Distance_km", "Gradient_%", "Target_Power_W", "Power_Zone",
             "Est_Time_min", "Calories", "Carbs_kcal", "Cumulative_Time_min",
@@ -127,7 +129,7 @@ final class AdvancedCyclingController: ObservableObject {
               let fueling = fuelingStrategy else {
             return "No race plan available"
         }
-
+        
         let formatter = DateFormatter()
         formatter.dateStyle = .full
         formatter.timeStyle = .short
@@ -280,12 +282,12 @@ final class AdvancedCyclingController: ObservableObject {
         ═══════════════════════════════════════════════
         """
         
-// temporary print statement
+        // temporary print statement
         print(summary)
-
+        
         return summary
     }
-
+    
     private func fuelIcon(for type: FuelType) -> String {
         switch type {
         case .gel: return "🟠"
@@ -325,9 +327,10 @@ extension AdvancedCyclingController {
         pacingPlan: PacingPlan,
         routePoints: [EnhancedRoutePoint],
         courseName: String? = nil,
-        includeRecordMessages: Bool = true // <-- ADD THIS
+        fuelingStrategy: FuelingStrategy? = nil,
+        includeRecordMessages: Bool = true
     ) throws -> Data? {
-                
+        
         let generator = GarminCourseFitGenerator()
         let name = courseName ?? "RideWeather Pro Course"
         
@@ -336,7 +339,8 @@ extension AdvancedCyclingController {
             pacingPlan: pacingPlan,
             courseName: name,
             settings: settings,
-            includeRecordMessages: includeRecordMessages // <-- PASS IT THROUGH
+            fuelingStrategy: fuelingStrategy,
+            includeRecordMessages: includeRecordMessages
         )
         
         return fitData

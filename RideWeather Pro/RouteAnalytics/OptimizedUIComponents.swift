@@ -11,9 +11,9 @@ import MapKit
 
 struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     @EnvironmentObject var viewModel: WeatherViewModel
-
+    
     @EnvironmentObject var weatherViewModel: WeatherViewModel
-
+    
     @State private var selectedDistance: Double? = nil
     @State private var analysisResult: ComprehensiveRouteAnalysis? = nil
     @State private var isAnalyzing = true
@@ -21,7 +21,7 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     @State private var lastScrubUpdate = Date()
     
     @State private var mapCameraPosition = MapCameraPosition.automatic
-
+    
     // MARK: - New State for Map Control
     @State private var displayedAnnotations: [RouteWeatherPoint] = []
     @State private var scrubbingMarkerCoordinate: CLLocationCoordinate2D? = nil
@@ -140,7 +140,7 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
     }
     
     // MARK: - Content View
-
+    
     private func analysisContentView(_ analysis: ComprehensiveRouteAnalysis) -> some View {
         VStack(spacing: 0) {
             ZStack(alignment: .bottomTrailing) {
@@ -178,12 +178,12 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
             ScrollView {
                 LazyVStack(spacing: 20) {
                     RouteInfoCardView(viewModel: viewModel)
-
+                    
                     // Allows users to quickly check if their start time works with daylight
                     SunTimesRow(daylight: analysis.daylightAnalysis)
                     
                     RouteSummaryCard.forForecast(viewModel: viewModel)
-
+                    
                     OptimizedOverallScoreCard(analysis: analysis, settings: viewModel.settings)
                     
                     if let powerResult = analysis.powerAnalysis {
@@ -205,7 +205,11 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
                         OptimizedRecommendationsSection(recommendations: analysis.unifiedRecommendations)
                     }
                     
-                    if !analysis.betterStartTimes.isEmpty {
+                    if !viewModel.optimalStartTimes.isEmpty {
+                        // Prioritize the new physics-based results
+                        OptimizedStartTimesSection(times: viewModel.optimalStartTimes)
+                    } else if !analysis.betterStartTimes.isEmpty {
+                        // Fallback to the old score-based results
                         OptimizedStartTimesSection(times: analysis.betterStartTimes)
                     }
                     
@@ -1025,7 +1029,7 @@ struct OptimizedPacingPlanTab: View {
                 ProcessingOverlay.generating(
                     "Pacing Plan",
                     subtitle: viewModel.pacingGenerationStatus.isEmpty ?
-                        "Analyzing route segments and power distribution" :
+                    "Analyzing route segments and power distribution" :
                         viewModel.pacingGenerationStatus
                 )
                 .zIndex(10)
@@ -1334,41 +1338,41 @@ struct DifficultyBadge: View {
 }
 
 /*struct PacingPlanLoadingCard: View {
-    var body: some View {
-        VStack(spacing: 16) {
-            HStack {
-                ProgressView()
-                    .controlSize(.regular)
-                    .tint(.white) // Changed for dark background
-                Text("Generating pacing plan...")
-                    .font(.headline)
-                    .foregroundStyle(.white) // Changed for dark background
-                Spacer()
-            }
-            
-            Text("Analyzing route segments and optimizing power distribution")
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.8)) // Changed for dark background
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(20)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(0.4),
-                    Color.black.opacity(0.3)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            ),
-            in: RoundedRectangle(cornerRadius: 16)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(.white.opacity(0.2), lineWidth: 1)
-        )
-    }
-}*/
+ var body: some View {
+ VStack(spacing: 16) {
+ HStack {
+ ProgressView()
+ .controlSize(.regular)
+ .tint(.white) // Changed for dark background
+ Text("Generating pacing plan...")
+ .font(.headline)
+ .foregroundStyle(.white) // Changed for dark background
+ Spacer()
+ }
+ 
+ Text("Analyzing route segments and optimizing power distribution")
+ .font(.subheadline)
+ .foregroundStyle(.white.opacity(0.8)) // Changed for dark background
+ .frame(maxWidth: .infinity, alignment: .leading)
+ }
+ .padding(20)
+ .background(
+ LinearGradient(
+ colors: [
+ Color.black.opacity(0.4),
+ Color.black.opacity(0.3)
+ ],
+ startPoint: .leading,
+ endPoint: .trailing
+ ),
+ in: RoundedRectangle(cornerRadius: 16)
+ )
+ .overlay(
+ RoundedRectangle(cornerRadius: 16)
+ .stroke(.white.opacity(0.2), lineWidth: 1)
+ )
+ }
+ }*/
 
 
 // MARK: - Optimized Export Tab
@@ -1687,8 +1691,10 @@ struct UpdatedOptimizedExportTab: View {
         print("📱 UI: Pacing segments: \(pacingPlan.segments.count)")
         
         let courseName = generateCourseName()
-
+        
         print("📱 UI: Course name: \(courseName)")
+        
+        let fuelingStrategy = viewModel.advancedController?.fuelingStrategy
         
         do {
             print("📱 UI: Calling garminService.uploadCourse()...")
@@ -1697,7 +1703,8 @@ struct UpdatedOptimizedExportTab: View {
             try await garminService.uploadCourse(
                 routePoints: viewModel.enhancedRoutePoints,
                 courseName: courseName,
-                pacingPlan: pacingPlan, // Pass the pacing plan
+                pacingPlan: pacingPlan,
+                fuelingStrategy: fuelingStrategy,
                 settings: viewModel.settings,
                 activityType: "ROAD_CYCLING"
             )
@@ -1744,6 +1751,9 @@ struct UpdatedOptimizedExportTab: View {
         print("📱 UI: ✅ Prerequisites validated")
         print("📱 UI: Route points: \(viewModel.enhancedRoutePoints.count)")
         
+        // Retrieve the fueling strategy
+        let fuelingStrategy = viewModel.advancedController?.fuelingStrategy
+        
         do {
             let courseName = generateCourseName()
             
@@ -1753,7 +1763,8 @@ struct UpdatedOptimizedExportTab: View {
             let fitData = try controller.generateGarminCourseFIT(
                 pacingPlan: pacingPlan,
                 routePoints: viewModel.enhancedRoutePoints,
-                courseName: courseName
+                courseName: courseName,
+                fuelingStrategy: fuelingStrategy
             )
             
             guard let data = fitData else {

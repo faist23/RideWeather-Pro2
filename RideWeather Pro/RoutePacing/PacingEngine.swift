@@ -73,7 +73,7 @@ struct PacingPlan {
     var estimatedArrival: Date
     let summary: PacingSummary
     let ftp: Double
-
+    
     mutating func recalculateMetrics() {
         guard !segments.isEmpty else {
             self.normalizedPower = 0
@@ -82,23 +82,23 @@ struct PacingPlan {
             self.estimatedTSS = 0
             return
         }
-
+        
         // Expand segments into 1-second power samples for accuracy
         var samples: [Double] = []
         for segment in segments {
             let seconds = max(1, Int(segment.estimatedTime.rounded()))
             samples.append(contentsOf: Array(repeating: segment.targetPower, count: seconds))
         }
-
+        
         // --- Recalculate Average Power ---
         self.averagePower = samples.reduce(0, +) / Double(samples.count)
-
+        
         // --- Recalculate Normalized Power ---
         let windowSize = 30
         var rollingAverages: [Double] = []
         var windowSum: Double = 0
         var queue: [Double] = []
-
+        
         for powerSample in samples {
             queue.append(powerSample)
             windowSum += powerSample
@@ -107,12 +107,12 @@ struct PacingPlan {
             }
             rollingAverages.append(windowSum / Double(queue.count))
         }
-
+        
         let fourths = rollingAverages.map { pow($0, 4) }
         let meanOfFourths = fourths.reduce(0, +) / Double(fourths.count)
         let np = pow(meanOfFourths, 0.25)
         self.normalizedPower = np
-
+        
         // --- Recalculate IF and TSS ---
         if self.ftp > 0 {
             self.intensityFactor = np / self.ftp
@@ -130,17 +130,17 @@ struct PacingPlan {
         if percentage == 0 {
             return newPlan
         }
-
+        
         let multiplier = 1.0 + (percentage / 100.0)
         let powerZones = PowerZone.zones(for: newPlan.ftp)
-
+        
         for i in 0..<newPlan.segments.count {
             let powerBeforeTweak = newPlan.segments[i].targetPower
             let timeBeforeTweak = newPlan.segments[i].estimatedTime
-
+            
             let newTargetPower = powerBeforeTweak * multiplier
             newPlan.segments[i].targetPower = newTargetPower
-
+            
             let powerRatio = newTargetPower / powerBeforeTweak
             if powerRatio > 0.1 {
                 let timeAdjustment = pow(powerRatio, -1.0/3.0) // Physics approximation
@@ -151,13 +151,13 @@ struct PacingPlan {
                 newTargetPower <= $0.maxPower
             } ?? powerZones.last!
         }
-
+        
         newPlan.recalculateMetrics()
         
         let totalTimeSeconds = newPlan.segments.reduce(0.0) { $0 + $1.estimatedTime }
         newPlan.totalTimeMinutes = totalTimeSeconds / 60.0
         newPlan.estimatedArrival = newPlan.startTime.addingTimeInterval(totalTimeSeconds)
-
+        
         return newPlan
     }
 }
@@ -219,13 +219,15 @@ final class PacingEngine {
     func generatePacingPlan(
         from powerAnalysis: PowerRouteAnalysisResult,
         strategy: PacingStrategy = .balanced,
-        startTime: Date = Date()
+        startTime: Date = Date(),
+        readinessFactor: Double = 1.0
     ) -> PacingPlan {
         
         let segments = createPacedSegments(
             from: powerAnalysis.segments,
             strategy: strategy,
-            totalDistance: powerAnalysis.segments.reduce(0) { $0 + $1.distanceMeters }
+            totalDistance: powerAnalysis.segments.reduce(0) { $0 + $1.distanceMeters },
+            readinessFactor: readinessFactor
         )
         
         let totalTime = segments.reduce(0.0) { $0 + $1.estimatedTime }
@@ -266,8 +268,11 @@ final class PacingEngine {
     private func createPacedSegments(
         from segments: [PowerRouteSegment],
         strategy: PacingStrategy,
-        totalDistance: Double
+        totalDistance: Double,
+        readinessFactor: Double
     ) -> [PacedSegment] {
+        
+        print("🚴‍♂️ Creating paced segments with Readiness Factor: \(String(format: "%.2f", readinessFactor))")
         
         print("🚴‍♂️ Creating paced segments for \(segments.count) segments")
         print("📏 Total distance: \(String(format: "%.1f", totalDistance/1000))km")
@@ -296,7 +301,12 @@ final class PacingEngine {
                 cumulativeStress: cumulativeStress,
                 totalRideDurationHours: totalDurationHours
             )
-
+            
+            // --- KEY CHANGE: APPLY READINESS FACTOR HERE ---
+            // We apply it to the strategy power before we calculate in-ride fatigue.
+            // This effectively lowers the "ceiling" of the rider's capability for the day.
+            let readinessAdjustedPower = strategyPower * readinessFactor
+            
             let fatigueFactor = calculateFatigueFactor(cumulativeStress: cumulativeStress)
             let adjustedPower = strategyPower * fatigueFactor
             let finalPower = constrainPower(adjustedPower, ftp: ftp, grade: segment.elevationGrade)
@@ -305,7 +315,7 @@ final class PacingEngine {
             print("DEBUG: Segment \(index + 1) | Power Input: \(Int(finalPower)) | FTP: \(Int(ftp))")
             let powerZone = getPowerZone(for: finalPower)
             print("       -> Resulting Zone: \(powerZone.name)")
-
+            
             let segmentTSS = calculateSegmentTSS(power: finalPower, durationSeconds: estimatedTime, ftp: ftp)
             cumulativeStress += segmentTSS
             
@@ -339,7 +349,7 @@ final class PacingEngine {
         
         return pacedSegments
     }
-
+    
     private func applyPacingStrategy(
         basePower: Double,
         strategy: PacingStrategy,
@@ -361,7 +371,7 @@ final class PacingEngine {
         var targetPower = basePower * fatigueMultiplier
         
         print("   📊 Fatigue factor: \(String(format: "%.2f", fatigueMultiplier)) (Power after fatigue: \(Int(targetPower))W)")
-
+        
         // --- BASE TERRAIN LOGIC (Shared Foundation) ---
         // All strategies (except Even Effort) will start with this intelligent terrain awareness.
         var terrainPower = targetPower
@@ -373,15 +383,15 @@ final class PacingEngine {
         } else { // Flat/Rolling
             terrainPower *= 0.96
         }
-
+        
         // Now, apply the unique character of each strategy ON TOP of the terrain-aware power.
         switch strategy {
-        
+            
         case .balanced:
             targetPower = terrainPower
             print("   ⚖️ BALANCED: Applying base terrain logic.")
-
-        // HIERARCHICAL & MULTI-PHASE AGGRESSIVE STRATEGY
+            
+            // HIERARCHICAL & MULTI-PHASE AGGRESSIVE STRATEGY
         case .aggressive:
             let racePaceMultiplier: Double
             if rideProgress < 0.20 {
@@ -409,7 +419,7 @@ final class PacingEngine {
             targetPower = terrainPower * negativeSplitMultiplier
             print(String(format: "   📈 NEGATIVE SPLIT: Applying time-based multiplier of %.3fx to terrain power.", negativeSplitMultiplier))
             
-        // EVEN EFFORT STRATEGY
+            // EVEN EFFORT STRATEGY
         case .evenEffort:
             // This strategy IGNORES the standard terrain logic and works directly on the fatigued baseline.
             // It aims for constant physiological stress, meaning MORE power on climbs and LESS on descents.
@@ -443,7 +453,7 @@ final class PacingEngine {
         let minPower: Double = (grade < -0.03) ? ftp * 0.35 : ftp * 0.55
         return max(minPower, min(power, maxPower))
     }
-
+    
     private func estimateSegmentTime(segment: PowerRouteSegment, targetPower: Double) -> Double {
         guard segment.powerRequired > 0 else { return segment.timeSeconds }
         let powerRatio = targetPower / segment.powerRequired
@@ -471,7 +481,7 @@ final class PacingEngine {
         let durationHours = durationSeconds / 3600.0
         return 100.0 * durationHours * pow(intensityFactor, 2)
     }
-
+    
     private func calculateTotalTSS(segments: [PacedSegment], useNormalizedPower: Bool = true) -> Double {
         let ftp = Double(settings.functionalThresholdPower)
         guard ftp > 0 else { return 0 }
@@ -485,21 +495,21 @@ final class PacingEngine {
             return segments.reduce(0.0) { $0 + calculateSegmentTSS(power: $1.targetPower, durationSeconds: $1.estimatedTime, ftp: ftp) }
         }
     }
-
+    
     private func calculateNormalizedPower(segments: [PacedSegment]) -> Double {
         guard !segments.isEmpty else { return 0.0 }
-
+        
         var samples: [Double] = []
         for segment in segments {
             let seconds = max(1, Int(segment.estimatedTime.rounded()))
             samples.append(contentsOf: Array(repeating: segment.targetPower, count: seconds))
         }
-
+        
         let windowSize = 30
         var rollingAverages: [Double] = []
         var windowSum: Double = 0
         var queue: [Double] = []
-
+        
         for powerSample in samples {
             queue.append(powerSample)
             windowSum += powerSample
@@ -508,7 +518,7 @@ final class PacingEngine {
             }
             rollingAverages.append(windowSum / Double(queue.count))
         }
-
+        
         let fourths = rollingAverages.map { pow($0, 4) }
         guard !fourths.isEmpty else { return 0 }
         let meanOfFourths = fourths.reduce(0, +) / Double(fourths.count)
@@ -521,7 +531,7 @@ final class PacingEngine {
         let totalTime = segments.reduce(0.0) { $0 + $1.estimatedTime }
         return totalTime > 0 ? totalPowerTime / totalTime : 0
     }
-
+    
     private func assessDifficulty(tss: Double, intensityFactor: Double) -> DifficultyRating {
         if tss > 300 || intensityFactor > 1.0 { return .veryHard }
         else if tss > 200 || intensityFactor > 0.9 { return .hard }
@@ -561,7 +571,7 @@ final class PacingEngine {
             settings: settings
         )
     }
-
+    
     private func identifyKeySegments(segments: [PacedSegment]) -> [KeySegment] {
         var candidateSegments: [(segment: KeySegment, difficulty: Double)] = []
         let ftp = Double(settings.functionalThresholdPower)

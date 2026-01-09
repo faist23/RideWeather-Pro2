@@ -19,6 +19,8 @@ class WeatherViewModel: ObservableObject {
     @Published var dailyForecast: [DailyForecast] = []
     @Published var rideDate: Date = Date()
     @Published var enhancedInsights: EnhancedWeatherInsights?
+    @Published var optimalStartTimes: [OptimalStartTime] = []
+    
     @Published var settings: AppSettings {
         didSet {
             UserDefaultsManager.shared.saveSettings(settings)
@@ -44,10 +46,10 @@ class WeatherViewModel: ObservableObject {
     @Published var locationName: String = "Loading location..."
     @Published var uiState: UIState = .loading
     @Published var currentLocation: CLLocation?
-
+    
     @Published var processingStatus: String = ""
     @Published var pacingGenerationStatus: String = ""
-
+    
     // Filename tracking properties
     @Published var lastImportedFileName: String? = nil
     @Published var importedRouteDisplayName: String = ""
@@ -59,15 +61,15 @@ class WeatherViewModel: ObservableObject {
     @Published var intensityAdjustment: Double = 0.0
     @Published var advancedPlanError: String?
     @Published var selectedPacingStrategy: PacingStrategy = .balanced
-
+    
     // MARK: - Analytics Properties
     @Published var showingAnalytics = false
     
     @Published var elevationAnalysis: ElevationAnalysis?
     @Published var powerAnalysisResult: PowerRouteAnalysisResult?
-
+    
     @Published var enhancedRoutePoints: [EnhancedRoutePoint] = []
-
+    
     @Published var currentRideAnalyzer: RideFileAnalyzer?
     @Published var lastPowerAnalysis: PowerRouteAnalysisResult?
     
@@ -80,7 +82,7 @@ class WeatherViewModel: ObservableObject {
     private let backgroundProcessor = RouteProcessor()
     private let cityNameResolver = CityNameResolver()
     private var cancellables = Set<AnyCancellable>()
-
+    
     // MARK: - Computed Properties
     var locationDisplayName: String { locationName.isEmpty ? "Current Location" : locationName }
     var formattedRideDate: String {
@@ -123,17 +125,17 @@ class WeatherViewModel: ObservableObject {
             importedRouteDisplayName = newValue
         }
     }
-
+    
     // MARK: - Analytics Computed Properties
     var hourlyForecasts: [HourlyForecast] {
         return allHourlyData.isEmpty ? hourlyForecast : allHourlyData
     }
-
+    
     var finalPacingPlan: PacingPlan? {
         // This will return the original plan if adjustment is 0, or the tweaked plan otherwise.
         return advancedController?.pacingPlan?.applying(intensityAdjustment: intensityAdjustment)
     }
-
+    
     // MARK: - Init
     init() {
         self.settings = UserDefaultsManager.shared.loadSettings()
@@ -147,7 +149,7 @@ class WeatherViewModel: ObservableObject {
                 Task { @MainActor in await self.fetchAllWeather(for: location) }
             }
             .store(in: &cancellables)
-
+        
         locationManager.$authorizationStatus
             .sink { [weak self] status in
                 guard let self = self else { return }
@@ -160,10 +162,10 @@ class WeatherViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
-
+        
         locationManager.requestLocationAccess()
     }
-
+    
     // MARK: - Filename Helper Methods
     
     /// Cleans up filename for display by removing extension and path components
@@ -175,7 +177,7 @@ class WeatherViewModel: ObservableObject {
         return nameWithoutExtension
             .replacingOccurrences(of: "_", with: " ")
             .replacingOccurrences(of: "-", with: " ")
-            .replacingOccurrences(of: "\n", with: " ") // <-- ADD THIS LINE
+            .replacingOccurrences(of: "\n", with: " ") 
     }
     
     /// Generates export filename with custom suffix
@@ -208,7 +210,7 @@ class WeatherViewModel: ObservableObject {
         
         return "\(cleanName)-\(suffix).\(fileExtension)"
     }
-
+    
     // MARK: - Route Import Methods (Updated)
     
     func importRoute(from url: URL) {
@@ -217,7 +219,7 @@ class WeatherViewModel: ObservableObject {
             // This ensures we see "Working" the whole time, not a progress bar.
             uiState = .loading
             processingStatus = "Reading file..."
-
+            
             weatherDataForRoute = []
             routePoints = []
             elevationAnalysis = nil
@@ -228,7 +230,7 @@ class WeatherViewModel: ObservableObject {
             let fileName = url.lastPathComponent
             self.lastImportedFileName = fileName
             self.importedRouteDisplayName = cleanFileName(fileName)
-
+            
             self.importSource = nil
             
             let parser = RouteParser()
@@ -302,7 +304,7 @@ class WeatherViewModel: ObservableObject {
             )
             await processWeatherData(current: completeData.current, forecast: completeData.forecast)
             self.enhancedInsights = completeData.enhancedInsights
- 
+            
             // Fetch daily separately (Option B)
             do {
                 let dailyItems = try await weatherRepo.fetchDailyForecast(for: location, units: settings.units.rawValue)
@@ -312,7 +314,7 @@ class WeatherViewModel: ObservableObject {
                 print("⚠️ Failed to fetch daily forecast: \(error.localizedDescription)")
                 self.dailyForecast = []
             }
-
+            
             uiState = .loaded
         } catch {
             uiState = .error("Failed to fetch weather: \(error.localizedDescription)")
@@ -325,10 +327,10 @@ class WeatherViewModel: ObservableObject {
             uiState = .loading
             return
         }
-
+        
         uiState = .loading
         Task { await cityNameResolver.getCityName(for: location, into: self) }
-
+        
         do {
             let completeData = try await weatherRepo.fetchCompleteWeatherData(
                 for: location,
@@ -337,19 +339,19 @@ class WeatherViewModel: ObservableObject {
             await processWeatherData(current: completeData.current, forecast: completeData.forecast)
             self.enhancedInsights = completeData.enhancedInsights
             try await fetchExtendedHourlyData()
-
-            // Fetch daily separately 
-             do {
-                 let dailyItems = try await weatherRepo.fetchDailyForecast(for: location, units: settings.units.rawValue)
-                 self.dailyForecast = dailyItems.prefix(7).map { WeatherMapper.mapDailyItem($0) }
-             } catch {
-                 print("⚠️ Failed loading daily forecast: \(error.localizedDescription)")
-                 self.dailyForecast = []
-             }
-
+            
+            // Fetch daily separately
+            do {
+                let dailyItems = try await weatherRepo.fetchDailyForecast(for: location, units: settings.units.rawValue)
+                self.dailyForecast = dailyItems.prefix(7).map { WeatherMapper.mapDailyItem($0) }
+            } catch {
+                print("⚠️ Failed loading daily forecast: \(error.localizedDescription)")
+                self.dailyForecast = []
+            }
+            
             uiState = .loaded
             hapticsManager.triggerSuccess()
-
+            
             if !hasLoadedInitialData {
                 hasLoadedInitialData = true
                 initialDataLoaded.send()
@@ -358,13 +360,13 @@ class WeatherViewModel: ObservableObject {
             uiState = .error("Failed to fetch weather: \(error.localizedDescription)")
         }
     }
-
+    
     func openAnalytics() async {
         if !allHourlyData.isEmpty {
             showingAnalytics = true
             return
         }
-
+        
         uiState = .loading
         do {
             try await fetchExtendedHourlyData()
@@ -375,21 +377,58 @@ class WeatherViewModel: ObservableObject {
             uiState = .error("Could not load the detailed forecast. Please try again.")
         }
     }
-
+    
     func fetchExtendedHourlyData() async throws {
         guard locationManager.authorizationStatus != .denied else { return }
         guard let location = locationManager.location else { return }
-
+        
         let fetchedData = try await weatherRepo.fetchExtendedForecast(
             for: location,
             units: settings.units.rawValue
         )
-
+        
         let currentAQI = self.enhancedInsights?.airQuality
         self.allHourlyData = fetchedData.map { forecast in
             var mutableForecast = forecast
             mutableForecast.aqi = currentAQI
             return mutableForecast
+        }
+    }
+    
+    func runDepartureTimeOptimization() async {
+        guard !routePoints.isEmpty, !allHourlyData.isEmpty else { return }
+        
+        // Prevent running if ride is in the past
+        if rideDate < Date().addingTimeInterval(-3600) { return }
+        
+        let optimizer = DepartureTimeOptimizer(settings: settings)
+        
+        // Calculate a baseline duration
+        let baseDuration: TimeInterval
+        if let plan = advancedController?.pacingPlan {
+            baseDuration = plan.totalTimeMinutes * 60
+        } else {
+            // Fallback estimation
+            let dist = authoritativeRouteDistanceMeters ?? 0
+            baseDuration = dist / averageSpeedMetersPerSecond
+        }
+        
+        // Run optimization
+        let results = await optimizer.findOptimalStartTimes(
+            routePoints: routePoints,
+            hourlyForecast: allHourlyData,
+            baseStartTime: rideDate,
+            baseDuration: baseDuration,
+            routeDistanceMeters: authoritativeRouteDistanceMeters ?? 0
+        )
+        
+        await MainActor.run {
+            if !results.isEmpty {
+                // Animate the results in
+                withAnimation {
+                    self.optimalStartTimes = results
+                }
+            }
         }
     }
     
@@ -416,13 +455,13 @@ class WeatherViewModel: ObservableObject {
             rideDate: rideDate,
             avgSpeed: adjustedSpeed
         )
- 
+        
         var fetchedPoints: [RouteWeatherPoint] = []
         var lastSuccessfulWeather: DisplayWeatherModel? = nil
-
+        
         processingStatus = "Fetching weather for \(pointsWithETAs.count) route points..."
         await Task.yield()
-
+        
         for (index, point) in pointsWithETAs.enumerated() {
             processingStatus = "Fetching weather point \(index + 1) of \(pointsWithETAs.count)..."
             
@@ -451,14 +490,16 @@ class WeatherViewModel: ObservableObject {
                 }
             }
         }
-
+        
         processingStatus = "Finalizing forecast..."
         await Task.yield()
         
         self.weatherDataForRoute = fetchedPoints.sorted { $0.distance < $1.distance }
         self.processingStatus = ""
         self.uiState = .loaded
-     }
+        
+        await runDepartureTimeOptimization()
+    }
     
     private func generateAdaptiveSamplePoints(from points: [CLLocationCoordinate2D]) -> [CLLocationCoordinate2D] {
         let targetFetchCount = 8
@@ -508,7 +549,7 @@ class WeatherViewModel: ObservableObject {
         }
         return adjustedSpeed
     }
-
+    
     private func calculateTotalDistance(_ points: [CLLocationCoordinate2D]) -> Double {
         guard points.count > 1 else { return 0 }
         var totalDistance: Double = 0
@@ -527,19 +568,19 @@ class WeatherViewModel: ObservableObject {
         let maxLat = coords.map(\.latitude).max() ?? 0
         let minLon = coords.map(\.longitude).min() ?? 0
         let maxLon = coords.map(\.longitude).max() ?? 0
-
+        
         let center = CLLocationCoordinate2D(latitude: (minLat+maxLat)/2, longitude: (minLon+maxLon)/2)
         let span = MKCoordinateSpan(latitudeDelta: max(abs(maxLat-minLat)*1.3, 0.01),
                                     longitudeDelta: max(abs(maxLon-minLon)*1.3, 0.01))
         cameraPosition = .region(MKCoordinateRegion(center: center, span: span))
     }
-
+    
     private func processWeatherData(current: CurrentWeatherResponse, forecast: OneCallResponse) async {
         if !current.name.isEmpty { locationName = current.name }
         let rideTimestamp = rideDate.timeIntervalSince1970
         let nowTimestamp = Date().timeIntervalSince1970
         let allData = forecast.hourly
-
+        
         if abs(rideTimestamp - nowTimestamp) < 600 {
             displayWeather = WeatherMapper.mapCurrentToDisplayModel(current)
             if let startIndex = allData.firstIndex(where: { $0.dt > nowTimestamp }) {
@@ -581,6 +622,11 @@ class WeatherViewModel: ObservableObject {
             pacingGenerationStatus = "Analyzing route segments..."
         }
         
+        // This pulls the combined logic of TSB + Sleep Debt
+        let readinessFactor = await MainActor.run {
+            return TrainingLoadManager.shared.getCurrentReadinessFactor()
+        }
+        
         // ✅ CRITICAL: Longer delay to ensure UI updates before heavy work
         try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
         
@@ -600,7 +646,12 @@ class WeatherViewModel: ObservableObject {
         }
         
         await MainActor.run {
-            pacingGenerationStatus = "Calculating power requirements..."
+            if readinessFactor < 0.98 {
+                pacingGenerationStatus = "Adapting plan for fatigue (\(Int(readinessFactor * 100))% capacity)..."
+            } else {
+                pacingGenerationStatus = "Optimizing for \(strategy.description) strategy..."
+            }
+            print(pacingGenerationStatus)
         }
         
         guard let powerAnalysis = getPowerAnalysisResult() else {
@@ -628,7 +679,8 @@ class WeatherViewModel: ObservableObject {
             strategy: strategy,
             fuelingPreferences: settings.fuelingPreferences,
             startTime: planStartTime,
-            routeName: self.routeDisplayName
+            routeName: self.routeDisplayName,
+            readinessFactor: readinessFactor
         )
         
         await MainActor.run {
@@ -683,7 +735,7 @@ class WeatherViewModel: ObservableObject {
 fileprivate struct HashableCoordinate: Hashable {
     let latitude: CLLocationDegrees
     let longitude: CLLocationDegrees
-
+    
     init(_ coordinate: CLLocationCoordinate2D) {
         self.latitude = coordinate.latitude
         self.longitude = coordinate.longitude
@@ -720,7 +772,7 @@ extension WeatherViewModel {
         
         return result
     }
-
+    
     func recalculateWithNewSettings() {
         if !weatherDataForRoute.isEmpty {
             Task {
@@ -734,7 +786,7 @@ extension WeatherViewModel {
         weatherDataForRoute.removeAll()
         enhancedRoutePoints.removeAll()
         lastImportedFileName = ""
-        authoritativeRouteDistanceMeters = nil 
+        authoritativeRouteDistanceMeters = nil
         importedRouteDisplayName = "" // Explicitly reset the imported name
         importSource = nil
         // Reset any other route-related state
@@ -790,44 +842,44 @@ extension WeatherViewModel {
         self.enhancedRoutePoints = enhanced
         print("✅ Built \(enhanced.count) enhanced route points (Async)")
     }
-
+    
     /// Builds enhanced route points from basic coordinates and elevation data
-/*    func buildEnhancedRoutePoints() {
-        guard !routePoints.isEmpty else {
-            enhancedRoutePoints = []
-            return
-        }
-        
-        var enhanced: [EnhancedRoutePoint] = []
-        var cumulativeDistance = 0.0
-        var previousCoordinate: CLLocationCoordinate2D?
-        
-        for (index, coordinate) in routePoints.enumerated() {
-            // Calculate distance
-            if let prevCoord = previousCoordinate {
-                let location1 = CLLocation(latitude: prevCoord.latitude, longitude: prevCoord.longitude)
-                let location2 = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-                cumulativeDistance += location2.distance(from: location1)
-            }
-            
-            // Get elevation from elevation analysis if available
-            let elevation = elevationAnalysis?.elevation(at: cumulativeDistance)
-            
-            // Create enhanced point
-            let enhancedPoint = EnhancedRoutePoint(
-                coordinate: coordinate,
-                elevation: elevation,
-                distance: cumulativeDistance,
-                timestamp: nil
-            )
-            
-            enhanced.append(enhancedPoint)
-            previousCoordinate = coordinate
-        }
-        
-        self.enhancedRoutePoints = enhanced
-        print("✅ Built \(enhanced.count) enhanced route points")
-    }*/
+    /*    func buildEnhancedRoutePoints() {
+     guard !routePoints.isEmpty else {
+     enhancedRoutePoints = []
+     return
+     }
+     
+     var enhanced: [EnhancedRoutePoint] = []
+     var cumulativeDistance = 0.0
+     var previousCoordinate: CLLocationCoordinate2D?
+     
+     for (index, coordinate) in routePoints.enumerated() {
+     // Calculate distance
+     if let prevCoord = previousCoordinate {
+     let location1 = CLLocation(latitude: prevCoord.latitude, longitude: prevCoord.longitude)
+     let location2 = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+     cumulativeDistance += location2.distance(from: location1)
+     }
+     
+     // Get elevation from elevation analysis if available
+     let elevation = elevationAnalysis?.elevation(at: cumulativeDistance)
+     
+     // Create enhanced point
+     let enhancedPoint = EnhancedRoutePoint(
+     coordinate: coordinate,
+     elevation: elevation,
+     distance: cumulativeDistance,
+     timestamp: nil
+     )
+     
+     enhanced.append(enhancedPoint)
+     previousCoordinate = coordinate
+     }
+     
+     self.enhancedRoutePoints = enhanced
+     print("✅ Built \(enhanced.count) enhanced route points")
+     }*/
     
     /// Export Garmin Course FIT file with power targets
     func exportGarminCourseFIT() async throws -> URL? {
@@ -841,7 +893,7 @@ extension WeatherViewModel {
               !enhancedRoutePoints.isEmpty else {
             throw GarminCourseFitGenerator.CourseExportError.invalidData("Missing required data")
         }
-
+        
         // Generate the course name
         let courseName = generateExportFilename(
             baseName: routeDisplayName,
