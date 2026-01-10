@@ -28,6 +28,9 @@ struct TrainingLoadView: View {
     @State private var showingExplanation = false
     @State private var showingAIDebug = false
     
+    @State private var hasPerformedInitialLoad = false
+    @State private var wellnessUpdateTask: Task<Void, Never>?
+    
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -263,6 +266,14 @@ struct TrainingLoadView: View {
                 AIInsightsDebugView(manager: aiInsightsManager)
             }
             .onAppear {
+                // ONLY do this once per app session
+                guard !hasPerformedInitialLoad else {
+                    print("📊 TrainingLoadView: Skipping redundant onAppear refresh")
+                    return
+                }
+                
+                hasPerformedInitialLoad = true
+                
                 trainingSync.loadSyncDate()
                 wellnessSync.loadSyncDate()
                 
@@ -273,7 +284,7 @@ struct TrainingLoadView: View {
                 Task {
                     // Sync training load if needed
                     if trainingSync.needsSync && (stravaService.isAuthenticated || garminService.isAuthenticated || healthManager.isAuthorized) {
-                        await syncBothTrainingAndWellness()  
+                        await syncBothTrainingAndWellness()
                     }
                     
                     // Wellness will be synced above, but if ONLY wellness needs sync, do it separately
@@ -293,20 +304,51 @@ struct TrainingLoadView: View {
                         wellnessMetrics: wellnessManager.dailyMetrics
                     )
                 }
-                // Trigger initial refresh using both sources
-                viewModel.refresh(readiness: healthManager.readiness)
             }
             .onChange(of: selectedPeriod) { oldValue, newValue in
                 viewModel.loadPeriod(newValue)
             }
-            // Add this new listener
-            .onReceive(wellnessManager.$dailyMetrics) { _ in
-                viewModel.refresh(readiness: healthManager.readiness)
+            // DEBOUNCED wellness update: Only refresh after updates settle
+            .onReceive(wellnessManager.$dailyMetrics) { newMetrics in
+                // Cancel any pending update
+                wellnessUpdateTask?.cancel()
+                
+                // Schedule a new update after 0.5 seconds of no changes
+                wellnessUpdateTask = Task {
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                    
+                    guard !Task.isCancelled else { return }
+                    
+                    // Wellness data changed (steps, activity, etc.)
+                    // Update wellness insights WITHOUT re-fetching sleep/HRV from HealthKit
+                    print("📊 TrainingLoadView: Wellness metrics updated (\(newMetrics.count) days)")
+                    
+                    // Only update the summary and insights, don't re-fetch readiness
+                    await MainActor.run {
+                        viewModel.updateSummaryOnly()
+                    }
+                }
             }
-            .onChange(of: healthManager.readiness) {
-                viewModel.refresh(readiness: healthManager.readiness)
-            }
-            
+            // THROTTLE the readiness change listener
+             .onChange(of: healthManager.readiness) { newValue in
+                 // Only refresh if readiness actually changed meaningfully
+                 guard let lastReadiness = viewModel.readiness else {
+                     // First time, always refresh
+                     print("📊 TrainingLoadView: Initial readiness load")
+                     viewModel.refresh(readiness: newValue)
+                     return
+                 }
+                 
+                 guard lastReadiness.latestHRV != newValue.latestHRV ||
+                        lastReadiness.latestRHR != newValue.latestRHR ||
+                        lastReadiness.sleepDuration != newValue.sleepDuration else {
+                     print("📊 TrainingLoadView: Readiness unchanged, skipping refresh")
+                     return
+                 }
+                 
+                 print("📊 TrainingLoadView: Readiness changed, refreshing")
+                 viewModel.refresh(readiness: newValue)
+             }
             .onReceive(NotificationCenter.default.publisher(for: .dataSourceChanged)) { _ in
                 Task {
                     // Re-sync from new source (both training AND wellness)
@@ -315,7 +357,6 @@ struct TrainingLoadView: View {
                     )
                 }
             }
-
         }
     }
     
@@ -1084,7 +1125,7 @@ struct TrainingLoadInsightCard: View {
     }
 }
 
-// MARK: - View Model
+// MARK: - View Model Enhancement
 
 @MainActor
 class TrainingLoadViewModel: ObservableObject {
@@ -1097,86 +1138,111 @@ class TrainingLoadViewModel: ObservableObject {
     private let manager = TrainingLoadManager.shared
     private var currentPeriodDays: Int = 0
     
+    // ADD THIS: Cache the last readiness to prevent redundant processing
+    private var lastProcessedReadiness: PhysiologicalReadiness?
+    
+    /// Updates only summary and insights without re-fetching HealthKit data
+    func updateSummaryOnly() {
+        // Use the cached readiness (don't re-query HealthKit)
+        summary = manager.getCurrentSummary()
+        insights = manager.getInsights(readiness: self.readiness)
+        totalDaysInStorage = manager.loadAllDailyLoads().count
+        
+        print("📊 ViewModel: Updated summary without HealthKit refresh")
+    }
+    
     func refresh(readiness: PhysiologicalReadiness?) {
-          print("\n🔄 TrainingLoadViewModel: Refreshing with readiness data...")
-          
-          // 1. Start with Apple Health readiness (if any)
-          var unifiedReadiness = readiness ?? PhysiologicalReadiness()
-          print("   📱 HealthKit baseline: Sleep=\(String(format: "%.1f", (unifiedReadiness.sleepDuration ?? 0) / 3600))h, RHR=\(Int(unifiedReadiness.latestRHR ?? 0))")
-          
-          // 2. Check if we have Garmin wellness data configured
-          let config = DataSourceManager.shared.configuration
-          let isUsingGarmin = config.wellnessSource == .garmin
-          
-          if isUsingGarmin {
-              print("   ⚙️ Wellness source is Garmin - checking for data...")
-              
-              // Get TODAY's wellness metrics from Garmin (if available)
-              let calendar = Calendar.current
-              let today = calendar.startOfDay(for: Date())
-              
-              if let todayMetrics = WellnessManager.shared.dailyMetrics.first(where: {
-                  calendar.isDate($0.date, inSameDayAs: today)
-              }) {
-                  print("   ✅ Found today's Garmin wellness data - OVERRIDING HealthKit")
-                  
-                  // OVERRIDE Sleep with Garmin data
-                  if let sleep = todayMetrics.totalSleep, sleep > 0 {
-                      print("      🔄 Sleep: \(String(format: "%.1f", (unifiedReadiness.sleepDuration ?? 0) / 3600))h → \(String(format: "%.1f", sleep / 3600))h (Garmin)")
-                      unifiedReadiness.sleepDuration = sleep
-                  } else {
-                      print("      ℹ️ No Garmin sleep data for today")
-                  }
-                  
-                  // OVERRIDE RHR with Garmin data
-                  if let rhr = todayMetrics.restingHeartRate {
-                      print("      🔄 RHR: \(Int(unifiedReadiness.latestRHR ?? 0)) → \(rhr) bpm (Garmin)")
-                      unifiedReadiness.latestRHR = Double(rhr)
-                  } else {
-                      print("      ℹ️ No Garmin RHR data for today")
-                  }
-                  
-              } else {
-                  print("   ⚠️ No Garmin wellness data for today - falling back to HealthKit")
-              }
-              
-              // 3. Calculate 7-day averages from Garmin data
-              let last7Days = calendar.date(byAdding: .day, value: -7, to: today)!
-              let recentMetrics = WellnessManager.shared.dailyMetrics.filter {
-                  $0.date >= last7Days && $0.date <= today
-              }
-              
-              if !recentMetrics.isEmpty {
-                  print("   📊 Calculating 7-day averages from \(recentMetrics.count) days of Garmin data")
-                  
-                  // Average Sleep
-                  let sleeps = recentMetrics.compactMap { $0.totalSleep }.filter { $0 > 0 }
-                  if !sleeps.isEmpty {
-                      let avgSleep = sleeps.reduce(0, +) / Double(sleeps.count)
-                      print("      🔄 Avg Sleep: \(String(format: "%.1f", (unifiedReadiness.averageSleepDuration ?? 0) / 3600))h → \(String(format: "%.1f", avgSleep / 3600))h (Garmin)")
-                      unifiedReadiness.averageSleepDuration = avgSleep
-                  }
-                  
-                  // Average RHR
-                  let rhrs = recentMetrics.compactMap { $0.restingHeartRate }
-                  if !rhrs.isEmpty {
-                      let avgRHR = Double(rhrs.reduce(0, +)) / Double(rhrs.count)
-                      print("      🔄 Avg RHR: \(Int(unifiedReadiness.averageRHR ?? 0)) → \(Int(avgRHR)) bpm (Garmin)")
-                      unifiedReadiness.averageRHR = avgRHR
-                  }
-              }
-          } else {
-              print("   📱 Wellness source is Apple Health - using HealthKit data only")
-          }
-          
-          print("   ✅ Final unified readiness: Sleep=\(String(format: "%.1f", (unifiedReadiness.sleepDuration ?? 0) / 3600))h, RHR=\(Int(unifiedReadiness.latestRHR ?? 0))")
-          
-          // 4. Update the published properties
-          self.readiness = unifiedReadiness
-          summary = manager.getCurrentSummary()
-          insights = manager.getInsights(readiness: unifiedReadiness)
-          totalDaysInStorage = manager.loadAllDailyLoads().count
-      }
+        // Skip if readiness hasn't meaningfully changed
+        if let lastProcessed = lastProcessedReadiness,
+           let current = readiness,
+           lastProcessed.latestHRV == current.latestHRV &&
+           lastProcessed.latestRHR == current.latestRHR &&
+           lastProcessed.sleepDuration == current.sleepDuration {
+            print("🔄 TrainingLoadViewModel: Readiness unchanged, skipping refresh")
+            return
+        }
+        
+        lastProcessedReadiness = readiness
+        
+        print("\n🔄 TrainingLoadViewModel: Refreshing with readiness data...")
+        
+        // 1. Start with Apple Health readiness (if any)
+        var unifiedReadiness = readiness ?? PhysiologicalReadiness()
+        print("   📱 HealthKit baseline: Sleep=\(String(format: "%.1f", (unifiedReadiness.sleepDuration ?? 0) / 3600))h, RHR=\(Int(unifiedReadiness.latestRHR ?? 0))")
+        
+        // 2. Check if we have Garmin wellness data configured
+        let config = DataSourceManager.shared.configuration
+        let isUsingGarmin = config.wellnessSource == .garmin
+        
+        if isUsingGarmin {
+            print("   ⚙️ Wellness source is Garmin - checking for data...")
+            
+            // Get TODAY's wellness metrics from Garmin (if available)
+            let calendar = Calendar.current
+            let today = calendar.startOfDay(for: Date())
+            
+            if let todayMetrics = WellnessManager.shared.dailyMetrics.first(where: {
+                calendar.isDate($0.date, inSameDayAs: today)
+            }) {
+                print("   ✅ Found today's Garmin wellness data - OVERRIDING HealthKit")
+                
+                // OVERRIDE Sleep with Garmin data
+                if let sleep = todayMetrics.totalSleep, sleep > 0 {
+                    print("      🔄 Sleep: \(String(format: "%.1f", (unifiedReadiness.sleepDuration ?? 0) / 3600))h → \(String(format: "%.1f", sleep / 3600))h (Garmin)")
+                    unifiedReadiness.sleepDuration = sleep
+                } else {
+                    print("      ℹ️ No Garmin sleep data for today")
+                }
+                
+                // OVERRIDE RHR with Garmin data
+                if let rhr = todayMetrics.restingHeartRate {
+                    print("      🔄 RHR: \(Int(unifiedReadiness.latestRHR ?? 0)) → \(rhr) bpm (Garmin)")
+                    unifiedReadiness.latestRHR = Double(rhr)
+                } else {
+                    print("      ℹ️ No Garmin RHR data for today")
+                }
+                
+            } else {
+                print("   ⚠️ No Garmin wellness data for today - falling back to HealthKit")
+            }
+            
+            // 3. Calculate 7-day averages from Garmin data
+            let last7Days = calendar.date(byAdding: .day, value: -7, to: today)!
+            let recentMetrics = WellnessManager.shared.dailyMetrics.filter {
+                $0.date >= last7Days && $0.date <= today
+            }
+            
+            if !recentMetrics.isEmpty {
+                print("   📊 Calculating 7-day averages from \(recentMetrics.count) days of Garmin data")
+                
+                // Average Sleep
+                let sleeps = recentMetrics.compactMap { $0.totalSleep }.filter { $0 > 0 }
+                if !sleeps.isEmpty {
+                    let avgSleep = sleeps.reduce(0, +) / Double(sleeps.count)
+                    print("      🔄 Avg Sleep: \(String(format: "%.1f", (unifiedReadiness.averageSleepDuration ?? 0) / 3600))h → \(String(format: "%.1f", avgSleep / 3600))h (Garmin)")
+                    unifiedReadiness.averageSleepDuration = avgSleep
+                }
+                
+                // Average RHR
+                let rhrs = recentMetrics.compactMap { $0.restingHeartRate }
+                if !rhrs.isEmpty {
+                    let avgRHR = Double(rhrs.reduce(0, +)) / Double(rhrs.count)
+                    print("      🔄 Avg RHR: \(Int(unifiedReadiness.averageRHR ?? 0)) → \(Int(avgRHR)) bpm (Garmin)")
+                    unifiedReadiness.averageRHR = avgRHR
+                }
+            }
+        } else {
+            print("   📱 Wellness source is Apple Health - using HealthKit data only")
+        }
+        
+        print("   ✅ Final unified readiness: Sleep=\(String(format: "%.1f", (unifiedReadiness.sleepDuration ?? 0) / 3600))h, RHR=\(Int(unifiedReadiness.latestRHR ?? 0))")
+        
+        // 4. Update the published properties
+        self.readiness = unifiedReadiness
+        summary = manager.getCurrentSummary()
+        insights = manager.getInsights(readiness: unifiedReadiness)
+        totalDaysInStorage = manager.loadAllDailyLoads().count
+    }
     
     func loadPeriod(_ period: TrainingLoadPeriod, forceReload: Bool = false) {
         guard forceReload || currentPeriodDays != period.days else {
