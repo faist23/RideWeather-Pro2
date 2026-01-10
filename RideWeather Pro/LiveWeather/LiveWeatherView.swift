@@ -52,7 +52,7 @@ struct LiveWeatherView: View {
                                 ModernHourlyForecastView(hourlyData: viewModel.hourlyForecast)
                                     .environmentObject(viewModel)
                                 
-                                // NEW: 7-day forecast card
+                                // 7-day forecast card
                                  if !viewModel.dailyForecast.isEmpty {
                                      DailyForecastView(daily: viewModel.dailyForecast)
                                          .environmentObject(viewModel)
@@ -259,7 +259,6 @@ struct ModernAnalyticsPreviewCard: View {
             .buttonStyle(.plain)
         }
         .padding(20)
-//        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
         .overlay(
             RoundedRectangle(cornerRadius: 20)

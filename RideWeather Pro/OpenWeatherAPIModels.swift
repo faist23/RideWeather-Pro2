@@ -35,8 +35,8 @@ struct HourlyForecast: Identifiable, Equatable {
     let humidity: Int
     let windSpeed: Double
     let windDeg: Int
-    let uvIndex: Double? // New property for UV index
-    var aqi: Int?        // New, mutable property for Air Quality Index
+    let uvIndex: Double?
+    var aqi: Int? // mutable property for Air Quality Index
 
     var windDirection: String {
         switch windDeg {

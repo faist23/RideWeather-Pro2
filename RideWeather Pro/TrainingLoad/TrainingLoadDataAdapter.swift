@@ -205,7 +205,7 @@ class UnifiedTrainingLoadSync: ObservableObject {
         syncStatus = "Syncing from Garmin (Supabase)..." // Update status text
         syncProgress = 0.1
         do {            
-            // New: Fetch recent activities from Supabase (defaults to limit 50, you might want more)
+            // Fetch recent activities from Supabase (defaults to limit 50, you might want more)
             let activities = try await garminService.fetchRecentActivities(limit: 100, filter: .allTraining)
             
             guard !activities.isEmpty else {

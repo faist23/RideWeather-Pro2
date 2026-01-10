@@ -18,7 +18,7 @@ struct AppSettings: Codable, Equatable {
     var restStopDuration: Int = 10
     var considerElevation: Bool = false
     
-    // NEW: Speed calculation method
+    // Speed calculation method
     var speedCalculationMethod: SpeedCalculationMethod = .averageSpeed
     
     // Power-based analysis settings (only used when speedCalculationMethod == .powerBased)

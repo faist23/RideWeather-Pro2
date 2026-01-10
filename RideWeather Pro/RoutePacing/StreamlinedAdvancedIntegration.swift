@@ -629,7 +629,7 @@ struct DetailMetric: View {
 
 struct KeySegmentsView: View {
     let keySegments: [KeySegment]
-    let onSegmentTap: (Int) -> Void  // NEW callback
+    let onSegmentTap: (Int) -> Void  // callback
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -639,7 +639,7 @@ struct KeySegmentsView: View {
             
             ForEach(keySegments, id: \.segmentIndex) { keySegment in
                 KeySegmentCard(keySegment: keySegment, onTap: {
-                    onSegmentTap(keySegment.segmentIndex)  // NEW
+                    onSegmentTap(keySegment.segmentIndex)
                 })
             }
         }
@@ -650,10 +650,10 @@ struct KeySegmentsView: View {
 
 struct KeySegmentCard: View {
     let keySegment: KeySegment
-    let onTap: () -> Void  // NEW
+    let onTap: () -> Void
     
     var body: some View {
-        Button(action: onTap) {  // NEW - wrapped in Button
+        Button(action: onTap) {  // wrapped in Button
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: iconForSegmentType(keySegment.type))
                     .font(.title2)
@@ -674,7 +674,7 @@ struct KeySegmentCard: View {
             .padding(12)
             .background(colorForSegmentType(keySegment.type).opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
         }
-        .buttonStyle(.plain)  // NEW
+        .buttonStyle(.plain)
     }
     
     private func iconForSegmentType(_ type: KeySegmentType) -> String {
@@ -733,7 +733,7 @@ struct WarningsView: View {
 
 struct ExportOptionsView: View {
     let controller: AdvancedCyclingController
-    let pacingPlan: PacingPlan // <-- Add this property
+    let pacingPlan: PacingPlan 
     @Environment(\.dismiss) private var dismiss
     @State private var exportText = ""
     @State private var showingShareSheet = false

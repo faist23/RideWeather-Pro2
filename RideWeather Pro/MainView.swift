@@ -10,17 +10,15 @@ import CoreLocation
 
 struct MainView: View {
     @StateObject private var viewModel = WeatherViewModel()
-    // OBSERVE THE DATA SOURCE MANAGER
-//    @ObservedObject private var dataSourceManager = DataSourceManager.shared
     
     @State private var selectedTab = 0
     @State private var lastLiveWeatherTap = Date()
     @State private var lastFitnessTap = Date()  // Track fitness tab taps
-
+    
     @EnvironmentObject var wahooService: WahooService // Inherited from App
     @EnvironmentObject var healthManager: HealthKitManager  // Access HealthKit
     @EnvironmentObject var garminService: GarminService    // Access Garmin
-
+    
     var body: some View {
         ZStack(alignment: .topTrailing) { // WRAP IN ZSTACK
             TabView(selection: $selectedTab) {
@@ -65,7 +63,7 @@ struct MainView: View {
                         Label("Fitness", systemImage: "chart.line.uptrend.xyaxis")
                     }
                     .tag(3)
-                    // Sync wellness data when Fitness tab appears
+                // Sync wellness data when Fitness tab appears
                     .onAppear {
                         let now = Date()
                         // Only sync if it's been more than 5 minutes since last tap

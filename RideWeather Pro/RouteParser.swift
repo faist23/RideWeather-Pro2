@@ -61,7 +61,7 @@ struct RouteParser: Sendable {
         var enhancedPoints: [EnhancedRoutePoint] = []
         var cumulativeDistance = 0.0
         var previousCoordinate: CLLocationCoordinate2D?
-
+        
         // Parse tracks first (preferred for recorded activities)
         for track in gpx.tracks {
             for segment in track.segments {
@@ -87,7 +87,7 @@ struct RouteParser: Sendable {
                 }
             }
         }
-
+        
         // If no tracks, try routes
         if enhancedPoints.isEmpty {
             cumulativeDistance = 0.0
@@ -128,128 +128,128 @@ struct RouteParser: Sendable {
     }
     
     func parseWithElevation(fitData: Data) throws -> (coordinates: [CLLocationCoordinate2D], elevationAnalysis: ElevationAnalysis?) {
-            let fitFile = FitFile(data: fitData)
+        let fitFile = FitFile(data: fitData)
+        
+        // Try to get 'record' messages first (for activities)
+        var messages = fitFile.messages(forMessageType: .record)
+        var isCourseFile = false
+        
+        // If no 'record' messages, it's a Course file. Get 'course_point' messages.
+        if messages.isEmpty {
+            print("RouteParser: No 'record' messages found. Checking for 'course_point' messages.")
             
-            // Try to get 'record' messages first (for activities)
-            var messages = fitFile.messages(forMessageType: .record)
-            var isCourseFile = false
-            
-            // If no 'record' messages, it's a Course file. Get 'course_point' messages.
-            if messages.isEmpty {
-                print("RouteParser: No 'record' messages found. Checking for 'course_point' messages.")
-
-                messages = fitFile.messages(forMessageType: .course_point)
-                isCourseFile = true
-                if !messages.isEmpty {
-                    print("RouteParser: Found \(messages.count) course_point messages.")
-                }
+            messages = fitFile.messages(forMessageType: .course_point)
+            isCourseFile = true
+            if !messages.isEmpty {
+                print("RouteParser: Found \(messages.count) course_point messages.")
             }
-
-            var enhancedPoints: [EnhancedRoutePoint] = []
-            var cumulativeDistance: Double = 0.0 // This will be read from the message for course files
-            var previousCoordinate: CLLocationCoordinate2D?
-            
-            // Use the 'messages' variable (which is either records or course_points)
-            for msg in messages {
-                var coordinate: CLLocationCoordinate2D?
-                var elevation: Double?
-                var timestamp: Date?
-                
-                // Access the values dictionary directly using reflection
-                let mirror = Mirror(reflecting: msg)
-                var valuesDict: [String: Double]?
-                var datesDict: [String: Date]?
-                
-                for (label, value) in mirror.children {
-                    if label == "values", let vDict = value as? [String: Double] {
-                        valuesDict = vDict
-                    }
-                    if label == "dates", let dDict = value as? [String: Date] {
-                        datesDict = dDict
-                    }
-                }
-                
-                if let values = valuesDict {
-                    // Try 'record' message keys first
-                    var lat = values["position_lat"]
-                    var lon = values["position_long"]
-
-                    // If nil, try 'course_point' message keys
-                    if lat == nil || lon == nil {
-                        // Check standard course_point keys
-                        lat = values["position_lat"]
-                        lon = values["position_long"]
-                    }
-                    
-                    if let lat, let lon {
-                        // Convert semicircles to degrees (FIT format)
-                        let latDegrees = lat * (180.0 / pow(2, 31))
-                        let lonDegrees = lon * (180.0 / pow(2, 31))
-                        
-                        // Wahoo/Garmin sometimes use invalid 0,0 coordinates
-                        if latDegrees != 0 && lonDegrees != 0 {
-                            coordinate = CLLocationCoordinate2D(latitude: latDegrees, longitude: lonDegrees)
-                        }
-                    }
-                }
-
-                if let values = valuesDict {
-                    let altitudeKeys = ["enhanced_altitude", "altitude", "enhanced_alt", "alt"]
-                    var altValue: Double?
-                    for altKey in altitudeKeys {
-                        if let value = values[altKey] {
-                            altValue = value
-                            break
-                        }
-                    }
-                    elevation = altValue
-                }
-
-                // 'record' messages usually have cumulative distance. 'course_point' messages
-                // have a 'distance' field which is also cumulative.
-                if let values = valuesDict, let dist = values["distance"] {
-                     cumulativeDistance = dist // Read cumulative distance directly
-                }
-
-                if let dates = datesDict, let ts = dates["timestamp"] {
-                    timestamp = ts
-                } else if let values = valuesDict, let tsSeconds = values["timestamp"] { // course_point uses 'timestamp'
-                    // FIT file timestamp is seconds since UTC 1989-12-31 00:00:00
-                    let fitEpoch = Date(timeIntervalSinceReferenceDate: -347222400)
-                    timestamp = Date(timeInterval: tsSeconds, since: fitEpoch)
-                }
-                
-                // Skip if no coordinate
-                guard let coord = coordinate else { continue }
-                
-                // If it's *not* a course file, we must calculate distance manually
-                if !isCourseFile {
-                    if let prevCoord = previousCoordinate {
-                        let distance = calculateDistance(from: prevCoord, to: coord)
-                        cumulativeDistance += distance
-                    }
-                }
-                
-                let enhancedPoint = EnhancedRoutePoint(
-                    coordinate: coord,
-                    elevation: elevation,
-                    distance: cumulativeDistance, // This will be from the FIT msg if isCourseFile, or calculated if not
-                    timestamp: timestamp
-                )
-                
-                enhancedPoints.append(enhancedPoint)
-                previousCoordinate = coord
-            }
-            
-            if enhancedPoints.isEmpty {
-                throw RouteParseError.noCoordinatesFound
-            }
-            
-            let coordinates = enhancedPoints.map { $0.coordinate }
-            let elevationAnalysis = generateElevationAnalysis(from: enhancedPoints)
-            
-            return (coordinates: coordinates, elevationAnalysis: elevationAnalysis)
         }
+        
+        var enhancedPoints: [EnhancedRoutePoint] = []
+        var cumulativeDistance: Double = 0.0 // This will be read from the message for course files
+        var previousCoordinate: CLLocationCoordinate2D?
+        
+        // Use the 'messages' variable (which is either records or course_points)
+        for msg in messages {
+            var coordinate: CLLocationCoordinate2D?
+            var elevation: Double?
+            var timestamp: Date?
+            
+            // Access the values dictionary directly using reflection
+            let mirror = Mirror(reflecting: msg)
+            var valuesDict: [String: Double]?
+            var datesDict: [String: Date]?
+            
+            for (label, value) in mirror.children {
+                if label == "values", let vDict = value as? [String: Double] {
+                    valuesDict = vDict
+                }
+                if label == "dates", let dDict = value as? [String: Date] {
+                    datesDict = dDict
+                }
+            }
+            
+            if let values = valuesDict {
+                // Try 'record' message keys first
+                var lat = values["position_lat"]
+                var lon = values["position_long"]
+                
+                // If nil, try 'course_point' message keys
+                if lat == nil || lon == nil {
+                    // Check standard course_point keys
+                    lat = values["position_lat"]
+                    lon = values["position_long"]
+                }
+                
+                if let lat, let lon {
+                    // Convert semicircles to degrees (FIT format)
+                    let latDegrees = lat * (180.0 / pow(2, 31))
+                    let lonDegrees = lon * (180.0 / pow(2, 31))
+                    
+                    // Wahoo/Garmin sometimes use invalid 0,0 coordinates
+                    if latDegrees != 0 && lonDegrees != 0 {
+                        coordinate = CLLocationCoordinate2D(latitude: latDegrees, longitude: lonDegrees)
+                    }
+                }
+            }
+            
+            if let values = valuesDict {
+                let altitudeKeys = ["enhanced_altitude", "altitude", "enhanced_alt", "alt"]
+                var altValue: Double?
+                for altKey in altitudeKeys {
+                    if let value = values[altKey] {
+                        altValue = value
+                        break
+                    }
+                }
+                elevation = altValue
+            }
+            
+            // 'record' messages usually have cumulative distance. 'course_point' messages
+            // have a 'distance' field which is also cumulative.
+            if let values = valuesDict, let dist = values["distance"] {
+                cumulativeDistance = dist // Read cumulative distance directly
+            }
+            
+            if let dates = datesDict, let ts = dates["timestamp"] {
+                timestamp = ts
+            } else if let values = valuesDict, let tsSeconds = values["timestamp"] { // course_point uses 'timestamp'
+                // FIT file timestamp is seconds since UTC 1989-12-31 00:00:00
+                let fitEpoch = Date(timeIntervalSinceReferenceDate: -347222400)
+                timestamp = Date(timeInterval: tsSeconds, since: fitEpoch)
+            }
+            
+            // Skip if no coordinate
+            guard let coord = coordinate else { continue }
+            
+            // If it's *not* a course file, we must calculate distance manually
+            if !isCourseFile {
+                if let prevCoord = previousCoordinate {
+                    let distance = calculateDistance(from: prevCoord, to: coord)
+                    cumulativeDistance += distance
+                }
+            }
+            
+            let enhancedPoint = EnhancedRoutePoint(
+                coordinate: coord,
+                elevation: elevation,
+                distance: cumulativeDistance, // This will be from the FIT msg if isCourseFile, or calculated if not
+                timestamp: timestamp
+            )
+            
+            enhancedPoints.append(enhancedPoint)
+            previousCoordinate = coord
+        }
+        
+        if enhancedPoints.isEmpty {
+            throw RouteParseError.noCoordinatesFound
+        }
+        
+        let coordinates = enhancedPoints.map { $0.coordinate }
+        let elevationAnalysis = generateElevationAnalysis(from: enhancedPoints)
+        
+        return (coordinates: coordinates, elevationAnalysis: elevationAnalysis)
+    }
     
     // MARK: - Private Helper Methods
     

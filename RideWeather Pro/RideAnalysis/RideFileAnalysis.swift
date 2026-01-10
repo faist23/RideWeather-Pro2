@@ -1345,7 +1345,7 @@ class RideFileAnalyzer {
     
     //______________________________________________
     
-    // UPDATED: Better moving time detection
+    // Better moving time detection
     // Smarter moving detection
     private func identifyMovingSegments(dataPoints: [FITDataPoint]) -> [FITDataPoint] {
         guard dataPoints.count > 1 else { return dataPoints }

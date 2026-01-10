@@ -11,7 +11,7 @@ import Combine
 class WeatherService {
     // MARK: - Configuration (Secrets Management)
     private var openWeather: [String: String]?
-
+    
     private var apiKey: String {
         // Safely access config, provide a non-functional default if missing
         return configValue(forKey: "OpenWeatherApiKey") ?? "INVALID_API"
@@ -20,7 +20,7 @@ class WeatherService {
     private let baseOneCallURL = "https://api.openweathermap.org/data/3.0"
     // MARK: - Additional Properties (add to your WeatherService class)
     private let airPollutionCache = NSCache<NSString, CachedAirPollutionData>()
-
+    
     // Caching
     private let cache = NSCache<NSString, CachedWeatherData>()
     private let cacheQueue = DispatchQueue(label: "weather.cache", qos: .utility)
@@ -37,7 +37,7 @@ class WeatherService {
     
     init() {
         loadConfig()
-       cache.countLimit = 100 // Limit cache size
+        cache.countLimit = 100 // Limit cache size
         cache.totalCostLimit = 10 * 1024 * 1024 // 10MB
     }
     
@@ -86,7 +86,7 @@ class WeatherService {
         return response
     }
     
-    // NEW: separate daily forecast call (Option B)
+    // separate daily forecast call 
     func fetchDailyForecast(lat: Double, lon: Double, units: String) async throws -> [DailyItem] {
         let cacheKey = "daily_\(lat)_\(lon)_\(units)"
         if let cached = await getCachedData(key: cacheKey), !cached.isExpired(maxAge: 1800) {
@@ -95,19 +95,19 @@ class WeatherService {
             }
             // Check for a place to store daily in our cache object — use forecast if it contains daily? To keep things simple we cache daily in a dedicated cache object keyed above.
         }
-
+        
         // Exclude hourly + current + minutely + alerts to get only daily
         let exclude = "hourly,current,minutely,alerts"
         guard let url = URL(string: "\(baseOneCallURL)/onecall?lat=\(lat)&lon=\(lon)&exclude=\(exclude)&appid=\(apiKey)&units=\(units)") else {
             throw URLError(.badURL)
         }
-
+        
         // Use a lightweight decoding into DailyResponse
         let (data, response) = try await urlSession.data(from: url)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw WeatherServiceError.invalidResponse
         }
-
+        
         switch httpResponse.statusCode {
         case 200: break
         case 401: throw WeatherServiceError.invalidAPIKey
@@ -115,7 +115,7 @@ class WeatherService {
         case 404: throw WeatherServiceError.locationNotFound
         default: throw WeatherServiceError.serverError(httpResponse.statusCode)
         }
-
+        
         do {
             let decoder = JSONDecoder()
             let dailyResp = try decoder.decode(DailyResponse.self, from: data)
@@ -134,7 +134,7 @@ class WeatherService {
             throw WeatherServiceError.decodingError(error)
         }
     }
-
+    
     // Extended forecast for analytics dashboard (includes 48 hours of hourly data)
     func fetchExtendedForecast(lat: Double, lon: Double, units: String) async throws -> ExtendedOneCallResponse {
         let cacheKey = "extended_forecast_\(lat)_\(lon)_\(units)"
@@ -179,7 +179,7 @@ class WeatherService {
         
         return response
     }
-
+    
     
     // Batch fetch for route weather points (more efficient)
     func fetchWeatherForPoints(_ points: [(lat: Double, lon: Double, units: String)]) async throws -> [OneCallResponse] {
@@ -214,7 +214,7 @@ class WeatherService {
         
         return results
     }
-
+    
     private func fetchData<T: Decodable>(from url: URL) async throws -> T {
         let request = createRequest(for: url)
         
@@ -281,7 +281,7 @@ class WeatherService {
     
     // Separate daily cache (wrapper)
     private let dailyCache = NSCache<NSString, DailyCacheWrapper>()
-
+    
     private func getCachedDaily(key: String) async -> DailyCacheWrapper? {
         return await withCheckedContinuation { cont in
             cacheQueue.async {
@@ -289,7 +289,7 @@ class WeatherService {
             }
         }
     }
-
+    
     // Clear expired cache entries periodically
     func cleanupCache() {
         cacheQueue.async {
@@ -306,7 +306,7 @@ class WeatherService {
             }
         }
     }
-
+    
     private func cacheAirPollution(key: String, airPollution: AirPollutionResponse) async {
         let cachedData = CachedAirPollutionData(
             airPollution: airPollution,  // Now non-optional
@@ -320,7 +320,7 @@ class WeatherService {
             }
         }
     }
-
+    
     private func loadConfig() {
         guard let path = Bundle.main.path(forResource: "OpenWeather", ofType: "plist"),
               let dict = NSDictionary(contentsOfFile: path) as? [String: String] else {
@@ -329,10 +329,10 @@ class WeatherService {
             openWeather = nil
             return
         }
-
+        
         openWeather = dict
         print("WeatherService: Configuration loaded successfully.")
-
+        
         if configValue(forKey: "OpenWeatherApiKey") == nil {
             print("🚨 WeatherService WARNING: OpenWeatherApiKey missing in OpenWeather.plist!")
         }
@@ -342,7 +342,7 @@ class WeatherService {
     private func configValue(forKey key: String) -> String? {
         return openWeather?[key]
     }
-
+    
 }
 
 // MARK: - Complete Weather Data Structure
@@ -375,7 +375,7 @@ struct CompleteWeatherData {
 private class CachedWeatherData: NSObject {
     let currentWeather: CurrentWeatherResponse?
     let forecast: OneCallResponse?
-    let extendedForecast: ExtendedOneCallResponse? 
+    let extendedForecast: ExtendedOneCallResponse?
     let timestamp: Date
     
     init(currentWeather: CurrentWeatherResponse?, forecast: OneCallResponse?, extendedForecast: ExtendedOneCallResponse?, timestamp: Date) {
@@ -496,12 +496,12 @@ private class CachedAirPollutionData: NSObject {
 private class DailyCacheWrapper: NSObject {
     let daily: [DailyItem]
     let timestamp: Date
-
+    
     init(daily: [DailyItem], timestamp: Date) {
         self.daily = daily
         self.timestamp = timestamp
     }
-
+    
     func isExpired(maxAge: TimeInterval) -> Bool {
         return Date().timeIntervalSince(timestamp) > maxAge
     }

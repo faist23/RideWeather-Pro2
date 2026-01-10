@@ -26,26 +26,6 @@ class WellnessManager: ObservableObject {
     
     // MARK: - Data Management
     
-/*    func updateMetrics(_ metrics: DailyWellnessMetrics) {
-        let calendar = Calendar.current
-        
-        // Remove existing entry for this day if present
-        dailyMetrics.removeAll { calendar.isDate($0.date, inSameDayAs: metrics.date) }
-        
-        // Add new metrics
-        dailyMetrics.append(metrics)
-        
-        // Sort by date
-        dailyMetrics.sort { $0.date < $1.date }
-        
-        // Keep last 90 days
-        let cutoffDate = calendar.date(byAdding: .day, value: -90, to: Date())!
-        dailyMetrics.removeAll { $0.date < cutoffDate }
-        
-        saveMetrics()
-        updateSummary()
-    }*/
-    
     func updateBulkMetrics(_ metrics: [DailyWellnessMetrics]) {
         for metric in metrics {
             let calendar = Calendar.current
@@ -71,43 +51,8 @@ class WellnessManager: ObservableObject {
         
         currentSummary = WellnessSummary(period: "Last \(days) Days", metrics: recentMetrics)
     }
-    
-    // MARK: - Sync
-    
-/*    func syncFromHealthKit(healthManager: HealthKitManager, days: Int = 7) async {
-        let calendar = Calendar.current
-        let endDate = calendar.startOfDay(for: Date())
-        guard let startDate = calendar.date(byAdding: .day, value: -days, to: endDate) else { return }
-        
-        print("🏥 Wellness: Syncing \(days) days from Health...")
-        
-        let metrics = await healthManager.fetchWellnessMetrics(startDate: startDate, endDate: endDate)
-        
-        if let last = metrics.last {
-            print("🏥 Debug Last Metric: Date=\(last.date), SleepDeep=\(last.sleepDeep ?? 0), SleepREM=\(last.sleepREM ?? 0)")
-        } else {
-            print("🏥 Debug: No metrics returned from HealthManager")
-        }
-        
-        await MainActor.run {
-            updateBulkMetrics(metrics)
-            lastSyncDate = Date()
-            saveSyncDate()
-            print("🏥 Wellness: Synced \(metrics.count) days")
-        }
-    }*/
-    
-/*    var needsSync: Bool {
-        guard let lastSync = lastSyncDate else { return true }
-        return Date().timeIntervalSince(lastSync) > 3600 // 1 hour
-    }*/
-    
+       
     // MARK: - Insights
-    
-/*    func getWellnessInsights() -> [WellnessInsight] {
-        guard let summary = currentSummary else { return [] }
-        return summary.generateInsights()
-    }*/
     
     /// Combined insights with training load context
     func getCombinedInsights(trainingLoadSummary: TrainingLoadSummary?) -> [CombinedInsight] {
@@ -200,13 +145,7 @@ class WellnessManager: ObservableObject {
         dailyMetrics = storage.loadMetrics()
         updateSummary()
     }
-    
-/*    private func saveSyncDate() {
-        if let date = lastSyncDate {
-            storage.saveSyncDate(date)
-        }
-    }*/
-    
+        
     private func loadSyncDate() {
         lastSyncDate = storage.loadSyncDate()
     }

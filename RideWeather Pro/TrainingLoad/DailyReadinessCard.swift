@@ -20,7 +20,7 @@ struct DailyReadinessCard: View {
                 
                 Spacer()
                 
-                // NEW: Data source indicator
+                // Data source indicator
                 dataSourceBadge
                 
                 Text("\(readiness.readinessScore)%")
@@ -68,7 +68,7 @@ struct DailyReadinessCard: View {
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
     
-    // NEW: Show where the data is coming from
+    // Show where the data is coming from
     private var dataSourceBadge: some View {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())

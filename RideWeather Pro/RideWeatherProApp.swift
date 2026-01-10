@@ -16,7 +16,7 @@ struct RideWeatherProApp: App {
     @State private var showLaunchView = true
     
     @Environment(\.scenePhase) private var scenePhase
-
+    
     var body: some Scene {
         WindowGroup {
             ZStack {
@@ -103,12 +103,12 @@ struct RideWeatherProApp: App {
             }
         }
     }
-
-/*    func applicationDidBecomeActive() {
-        // Fill any missing days with zero TSS
-        TrainingLoadManager.shared.fillMissingDays()
-    }*/
-
+    
+    /*    func applicationDidBecomeActive() {
+     // Fill any missing days with zero TSS
+     TrainingLoadManager.shared.fillMissingDays()
+     }*/
+    
     private func syncWeight() async {
         // Check the user's preferred source
         let source = weatherViewModel.settings.weightSource
@@ -138,7 +138,7 @@ struct RideWeatherProApp: App {
             if garminService.isAuthenticated {
                 newWeight = await fetchWeightFromGarmin()
             }
-
+            
         case .manual:
             // Do nothing - user wants to manage it manually
             return

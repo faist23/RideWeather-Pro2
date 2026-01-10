@@ -35,7 +35,7 @@ class HealthKitManager: ObservableObject {
             HKObjectType.quantityType(forIdentifier: .distanceCycling)!
         ]
         
-        // NEW: Wellness types
+        // Wellness types
         if let steps = HKObjectType.quantityType(forIdentifier: .stepCount) {
             types.insert(steps)
         }

@@ -1337,44 +1337,6 @@ struct DifficultyBadge: View {
     }
 }
 
-/*struct PacingPlanLoadingCard: View {
- var body: some View {
- VStack(spacing: 16) {
- HStack {
- ProgressView()
- .controlSize(.regular)
- .tint(.white) // Changed for dark background
- Text("Generating pacing plan...")
- .font(.headline)
- .foregroundStyle(.white) // Changed for dark background
- Spacer()
- }
- 
- Text("Analyzing route segments and optimizing power distribution")
- .font(.subheadline)
- .foregroundStyle(.white.opacity(0.8)) // Changed for dark background
- .frame(maxWidth: .infinity, alignment: .leading)
- }
- .padding(20)
- .background(
- LinearGradient(
- colors: [
- Color.black.opacity(0.4),
- Color.black.opacity(0.3)
- ],
- startPoint: .leading,
- endPoint: .trailing
- ),
- in: RoundedRectangle(cornerRadius: 16)
- )
- .overlay(
- RoundedRectangle(cornerRadius: 16)
- .stroke(.white.opacity(0.2), lineWidth: 1)
- )
- }
- }*/
-
-
 // MARK: - Optimized Export Tab
 
 struct UpdatedOptimizedExportTab: View {
