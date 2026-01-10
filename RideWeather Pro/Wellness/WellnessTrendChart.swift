@@ -10,7 +10,7 @@ import Charts
 
 struct WellnessTrendChart: View {
     let metrics: [DailyWellnessMetrics]
-    @State private var selectedMetric: WellnessMetricType = .weight
+    @State private var selectedMetric: WellnessMetricType = .sleep
     @State private var selectedPeriod: WellnessPeriod = .twoWeeks
     
     enum WellnessPeriod: Int, CaseIterable {
@@ -30,8 +30,8 @@ struct WellnessTrendChart: View {
     }
     
     enum WellnessMetricType: String, CaseIterable {
-        case weight = "Weight"
         case sleep = "Sleep"
+        case weight = "Weight"
         case steps = "Steps"
         case restingHR = "Resting HR"
         case sleepEfficiency = "Sleep Quality"
@@ -39,8 +39,8 @@ struct WellnessTrendChart: View {
         
         var icon: String {
             switch self {
-            case .weight: return "scalemass.fill"
             case .sleep: return "bed.double.fill"
+            case .weight: return "scalemass.fill"
             case .steps: return "figure.walk"
             case .restingHR: return "heart.fill"
             case .sleepEfficiency: return "moon.stars.fill"
@@ -50,8 +50,8 @@ struct WellnessTrendChart: View {
         
         var color: Color {
             switch self {
-            case .weight: return .purple
             case .sleep: return .indigo
+            case .weight: return .purple
             case .steps: return .green
             case .restingHR: return .red
             case .sleepEfficiency: return .blue
@@ -61,8 +61,8 @@ struct WellnessTrendChart: View {
         
         func unit(weightUnit: String) -> String {
             switch self {
-            case .weight: return weightUnit
             case .sleep: return "hrs"
+            case .weight: return weightUnit
             case .steps: return "steps"
             case .restingHR: return "bpm"
             case .sleepEfficiency: return "%"
@@ -104,6 +104,9 @@ struct WellnessTrendChart: View {
     
     private func getValue(for metric: DailyWellnessMetrics) -> Double? {
         switch selectedMetric {
+        case .sleep:
+            guard let sleep = metric.totalSleep else { return nil }
+            return sleep / 3600.0 // Convert seconds to hours
         case .weight:
             guard let kg = metric.bodyMass else { return nil }
             // Convert to user's preferred unit
@@ -111,9 +114,6 @@ struct WellnessTrendChart: View {
                 return kg * 2.20462
             }
             return kg
-        case .sleep:
-            guard let sleep = metric.totalSleep else { return nil }
-            return sleep / 3600.0 // Convert seconds to hours
         case .steps:
             return metric.steps.map { Double($0) }
         case .restingHR:
@@ -323,12 +323,12 @@ struct WellnessTrendChart: View {
     
     private func formatValue(_ value: Double) -> String {
         switch selectedMetric {
-        case .weight:
-            return String(format: "%.1f %@", value, selectedMetric.unit(weightUnit: weightUnit))
         case .sleep:
             let hours = Int(value)
             let minutes = Int((value - Double(hours)) * 60)
             return "\(hours)h \(minutes)m"
+        case .weight:
+            return String(format: "%.1f %@", value, selectedMetric.unit(weightUnit: weightUnit))
         case .steps:
             return String(format: "%.0f %@", value, selectedMetric.unit(weightUnit: weightUnit))
         case .restingHR:
