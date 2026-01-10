@@ -330,25 +330,25 @@ struct TrainingLoadView: View {
                 }
             }
             // THROTTLE the readiness change listener
-             .onChange(of: healthManager.readiness) { newValue in
-                 // Only refresh if readiness actually changed meaningfully
-                 guard let lastReadiness = viewModel.readiness else {
-                     // First time, always refresh
-                     print("📊 TrainingLoadView: Initial readiness load")
-                     viewModel.refresh(readiness: newValue)
-                     return
-                 }
-                 
-                 guard lastReadiness.latestHRV != newValue.latestHRV ||
-                        lastReadiness.latestRHR != newValue.latestRHR ||
-                        lastReadiness.sleepDuration != newValue.sleepDuration else {
-                     print("📊 TrainingLoadView: Readiness unchanged, skipping refresh")
-                     return
-                 }
-                 
-                 print("📊 TrainingLoadView: Readiness changed, refreshing")
-                 viewModel.refresh(readiness: newValue)
-             }
+            .onChange(of: healthManager.readiness) { newValue in
+                // Only refresh if readiness actually changed meaningfully
+                guard let lastReadiness = viewModel.readiness else {
+                    // First time, always refresh
+                    print("📊 TrainingLoadView: Initial readiness load")
+                    viewModel.refresh(readiness: newValue)
+                    return
+                }
+                
+                guard lastReadiness.latestHRV != newValue.latestHRV ||
+                      lastReadiness.latestRHR != newValue.latestRHR ||
+                      lastReadiness.sleepDuration != newValue.sleepDuration else {
+                    print("📊 TrainingLoadView: Readiness unchanged, skipping refresh")
+                    return
+                }
+                
+                print("📊 TrainingLoadView: Readiness changed, refreshing")
+                viewModel.refresh(readiness: newValue)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .dataSourceChanged)) { _ in
                 Task {
                     // Re-sync from new source (both training AND wellness)

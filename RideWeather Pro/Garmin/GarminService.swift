@@ -161,7 +161,7 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             request.setValue("Basic \(base64Credentials)", forHTTPHeaderField: "Authorization")
         }
         
-        var parameters: [(String, String)] = [
+        let parameters: [(String, String)] = [
             ("grant_type", "authorization_code"),
             ("redirect_uri", redirectUri),
             ("code", code),

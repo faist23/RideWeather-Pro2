@@ -93,7 +93,7 @@ struct GarminCourseFitGenerator {
     // MARK: - Message Writers
     
     private func writeFileIDMessage(encoder: Encoder, courseName: String) throws {
-        var fileIdMesg = FileIdMesg()
+        let fileIdMesg = FileIdMesg()
         
         try fileIdMesg.setType(.course)
         try fileIdMesg.setManufacturer(.development) // Use .development for custom files
@@ -109,7 +109,7 @@ struct GarminCourseFitGenerator {
         courseName: String,
         pacingPlan: PacingPlan
     ) throws {
-        var courseMesg = CourseMesg()
+        let courseMesg = CourseMesg()
         
         // Course name (max 15 characters for Garmin compatibility)
         let safeName = String(courseName.prefix(15))
@@ -131,7 +131,7 @@ struct GarminCourseFitGenerator {
             throw CourseExportError.invalidData("Missing route endpoints")
         }
         
-        var lapMesg = LapMesg()
+        let lapMesg = LapMesg()
         
         // Lap timing
         let startTime = Date()
@@ -183,7 +183,7 @@ struct GarminCourseFitGenerator {
                 continue
             }
             
-            var coursePointMesg = CoursePointMesg()
+            let coursePointMesg = CoursePointMesg()
             
             try coursePointMesg.setMessageIndex(messageIndex)
             messageIndex += 1
@@ -251,7 +251,7 @@ struct GarminCourseFitGenerator {
                 abs($0.distance - targetDistance) < abs($1.distance - targetDistance)
             }) else { continue }
             
-            var cueMesg = CoursePointMesg()
+            let cueMesg = CoursePointMesg()
             try cueMesg.setMessageIndex(messageIndex)
             messageIndex += 1
             
@@ -330,7 +330,7 @@ struct GarminCourseFitGenerator {
                 }
             }
             
-            var recordMesg = RecordMesg()
+            let recordMesg = RecordMesg()
             
             // Timestamp (simulated based on estimated speed)
             try recordMesg.setTimestamp(DateTime(date: currentTime))
@@ -425,7 +425,7 @@ struct GarminCourseFitGenerator {
                 pacingPlan: pacingPlan
             )
             
-            var coursePointMesg = CoursePointMesg()
+            let coursePointMesg = CoursePointMesg()
             
             try coursePointMesg.setMessageIndex(messageIndex)
             messageIndex += 1

@@ -33,7 +33,7 @@ actor RouteIntelligenceEngine {
         }
         
         // 1. Check Cache
-        if let cached = RouteSummaryCacheManager.shared.getCachedSummary(start: startCoord, end: endCoord, distance: distance) {
+        if let cached = await RouteSummaryCacheManager.shared.getCachedSummary(start: startCoord, end: endCoord, distance: distance) {
             return RouteSummaryResult(summary: cached.summary, routeType: cached.routeType, fromCache: true)
         }
         
@@ -132,7 +132,7 @@ actor RouteIntelligenceEngine {
         let fullSummary = parts.joined(separator: ". ") + "."
         
         // 5. Cache
-        RouteSummaryCacheManager.shared.cacheSummary(
+        await RouteSummaryCacheManager.shared.cacheSummary(
             fullSummary,
             start: start,
             end: end,
@@ -370,7 +370,7 @@ actor RouteIntelligenceEngine {
     }
     
     private func getRichLocationName(for coord: CLLocationCoordinate2D, preferStreet: Bool) async -> LocationDetails? {
-        if let cached = RouteSummaryCacheManager.shared.getCachedLocationName(for: coord) {
+        if let cached = await RouteSummaryCacheManager.shared.getCachedLocationName(for: coord) {
             return LocationDetails(shortName: cached.components(separatedBy: ",").first ?? cached, fullName: cached)
         }
         
@@ -398,7 +398,7 @@ actor RouteIntelligenceEngine {
                 if shortName == "Unknown" { return nil }
                 
                 let fullName = [shortName, placemark.locality].compactMap { $0 }.joined(separator: ", ")
-                RouteSummaryCacheManager.shared.cacheLocationName(fullName, for: coord)
+                await RouteSummaryCacheManager.shared.cacheLocationName(fullName, for: coord)
                 return LocationDetails(shortName: shortName, fullName: fullName)
             }
         } catch { }

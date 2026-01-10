@@ -824,7 +824,7 @@ extension WeatherViewModel {
                 }
                 
                 // Use the LOCAL copy, not self.elevationAnalysis
-                let elevation = localElevationAnalysis?.elevation(at: cumulativeDistance)
+                let elevation = await localElevationAnalysis?.elevation(at: cumulativeDistance)
                 
                 points.append(EnhancedRoutePoint(
                     coordinate: coordinate,
