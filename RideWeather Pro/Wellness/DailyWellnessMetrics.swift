@@ -140,7 +140,7 @@ struct DailyWellnessMetrics: Identifiable, Codable {
 // MARK: - Wellness Summary
 
 /// Aggregated wellness metrics over a period
-struct WellnessSummary {
+struct  WellnessSummary: Codable {
     let period: String // e.g., "Last 7 Days"
     let metrics: [DailyWellnessMetrics]
     

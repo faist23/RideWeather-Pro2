@@ -723,7 +723,7 @@ class HealthKitManager: ObservableObject {
                 } else {
                     // Case B (Your 12/27 Issue): AutoSleep exists but has 0 sleep.
                     // FALLBACK: Use everything ELSE (Apple Watch).
-                    print("   ⚠️ AutoSleep detected but empty. Falling back to Apple Watch.")
+ //                   print("   ⚠️ AutoSleep detected but empty. Falling back to Apple Watch.")
                     targetSamples = samples.filter { !$0.sourceRevision.source.bundleIdentifier.lowercased().contains("autosleep") }
                 }
             } else {

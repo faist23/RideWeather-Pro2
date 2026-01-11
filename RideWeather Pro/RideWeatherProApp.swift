@@ -14,6 +14,8 @@ struct RideWeatherProApp: App {
     @StateObject private var garminService = GarminService()
     @StateObject private var healthManager = HealthKitManager()
     @State private var showLaunchView = true
+
+    let phoneSession = PhoneSessionManager.shared
     
     @Environment(\.scenePhase) private var scenePhase
     

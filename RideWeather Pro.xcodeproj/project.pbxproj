@@ -14,14 +14,40 @@
 		7E79A47A2EE480DB0082A94C /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = 7E79A4792EE480DB0082A94C /* Realtime */; };
 		7E79A47C2EE480DB0082A94C /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = 7E79A47B2EE480DB0082A94C /* Storage */; };
 		7E79A47E2EE480DB0082A94C /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 7E79A47D2EE480DB0082A94C /* Supabase */; };
+		7E87E9262F12EDC00050060A /* RideWeatherWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 7E87E91C2F12EDBF0050060A /* RideWeatherWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7E96CD292E7F7A2F009475FA /* FITSwiftSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 7E96CD282E7F7A2F009475FA /* FITSwiftSDK */; };
 		7EAE7C3A2E6F35EE006C9634 /* Solar in Frameworks */ = {isa = PBXBuildFile; productRef = 7EAE7C392E6F35EE006C9634 /* Solar */; };
 		7EB9FF512E5CBFE000157204 /* FitFileParser in Frameworks */ = {isa = PBXBuildFile; productRef = 7EB9FF502E5CBFE000157204 /* FitFileParser */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		7E87E9242F12EDC00050060A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7E5B80A32E4C3B2D005D114F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7E87E91B2F12EDBF0050060A;
+			remoteInfo = "RideWeatherWatch Watch App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		7E87E92A2F12EDC00050060A /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				7E87E9262F12EDC00050060A /* RideWeatherWatch Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		7E5B80AB2E4C3B2D005D114F /* RideWeather Pro.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "RideWeather Pro.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E6A9AC52EA881220038B160 /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
+		7E87E91C2F12EDBF0050060A /* RideWeatherWatch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "RideWeatherWatch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -32,6 +58,14 @@
 			);
 			target = 7E5B80AA2E4C3B2D005D114F /* RideWeather Pro */;
 		};
+		7E87E92C2F12F0160050060A /* Exceptions for "RideWeather Pro" folder in "RideWeatherWatch Watch App" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				TrainingLoad/TrainingLoadModels.swift,
+				Wellness/DailyWellnessMetrics.swift,
+			);
+			target = 7E87E91B2F12EDBF0050060A /* RideWeatherWatch Watch App */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -39,8 +73,14 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				7E5B80E12E4C3F24005D114F /* Exceptions for "RideWeather Pro" folder in "RideWeather Pro" target */,
+				7E87E92C2F12F0160050060A /* Exceptions for "RideWeather Pro" folder in "RideWeatherWatch Watch App" target */,
 			);
 			path = "RideWeather Pro";
+			sourceTree = "<group>";
+		};
+		7E87E91D2F12EDBF0050060A /* RideWeatherWatch Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "RideWeatherWatch Watch App";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -62,6 +102,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7E87E9192F12EDBF0050060A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -70,6 +117,7 @@
 			children = (
 				7E6A9AC52EA881220038B160 /* .gitignore */,
 				7E5B80AD2E4C3B2D005D114F /* RideWeather Pro */,
+				7E87E91D2F12EDBF0050060A /* RideWeatherWatch Watch App */,
 				7E5B80AC2E4C3B2D005D114F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -78,6 +126,7 @@
 			isa = PBXGroup;
 			children = (
 				7E5B80AB2E4C3B2D005D114F /* RideWeather Pro.app */,
+				7E87E91C2F12EDBF0050060A /* RideWeatherWatch Watch App.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -92,10 +141,12 @@
 				7E5B80A72E4C3B2D005D114F /* Sources */,
 				7E5B80A82E4C3B2D005D114F /* Frameworks */,
 				7E5B80A92E4C3B2D005D114F /* Resources */,
+				7E87E92A2F12EDC00050060A /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				7E87E9252F12EDC00050060A /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				7E5B80AD2E4C3B2D005D114F /* RideWeather Pro */,
@@ -116,6 +167,28 @@
 			productReference = 7E5B80AB2E4C3B2D005D114F /* RideWeather Pro.app */;
 			productType = "com.apple.product-type.application";
 		};
+		7E87E91B2F12EDBF0050060A /* RideWeatherWatch Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7E87E9272F12EDC00050060A /* Build configuration list for PBXNativeTarget "RideWeatherWatch Watch App" */;
+			buildPhases = (
+				7E87E9182F12EDBF0050060A /* Sources */,
+				7E87E9192F12EDBF0050060A /* Frameworks */,
+				7E87E91A2F12EDBF0050060A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7E87E91D2F12EDBF0050060A /* RideWeatherWatch Watch App */,
+			);
+			name = "RideWeatherWatch Watch App";
+			packageProductDependencies = (
+			);
+			productName = "RideWeatherWatch Watch App";
+			productReference = 7E87E91C2F12EDBF0050060A /* RideWeatherWatch Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -123,11 +196,14 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2600;
+				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2610;
 				TargetAttributes = {
 					7E5B80AA2E4C3B2D005D114F = {
 						CreatedOnToolsVersion = 26.0;
+					};
+					7E87E91B2F12EDBF0050060A = {
+						CreatedOnToolsVersion = 26.2;
 					};
 				};
 			};
@@ -153,6 +229,7 @@
 			projectRoot = "";
 			targets = (
 				7E5B80AA2E4C3B2D005D114F /* RideWeather Pro */,
+				7E87E91B2F12EDBF0050060A /* RideWeatherWatch Watch App */,
 			);
 		};
 /* End PBXProject section */
@@ -166,6 +243,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7E87E91A2F12EDBF0050060A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -176,7 +260,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7E87E9182F12EDBF0050060A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		7E87E9252F12EDC00050060A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7E87E91B2F12EDBF0050060A /* RideWeatherWatch Watch App */;
+			targetProxy = 7E87E9242F12EDC00050060A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		7E5B80B62E4C3B2E005D114F /* Debug */ = {
@@ -376,6 +475,72 @@
 			};
 			name = Release;
 		};
+		7E87E9282F12EDC00050060A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DT58WA8N32;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = RideWeatherWatch;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "-.RideWeather-Pro";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "-.RideWeather-Pro.watchkitapp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Debug;
+		};
+		7E87E9292F12EDC00050060A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DT58WA8N32;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = RideWeatherWatch;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "-.RideWeather-Pro";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "-.RideWeather-Pro.watchkitapp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -393,6 +558,15 @@
 			buildConfigurations = (
 				7E5B80B92E4C3B2E005D114F /* Debug */,
 				7E5B80BA2E4C3B2E005D114F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7E87E9272F12EDC00050060A /* Build configuration list for PBXNativeTarget "RideWeatherWatch Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E87E9282F12EDC00050060A /* Debug */,
+				7E87E9292F12EDC00050060A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

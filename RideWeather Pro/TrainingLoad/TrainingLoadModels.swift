@@ -58,7 +58,7 @@ struct DailyTrainingLoad: Codable, Identifiable {
         }
     }
     
-    enum FormStatus: String {
+    enum FormStatus: String, Codable {
         case veryFatigued = "Very Fatigued"
         case fatigued = "Fatigued"
         case neutral = "Neutral"
@@ -92,7 +92,7 @@ struct DailyTrainingLoad: Codable, Identifiable {
 
 // MARK: - Training Load Summary
 
-struct TrainingLoadSummary {
+struct TrainingLoadSummary: Codable {
     let currentATL: Double
     let currentCTL: Double
     let currentTSB: Double

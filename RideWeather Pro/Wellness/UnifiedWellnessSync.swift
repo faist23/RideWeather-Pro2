@@ -470,7 +470,7 @@ class UnifiedWellnessSync: ObservableObject {
                 targetSamples = otherSamples
                 usedSource = autoSleepSamples.isEmpty ? "Apple Watch" : "Apple Watch (Fallback)"
                 if !autoSleepSamples.isEmpty {
-                    print("   ⚠️ AutoSleep found but had 0h sleep. Falling back to Apple Watch.")
+ //                   print("   ⚠️ AutoSleep found but had 0h sleep. Falling back to Apple Watch.")
                 }
             } else {
                 targetSamples = allSamples

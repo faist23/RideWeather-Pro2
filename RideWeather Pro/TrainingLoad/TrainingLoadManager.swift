@@ -56,6 +56,8 @@ class TrainingLoadManager {
         // Save
         saveDailyLoads(updatedLoads)
         
+        PhoneSessionManager.shared.sendUpdate()
+
         print("✅ Training Load: Added ride with \(Int(analysis.trainingStressScore)) TSS on \(rideDate)")
     }
     

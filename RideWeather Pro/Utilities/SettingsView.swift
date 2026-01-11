@@ -243,6 +243,11 @@ struct SettingsView: View {
                 Spacer()
                 Text(Bundle.main.buildNumber ?? "Unknown").foregroundStyle(.secondary)
             }
+            Section("Developer") {
+                Button("Force Watch Sync") {
+                    PhoneSessionManager.shared.sendUpdate()
+                }
+            }
         }
     }
     
