@@ -2,8 +2,6 @@
 //  PhoneSessionManager.swift
 //  RideWeather Pro
 //
-//  Created by Craig Faist on 1/10/26.
-//
 
 import Foundation
 import WatchConnectivity
@@ -19,15 +17,7 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
         }
     }
     
-    // MARK: - WCSessionDelegate
-    
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-        print("📱 Phone WCSession activated: \(activationState.rawValue)")
-        if let error = error {
-            print("📱 Activation error: \(error.localizedDescription)")
-        }
-        
-        // CRITICAL FIX: Send data immediately when the session connects
         if activationState == .activated {
             DispatchQueue.main.async {
                 self.sendUpdate()
@@ -36,47 +26,96 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
     }
     
     func sessionDidBecomeInactive(_ session: WCSession) {}
-    
     func sessionDidDeactivate(_ session: WCSession) {
-        // If the session deactivates (e.g. switching watches), reactivate it
         WCSession.default.activate()
     }
     
-    // MARK: - Sending Data
+    // MARK: - Send to Watch
     
     func sendUpdate() {
-        // 1. Check Activation
         guard WCSession.default.activationState == .activated else {
             print("⚠️ Cannot send: WCSession is not activated")
             return
         }
         
-        // 2. Fetch Data
         guard let loadSummary = TrainingLoadManager.shared.getCurrentSummary() else {
-            print("⚠️ Cannot send: No Training Load Summary available (TSB is nil)")
+            print("⚠️ Cannot send: No Training Load Summary available")
             return
         }
         
-        print("📱 Preparing to send TSB: \(Int(loadSummary.currentTSB))")
+        // ✅ ADD THIS: Check if we have readiness data
+        if HealthKitManager.shared?.readiness.readinessScore == 0 {
+            print("⚠️ Warning: Readiness score is 0 - may not have fetched yet")
+        }
         
-        // 3. Encode & Send
+        print("📱 Sending to watch: TSB=\(loadSummary.currentTSB), Readiness=\(HealthKitManager.shared?.readiness.readinessScore ?? 0)")
+        
         do {
-            let loadData = try JSONEncoder().encode(loadSummary)
+            var context: [String: Any] = [:]
             
-            var context: [String: Any] = ["trainingLoad": loadData]
+            // 1. Training Load
+            context["trainingLoad"] = try JSONEncoder().encode(loadSummary)
             
-            // Add wellness if available
+            // 2. Wellness
             if let wellness = WellnessManager.shared.currentSummary {
-                let wellnessData = try JSONEncoder().encode(wellness)
-                context["wellness"] = wellnessData
-                print("📱 Adding Wellness data to payload")
+                context["wellness"] = try JSONEncoder().encode(wellness)
             }
             
+            // 3. Today's Wellness
+            if let today = WellnessManager.shared.getTodayMetrics() {
+                context["currentWellness"] = try JSONEncoder().encode(today)
+            }
+            
+            // 4. Readiness (YOUR EXISTING DATA!)
+            if let readiness = HealthKitManager.shared?.readiness {
+                context["readiness"] = try JSONEncoder().encode(readiness)
+            }
+            
+            // 5. History
+            context["trainingHistory"] = try JSONEncoder().encode(TrainingLoadManager.shared.getHistory(days: 90))
+            context["wellnessHistory"] = try JSONEncoder().encode(WellnessManager.shared.getHistory(days: 30))
+            
             try WCSession.default.updateApplicationContext(context)
-            print("✅ Sent update to Watch (Size: \(loadData.count) bytes)")
+            print("✅ Sent data to Watch")
             
         } catch {
-            print("❌ Error encoding watch data: \(error)")
+            print("❌ Watch sync error: \(error)")
         }
+    }
+}
+
+// MARK: - Extensions
+
+extension HealthKitManager {
+    static var shared: HealthKitManager? {
+        return _sharedInstance
+    }
+    
+    private static var _sharedInstance: HealthKitManager?
+    
+    static func setShared(_ instance: HealthKitManager) {
+        _sharedInstance = instance
+    }
+}
+
+extension TrainingLoadManager {
+    func getHistory(days: Int) -> [DailyTrainingLoad] {
+        let calendar = Calendar.current
+        let startDate = calendar.date(byAdding: .day, value: -days, to: Date())!
+        let manager = TrainingLoadManager.shared
+        return manager.loadAllDailyLoads().filter { $0.date >= startDate }.sorted { $0.date < $1.date }
+    }
+}
+
+extension WellnessManager {
+    func getTodayMetrics() -> DailyWellnessMetrics? {
+        let calendar = Calendar.current
+        return dailyMetrics.first { calendar.isDateInToday($0.date) }
+    }
+    
+    func getHistory(days: Int) -> [DailyWellnessMetrics] {
+        let calendar = Calendar.current
+        let startDate = calendar.date(byAdding: .day, value: -days, to: Date())!
+        return dailyMetrics.filter { $0.date >= startDate }.sorted { $0.date < $1.date }
     }
 }

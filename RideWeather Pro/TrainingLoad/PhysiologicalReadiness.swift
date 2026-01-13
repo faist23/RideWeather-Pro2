@@ -9,7 +9,7 @@
 import Foundation
 
 /// A snapshot of physiological metrics from HealthKit.
-struct PhysiologicalReadiness: Equatable {
+struct PhysiologicalReadiness: Equatable, Codable {
     var latestHRV: Double?
     var averageHRV: Double?
     var latestRHR: Double?

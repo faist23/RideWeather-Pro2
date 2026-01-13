@@ -45,6 +45,12 @@ struct RideWeatherProApp: App {
             .task {
                 // Initialize MapKit early to reduce first-time loading lag
                 await initializeMapKit()
+
+                HealthKitManager.setShared(healthManager)
+                // Send initial data to watch
+                // Small delay to ensure managers are initialized
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                phoneSession.sendUpdate()
             }
             .onOpenURL { url in
                 print("App received URL via onOpenURL: \(url.absoluteString)")
@@ -73,15 +79,23 @@ struct RideWeatherProApp: App {
             .onChange(of: scenePhase) { oldPhase, newPhase in
                 if newPhase == .active && (oldPhase == .inactive || oldPhase == .background) {
                     Task {
-                        // ❌ REMOVE THIS: await syncWeight()
-                        
-                        // ✅ KEEP THIS: Fetch readiness data
+                        // Fetch readiness data
                         await healthManager.fetchReadinessData()
+                        
+                        // ✅ IMPORTANT: Wait a moment for data to propagate
+                        try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
+                        
+                        // Send updated data to watch
+                        phoneSession.sendUpdate()
                     }
                     
                     // Keep training load fill logic
                     TrainingLoadManager.shared.fillMissingDays()
                 }
+            }
+            // Send watch updates when readiness changes
+            .onChange(of: healthManager.readiness) { oldValue, newValue in
+                phoneSession.sendUpdate()
             }
         }
     }

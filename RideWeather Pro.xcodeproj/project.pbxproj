@@ -61,7 +61,9 @@
 		7E87E92C2F12F0160050060A /* Exceptions for "RideWeather Pro" folder in "RideWeatherWatch Watch App" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				TrainingLoad/PhysiologicalReadiness.swift,
 				TrainingLoad/TrainingLoadModels.swift,
+				Utilities/WeatherAlert.swift,
 				Wellness/DailyWellnessMetrics.swift,
 			);
 			target = 7E87E91B2F12EDBF0050060A /* RideWeatherWatch Watch App */;
