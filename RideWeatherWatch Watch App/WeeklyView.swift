@@ -26,10 +26,11 @@ struct WeeklyView: View {
                 .padding(.bottom, 4)
                 
                 // MAIN STATS GRID
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {                    BigStat(
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    BigStat(
                         value: "\(weekStats.rideCount)",
                         label: "Workouts",
-                        emoji: "🚴"
+                        emoji: "💪"
                     )
                     
                     BigStat(

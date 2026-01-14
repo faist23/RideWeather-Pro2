@@ -9,6 +9,8 @@ import WatchConnectivity
 class PhoneSessionManager: NSObject, WCSessionDelegate {
     static let shared = PhoneSessionManager()
     
+    var currentWeatherAlert: WeatherAlert?
+
     override init() {
         super.init()
         if WCSession.isSupported() {
@@ -31,6 +33,11 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
     }
     
     // MARK: - Send to Watch
+    
+    func updateAlert(_ alert: WeatherAlert?) {
+        self.currentWeatherAlert = alert
+        sendUpdate()
+    }
     
     func sendUpdate() {
         guard WCSession.default.activationState == .activated else {
@@ -74,6 +81,12 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
             // 5. History
             context["trainingHistory"] = try JSONEncoder().encode(TrainingLoadManager.shared.getHistory(days: 90))
             context["wellnessHistory"] = try JSONEncoder().encode(WellnessManager.shared.getHistory(days: 30))
+            
+            // Add Weather Alert
+            if let alert = currentWeatherAlert {
+                context["weatherAlert"] = try JSONEncoder().encode(alert)
+                print("⚠️ Included Weather Alert: \(alert.message)")
+            }
             
             try WCSession.default.updateApplicationContext(context)
             print("✅ Sent data to Watch")

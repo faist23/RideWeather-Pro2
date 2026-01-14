@@ -181,6 +181,17 @@ struct CurrentWeatherResponse: Codable {
 
 struct OneCallResponse: Codable {
     let hourly: [HourlyItem]
+    let alerts: [OWMAlert]?
+}
+
+// MARK: Alert API Model
+struct OWMAlert: Codable {
+    let sender_name: String
+    let event: String
+    let start: TimeInterval
+    let end: TimeInterval
+    let description: String
+    let tags: [String]
 }
 
 // MARK: - NEW: Daily Forecast API Models

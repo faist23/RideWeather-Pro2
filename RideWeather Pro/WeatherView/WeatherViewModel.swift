@@ -47,6 +47,8 @@ class WeatherViewModel: ObservableObject {
     @Published var uiState: UIState = .loading
     @Published var currentLocation: CLLocation?
     
+    @Published var activeAlert: WeatherAlert?
+
     @Published var processingStatus: String = ""
     @Published var pacingGenerationStatus: String = ""
     
@@ -577,6 +579,26 @@ class WeatherViewModel: ObservableObject {
     
     private func processWeatherData(current: CurrentWeatherResponse, forecast: OneCallResponse) async {
         if !current.name.isEmpty { locationName = current.name }
+
+        // 1. PROCESS ALERTS
+                if let alerts = forecast.alerts, let first = alerts.first {
+                    let severity: WeatherAlert.Severity
+                    let eventLower = first.event.lowercased()
+                    
+                    if eventLower.contains("warning") { severity = .severe }
+                    else if eventLower.contains("watch") { severity = .warning }
+                    else { severity = .advisory }
+                    
+                    let alert = WeatherAlert(message: first.event, severity: severity)
+                    self.activeAlert = alert
+                    
+                    // 2. SYNC TO PHONE MANAGER IMMEDIATELY
+                    PhoneSessionManager.shared.updateAlert(alert)
+                } else {
+                    self.activeAlert = nil
+                    PhoneSessionManager.shared.updateAlert(nil)
+                }
+
         let rideTimestamp = rideDate.timeIntervalSince1970
         let nowTimestamp = Date().timeIntervalSince1970
         let allData = forecast.hourly

@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 @main
 struct RideWeatherWatch_App: App {
@@ -11,6 +12,16 @@ struct RideWeatherWatch_App: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onAppear {
+                    // ✅ REQUEST PERMISSION ON LAUNCH
+                    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                        if granted {
+                            print("⌚️ Notification permission granted")
+                        } else if let error = error {
+                            print("⌚️ Notification permission error: \(error.localizedDescription)")
+                        }
+                    }
+                }
         }
     }
 }

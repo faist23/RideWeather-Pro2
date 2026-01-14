@@ -73,7 +73,7 @@ class WeatherService {
         }
         
         // For regular forecast, exclude hourly data to save bandwidth
-        let exclude = "current,minutely,daily,alerts"
+        let exclude = "current,minutely,daily"
         guard let url = URL(string: "\(baseOneCallURL)/onecall?lat=\(lat)&lon=\(lon)&exclude=\(exclude)&appid=\(apiKey)&units=\(units)") else {
             throw URLError(.badURL)
         }
