@@ -335,6 +335,9 @@ class UnifiedTrainingLoadSync: ObservableObject {
         syncStatus = "Updating metrics..."
         var dailyData: [Date: (tss: Double, rideCount: Int, distance: Double, duration: TimeInterval)] = [:]
         
+        // 1. ✅ NEW: Find the latest precise date from all activities
+        let latestActivityDate = activities.map { $0.startDate }.max()
+        
         for activity in activities {
             let calendar = Calendar.current
             let activityDate = calendar.startOfDay(for: activity.startDate)
@@ -351,7 +354,9 @@ class UnifiedTrainingLoadSync: ObservableObject {
             }
         }
         
-        trainingLoadManager.updateBatchLoads(dailyData)
+        // 2. ✅ UPDATED: Pass the precise date to the manager
+        trainingLoadManager.updateBatchLoads(dailyData, latestPreciseDate: latestActivityDate)
+        
         trainingLoadManager.fillMissingDays()
         syncProgress = 1.0
     }

@@ -3,6 +3,7 @@
 //
 
 import Foundation
+import WidgetKit
 
 struct AppSettings: Codable, Equatable {
     var units: UnitSystem = .imperial
@@ -226,12 +227,27 @@ enum UnitSystem: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+struct SharedWeatherSummary: Codable {
+    let temperature: Int
+    let feelsLike: Int
+    let conditionIcon: String
+    let windSpeed: Int
+    let windDirection: String
+    let pop: Int // Probability of Precipitation %
+    let generatedAt: Date
+}
+
 class UserDefaultsManager {
     static let shared = UserDefaultsManager()
     private let settingsKey = "appSettings"
     private let defaults = UserDefaults.standard
 
-    private init() {}
+    private let suiteName = "group.com.ridepro.rideweather"
+    private let sharedDefaults: UserDefaults?
+    
+    private init() {
+        sharedDefaults = UserDefaults(suiteName: suiteName)
+    }
 
     func saveSettings(_ settings: AppSettings) {
         if let encoded = try? JSONEncoder().encode(settings) {
@@ -246,6 +262,34 @@ class UserDefaultsManager {
             }
         }
         return AppSettings()
+    }
+    
+    // MARK: - Shared Widget Data
+    
+    func saveWeatherSummary(_ weather: SharedWeatherSummary) {
+        if let data = try? JSONEncoder().encode(weather) {
+            sharedDefaults?.set(data, forKey: "widget_weather_summary")
+            
+            // This forces the widget to refresh immediately with the new weather
+            WidgetCenter.shared.reloadAllTimelines()
+            
+            print("💾 Saved shared weather summary and requested widget reload")
+        }
+    }
+    
+    func loadWeatherSummary() -> SharedWeatherSummary? {
+        guard let data = sharedDefaults?.data(forKey: "widget_weather_summary") else { return nil }
+        return try? JSONDecoder().decode(SharedWeatherSummary.self, from: data)
+    }
+    
+    // Helper to save TSB (Training Stress Balance) for the widget
+    func saveTrainingMetrics(tsb: Double, readiness: Int, status: String) {
+        sharedDefaults?.set(tsb, forKey: "widget_tsb")
+        sharedDefaults?.set(readiness, forKey: "widget_readiness")
+        sharedDefaults?.set(status, forKey: "widget_status")
+        
+        // Refresh widget here too
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
 

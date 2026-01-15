@@ -56,6 +56,14 @@ class TrainingLoadManager {
         // Save
         saveDailyLoads(updatedLoads)
         
+        // Save the PRECISE timestamp of this ride
+        // We only update if this ride is newer than what we have (in case of historical imports)
+        let lastKnown = UserDefaults.standard.object(forKey: "last_ride_precise_date") as? Date ?? Date.distantPast
+        if analysis.date > lastKnown {
+            UserDefaults.standard.set(analysis.date, forKey: "last_ride_precise_date")
+            print("💾 Saved precise last ride time: \(analysis.date.formatted())")
+        }
+        
         PhoneSessionManager.shared.sendUpdate()
 
         print("✅ Training Load: Added ride with \(Int(analysis.trainingStressScore)) TSS on \(rideDate)")
@@ -638,8 +646,16 @@ extension TrainingLoadManager {
         var dailyLoads = loadAllDailyLoads()
         let calendar = Calendar.current
         
+        // ✅ NEW: Track the latest date in this batch
+        var latestBatchDate = Date.distantPast
+        
         // 2. Memory-only processing
         for analysis in analyses {
+            // Track latest
+            if analysis.date > latestBatchDate {
+                latestBatchDate = analysis.date
+            }
+            
             let rideDate = calendar.startOfDay(for: analysis.date)
             
             if let existingIndex = dailyLoads.firstIndex(where: {
@@ -670,6 +686,20 @@ extension TrainingLoadManager {
         // 4. Single Write
         saveDailyLoads(updatedLoads)
         
+        // Update Precise Timestamp if newer
+        let lastKnown = UserDefaults.standard.object(forKey: "last_ride_precise_date") as? Date ?? Date.distantPast
+        if latestBatchDate > lastKnown {
+            UserDefaults.standard.set(latestBatchDate, forKey: "last_ride_precise_date")
+            print("\n🔎 DEBUG (Phone): Batch Import found Precise Date: \(latestBatchDate.formatted(date: .omitted, time: .standard))")
+            print("🔎 DEBUG (Phone): Saving to UserDefaults 'last_ride_precise_date'\n")
+            
+            // Trigger sync to watch immediately
+            PhoneSessionManager.shared.sendUpdate()
+        } else {
+            // 🔎 SEARCHLIGHT 1 (Alternative): Did we ignore it?
+            print("\n🔎 DEBUG (Phone): Ignored batch date \(latestBatchDate.formatted()) because it is older than stored \(lastKnown.formatted())\n")
+        }
+        
         print("✅ Training Load: Successfully batch imported \(analyses.count) rides. I/O optimized.")
     }
     
@@ -677,7 +707,8 @@ extension TrainingLoadManager {
     
     /// Updates multiple days efficiently.
     /// Replaces the logic of calling updateDailyLoad() in a loop.
-    func updateBatchLoads(_ updates: [Date: (tss: Double, rideCount: Int, distance: Double, duration: TimeInterval)]) {
+    /// ✅ UPDATED: Now accepts latestPreciseDate to fix Watch sync
+    func updateBatchLoads(_ updates: [Date: (tss: Double, rideCount: Int, distance: Double, duration: TimeInterval)], latestPreciseDate: Date? = nil) {
         guard !updates.isEmpty else { return }
         
         print("⚡️ Training Load: Batch updating \(updates.count) days...")
@@ -691,8 +722,7 @@ extension TrainingLoadManager {
             let dayStart = calendar.startOfDay(for: date)
             
             if let existingIndex = dailyLoads.firstIndex(where: { calendar.isDate($0.date, inSameDayAs: dayStart) }) {
-                // MATCHES EXISTING LOGIC: Overwrite/Update values (don't append)
-                // This ensures re-syncing doesn't double-count TSS
+                // MATCHES EXISTING LOGIC: Overwrite/Update values
                 dailyLoads[existingIndex].tss = data.tss
                 dailyLoads[existingIndex].rideCount = data.rideCount
                 dailyLoads[existingIndex].totalDistance = data.distance
@@ -709,12 +739,25 @@ extension TrainingLoadManager {
             }
         }
         
-        // 3. Sort & Recalculate Metrics (CTL/ATL/TSB) - Done once instead of N times
+        // 3. Sort & Recalculate Metrics (CTL/ATL/TSB)
         dailyLoads.sort { $0.date < $1.date }
         let updatedLoads = recalculateMetrics(for: dailyLoads)
         
         // 4. Single Write
         saveDailyLoads(updatedLoads)
+        
+        // 5. ✅ NEW: Save the Precise Timestamp (Fixes "19h" on Watch)
+        if let newDate = latestPreciseDate {
+            let lastKnown = UserDefaults.standard.object(forKey: "last_ride_precise_date") as? Date ?? Date.distantPast
+            if newDate > lastKnown {
+                UserDefaults.standard.set(newDate, forKey: "last_ride_precise_date")
+                
+                print("🔎 DEBUG (Phone): Batch Update saved precise last ride time: \(newDate.formatted(date: .omitted, time: .standard))")
+                
+                // Trigger sync immediately
+                PhoneSessionManager.shared.sendUpdate()
+            }
+        }
         
         print("✅ Training Load: Batch update complete. Processed \(updates.count) days.")
     }

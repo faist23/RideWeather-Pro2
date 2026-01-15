@@ -34,7 +34,7 @@ struct RecoveryView: View {
                         .foregroundStyle(.secondary)
                         .tracking(1)
                     
-                    Text("\(recovery.hoursSinceRide)h since last ride")
+                    Text("\(recovery.hoursSinceRide)h since last workout")
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                 }
@@ -214,7 +214,7 @@ struct RecoveryStatus {
         wellness: DailyWellnessMetrics,
         weekHistory: [DailyWellnessMetrics]
     ) -> RecoveryStatus {
-        // Hours since last ride
+        // Hours since last workout
         let hoursSinceRide: Int
         if let lastRide = lastRideDate {
             hoursSinceRide = Int(Date().timeIntervalSince(lastRide) / 3600)

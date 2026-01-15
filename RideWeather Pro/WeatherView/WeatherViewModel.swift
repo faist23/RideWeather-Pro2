@@ -581,23 +581,27 @@ class WeatherViewModel: ObservableObject {
         if !current.name.isEmpty { locationName = current.name }
 
         // 1. PROCESS ALERTS
-                if let alerts = forecast.alerts, let first = alerts.first {
-                    let severity: WeatherAlert.Severity
-                    let eventLower = first.event.lowercased()
-                    
-                    if eventLower.contains("warning") { severity = .severe }
-                    else if eventLower.contains("watch") { severity = .warning }
-                    else { severity = .advisory }
-                    
-                    let alert = WeatherAlert(message: first.event, severity: severity)
-                    self.activeAlert = alert
-                    
-                    // 2. SYNC TO PHONE MANAGER IMMEDIATELY
-                    PhoneSessionManager.shared.updateAlert(alert)
-                } else {
-                    self.activeAlert = nil
-                    PhoneSessionManager.shared.updateAlert(nil)
-                }
+        if let alerts = forecast.alerts, let first = alerts.first {
+            let severity: WeatherAlert.Severity
+            let eventLower = first.event.lowercased()
+            
+            if eventLower.contains("warning") { severity = .severe }
+            else if eventLower.contains("watch") { severity = .warning }
+            else { severity = .advisory }
+            
+            // Pass 'first.description' to capture the real API text
+            let alert = WeatherAlert(
+                message: first.event,
+                description: first.description,
+                severity: severity
+            )
+            
+            self.activeAlert = alert
+            PhoneSessionManager.shared.updateAlert(alert)
+        } else {
+            self.activeAlert = nil
+            PhoneSessionManager.shared.updateAlert(nil)
+        }
 
         let rideTimestamp = rideDate.timeIntervalSince1970
         let nowTimestamp = Date().timeIntervalSince1970
@@ -620,6 +624,20 @@ class WeatherViewModel: ObservableObject {
                 hourlyForecast = allData.dropFirst(startIndex+1).prefix(6).map { WeatherMapper.mapForecastItemToUIModel($0) }
             }
         }
+        
+        // Save Summary for Widget
+        // This takes the current weather and saves it to the App Group
+        let summary = SharedWeatherSummary(
+            temperature: Int(current.main.temp),
+            feelsLike: Int(current.main.feelsLike),
+            conditionIcon: current.weather.first?.icon ?? "sun.max",
+            windSpeed: Int(current.wind.speed),
+            windDirection: getCardinalDirection(Double(current.wind.deg)), 
+            pop: Int((forecast.hourly.first?.pop ?? 0) * 100),
+            generatedAt: Date()
+        )
+        
+        UserDefaultsManager.shared.saveWeatherSummary(summary)
     }
     
     // MARK: - Advanced Pacing Methods
@@ -751,6 +769,13 @@ class WeatherViewModel: ObservableObject {
         powerAnalysisResult = nil
         elevationAnalysis = nil
         print("🔄 Cleared pacing plan and power analysis")
+    }
+    
+    // MARK: - Widget Helpers
+    private func getCardinalDirection(_ degrees: Double) -> String {
+        let directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        let index = Int((degrees + 22.5) / 45.0) & 7
+        return directions[index]
     }
 }
 

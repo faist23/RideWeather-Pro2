@@ -8,12 +8,14 @@ import SwiftUI
 
 struct WeatherAlert: Codable, Identifiable {
     let id: UUID
-    let message: String
+    let message: String      // Short title (e.g. "Special Weather Statement")
+    let description: String  // Full details from API
     let severity: Severity
     
-    init(id: UUID = UUID(), message: String, severity: Severity) {
+    init(id: UUID = UUID(), message: String, description: String, severity: Severity) {
         self.id = id
         self.message = message
+        self.description = description
         self.severity = severity
     }
     
@@ -33,9 +35,32 @@ struct WeatherAlert: Codable, Identifiable {
         }
     }
     
+    // Smart Text Color (Black for Yellow/Orange, White for Red)
+    var textColor: Color {
+        switch severity {
+        case .advisory, .warning: return .black // Fixes readability on Yellow/Orange
+        case .severe: return .white             // White looks best on Red
+        }
+    }
+    
     enum Severity: String, Codable {
         case severe
         case warning
         case advisory
+    }
+    
+    var cleanDescription: String {
+        // 1. Replace double newlines (paragraphs) with a unique placeholder
+        let paragraphsPreserved = description
+            .replacingOccurrences(of: "\n\n", with: "[[PARAGRAPH]]")
+        
+        // 2. Replace single newlines (hard wraps) with a space
+        let singleLinesRemoved = paragraphsPreserved.replacingOccurrences(of: "\n", with: " ")
+        
+        // 3. Restore paragraphs and trim whitespace
+        return singleLinesRemoved
+            .replacingOccurrences(of: "[[PARAGRAPH]]", with: "\n\n")
+            .replacingOccurrences(of: "  ", with: " ") // Remove accidental double spaces
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

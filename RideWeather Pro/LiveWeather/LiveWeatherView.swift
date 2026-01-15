@@ -41,6 +41,12 @@ struct LiveWeatherView: View {
                             .offset(y: scrollOffset > 0 ? -scrollOffset * 0.7 : 0)
                             .opacity(1 - (scrollOffset / 200).clamped(to: 0...1))
                         
+                        // Weather Alert
+                        if let alert = viewModel.activeAlert {
+                            WeatherAlertBanner(alert: alert)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                        
                         if viewModel.isLoading && viewModel.displayWeather == nil {
                             ModernShimmerView()
                                 .transition(.opacity.combined(with: .scale))
@@ -327,6 +333,61 @@ struct ModernAnalyticsStatCard: View {
                 }
             }
         }
+    }
+}
+
+struct WeatherAlertBanner: View {
+    let alert: WeatherAlert
+    @State private var isExpanded = false
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.spring()) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.title3)
+                    // ✅ FIX: Use alert.textColor (Black on Yellow)
+                        .foregroundStyle(alert.textColor)
+                        .symbolEffect(.pulse, options: .repeating, isActive: true)
+                    
+                    Text(alert.message.capitalized)
+                        .font(.headline.bold())
+                        .foregroundStyle(alert.textColor) // ✅ FIX
+                        .lineLimit(1)
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.down")
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                        .foregroundStyle(alert.textColor.opacity(0.8)) // ✅ FIX
+                }
+                .padding()
+                .background(alert.color.gradient) // Use alert.color (Yellow/Orange/Red)
+            }
+            .buttonStyle(.plain)
+            
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    // SHOW DESCRIPTION
+                    Text(alert.cleanDescription)
+                        .font(.subheadline)
+                        .foregroundStyle(alert.textColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 4)
+                    
+                    Text("Severity: \(alert.severity.rawValue.capitalized)")
+                        .font(.caption.bold())
+                        .foregroundStyle(alert.textColor.opacity(0.8))
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(alert.color) // Match background
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(radius: 4)
     }
 }
 

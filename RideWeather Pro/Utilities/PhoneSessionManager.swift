@@ -5,13 +5,15 @@
 
 import Foundation
 import WatchConnectivity
+import UIKit
 
 class PhoneSessionManager: NSObject, WCSessionDelegate {
     static let shared = PhoneSessionManager()
     
-    var currentWeatherAlert: WeatherAlert?
-
-    override init() {
+    // Cache the latest alert so we don't lose it when sending other updates
+    private var currentAlert: WeatherAlert?
+    
+    override private init() {
         super.init()
         if WCSession.isSupported() {
             WCSession.default.delegate = self
@@ -19,81 +21,65 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
         }
     }
     
-    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-        if activationState == .activated {
-            DispatchQueue.main.async {
-                self.sendUpdate()
-            }
-        }
-    }
+    // MARK: - Public API
     
-    func sessionDidBecomeInactive(_ session: WCSession) {}
-    func sessionDidDeactivate(_ session: WCSession) {
-        WCSession.default.activate()
-    }
-    
-    // MARK: - Send to Watch
-    
-    func updateAlert(_ alert: WeatherAlert?) {
-        self.currentWeatherAlert = alert
-        sendUpdate()
-    }
-    
+    /// Called when Training Load changes
     func sendUpdate() {
-        guard WCSession.default.activationState == .activated else {
-            print("⚠️ Cannot send: WCSession is not activated")
-            return
-        }
-        
-        guard let loadSummary = TrainingLoadManager.shared.getCurrentSummary() else {
-            print("⚠️ Cannot send: No Training Load Summary available")
-            return
-        }
-        
-        // ✅ ADD THIS: Check if we have readiness data
-        if HealthKitManager.shared?.readiness.readinessScore == 0 {
-            print("⚠️ Warning: Readiness score is 0 - may not have fetched yet")
-        }
-        
-        print("📱 Sending to watch: TSB=\(loadSummary.currentTSB), Readiness=\(HealthKitManager.shared?.readiness.readinessScore ?? 0)")
+        pushFullContext()
+    }
+    
+    /// Called when Weather Alert changes
+    func updateAlert(_ alert: WeatherAlert?) {
+        self.currentAlert = alert // Save to memory
+        pushFullContext()         // Send everything including the new alert
+    }
+    
+    // MARK: - The Master Sync Function
+    
+    /// Gathers ALL data (Training, Wellness, Weather, Date, Alerts) and sends one complete package.
+    private func pushFullContext() {
+        guard WCSession.default.activationState == .activated else { return }
         
         do {
             var context: [String: Any] = [:]
             
-            // 1. Training Load
-            context["trainingLoad"] = try JSONEncoder().encode(loadSummary)
-            
-            // 2. Wellness
-            if let wellness = WellnessManager.shared.currentSummary {
-                context["wellness"] = try JSONEncoder().encode(wellness)
-            }
-            
-            // 3. Today's Wellness
-            if let today = WellnessManager.shared.getTodayMetrics() {
-                context["currentWellness"] = try JSONEncoder().encode(today)
-            }
-            
-            // 4. Readiness (YOUR EXISTING DATA!)
-            if let readiness = HealthKitManager.shared?.readiness {
-                context["readiness"] = try JSONEncoder().encode(readiness)
-            }
-            
-            // 5. History
+            // 1. Training Load History
             context["trainingHistory"] = try JSONEncoder().encode(TrainingLoadManager.shared.getHistory(days: 90))
+            
+            // 2. Wellness History
             context["wellnessHistory"] = try JSONEncoder().encode(WellnessManager.shared.getHistory(days: 30))
             
-            // Add Weather Alert
-            if let alert = currentWeatherAlert {
-                context["weatherAlert"] = try JSONEncoder().encode(alert)
-                print("⚠️ Included Weather Alert: \(alert.message)")
+            // 3. Weather Summary (Widget)
+            if let weatherData = UserDefaultsManager.shared.loadWeatherSummary() {
+                context["weatherSummary"] = try JSONEncoder().encode(weatherData)
             }
             
+            // 4. Weather Alert (Use cached or nil)
+            if let alert = currentAlert {
+                context["weatherAlert"] = try JSONEncoder().encode(alert)
+            }
+            
+            // 5. Precise Last Ride Date (Send as TimeInterval to be 100% safe)
+            if let lastRide = UserDefaults.standard.object(forKey: "last_ride_precise_date") as? Date {
+                // Sending as Double avoids any Date type-casting issues across the bridge
+                context["lastRidePreciseDate_ts"] = lastRide.timeIntervalSinceReferenceDate
+                print("📱 Sending Timestamp: \(lastRide.timeIntervalSinceReferenceDate) (\(lastRide.formatted(date: .omitted, time: .standard)))")
+            }
+            
+            // Send the combined package
             try WCSession.default.updateApplicationContext(context)
-            print("✅ Sent data to Watch")
+            print("✅ WCSession: Sent full context update.")
             
         } catch {
-            print("❌ Watch sync error: \(error)")
+            print("❌ WCSession Error: \(error)")
         }
+    }
+    
+    // MARK: - WCSessionDelegate Boilerplate
+    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {}
+    func sessionDidBecomeInactive(_ session: WCSession) {}
+    func sessionDidDeactivate(_ session: WCSession) {
+        WCSession.default.activate()
     }
 }
 

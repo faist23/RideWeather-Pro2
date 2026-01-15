@@ -28,66 +28,110 @@ struct RideWeatherWatch_App: App {
 
 struct ContentView: View {
     @ObservedObject private var session = WatchSessionManager.shared
+    @State private var showingAlertDetails = false // State to toggle sheet
     
     var body: some View {
-        TabView {
-            // PAGE 1: READINESS (The Decision Maker)
-            if let readiness = session.readinessData,
-               let load = session.loadSummary {
-                ReadinessView(readiness: readiness, tsb: load.currentTSB)
-            } else {
-                ContentUnavailableView(
-                    "No Readiness Data",
-                    systemImage: "figure.strengthtraining.traditional",
-                    description: Text("Open iPhone app to sync")
-                )
-                .containerBackground(.gray.gradient, for: .tabView)
+        ZStack {
+            TabView {
+                // PAGE 1: READINESS (The Decision Maker)
+                if let readiness = session.readinessData,
+                   let load = session.loadSummary {
+                    ReadinessView(readiness: readiness, tsb: load.currentTSB)
+                } else {
+                    ContentUnavailableView(
+                        "No Readiness Data",
+                        systemImage: "figure.strengthtraining.traditional",
+                        description: Text("Open iPhone app to sync")
+                    )
+                    .containerBackground(.gray.gradient, for: .tabView)
+                }
+                
+                // PAGE 2: FORM (Training Load)
+                if let load = session.loadSummary,
+                   let weeklyProgress = session.weeklyProgress {
+                    FormView(summary: load, weeklyProgress: weeklyProgress)
+                } else {
+                    ContentUnavailableView(
+                        "No Form Data",
+                        systemImage: "chart.bar.xaxis",
+                        description: Text("Open iPhone app to sync")
+                    )
+                    .containerBackground(.blue.gradient, for: .tabView)
+                }
+                
+                // PAGE 3: RECOVERY
+                if let recovery = session.recoveryStatus,
+                   let wellness = session.currentWellness {
+                    RecoveryView(recovery: recovery, wellness: wellness)
+                } else {
+                    ContentUnavailableView(
+                        "No Recovery Data",
+                        systemImage: "heart.slash",
+                        description: Text("Open iPhone app to sync")
+                    )
+                    .containerBackground(.black.gradient, for: .tabView)
+                }
+                
+                // PAGE 4: WEEKLY SUMMARY
+                if let weekStats = session.weeklyStats {
+                    WeeklyView(
+                        weekStats: weekStats,
+                        weatherAlert: session.weatherAlert
+                    )
+                } else {
+                    ContentUnavailableView(
+                        "No Weekly Data",
+                        systemImage: "calendar",
+                        description: Text("Open iPhone app to sync")
+                    )
+                    .containerBackground(.indigo.gradient, for: .tabView)
+                }
             }
-            
-            // PAGE 2: FORM (Training Load)
-            if let load = session.loadSummary,
-               let weeklyProgress = session.weeklyProgress {
-                FormView(summary: load, weeklyProgress: weeklyProgress)
-            } else {
-                ContentUnavailableView(
-                    "No Form Data",
-                    systemImage: "chart.bar.xaxis",
-                    description: Text("Open iPhone app to sync")
-                )
-                .containerBackground(.blue.gradient, for: .tabView)
-            }
-            
-            // PAGE 3: RECOVERY
-            if let recovery = session.recoveryStatus,
-               let wellness = session.currentWellness {
-                RecoveryView(recovery: recovery, wellness: wellness)
-            } else {
-                ContentUnavailableView(
-                    "No Recovery Data",
-                    systemImage: "heart.slash",
-                    description: Text("Open iPhone app to sync")
-                )
-                .containerBackground(.black.gradient, for: .tabView)
-            }
-            
-            // PAGE 4: WEEKLY SUMMARY
-            if let weekStats = session.weeklyStats {
-                WeeklyView(
-                    weekStats: weekStats,
-                    weatherAlert: session.weatherAlert
-                )
-            } else {
-                ContentUnavailableView(
-                    "No Weekly Data",
-                    systemImage: "calendar",
-                    description: Text("Open iPhone app to sync")
-                )
-                .containerBackground(.indigo.gradient, for: .tabView)
+            .tabViewStyle(.page)
+            // 2. The Global Alert Overlay
+            if session.weatherAlert != nil {
+                VStack {
+                    Button {
+                        showingAlertDetails = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                            Text("ALERT")
+                                .font(.caption2)
+                                .fontWeight(.black)
+                        }
+                        .foregroundStyle(.black)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(Color.yellow) // High visibility yellow
+                        .clipShape(Capsule())
+                        .shadow(radius: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4) // Push to very top of screen
+                    
+                    Spacer()
+                }
+                .ignoresSafeArea()
             }
         }
-        .tabViewStyle(.page)
-        .onAppear {
-            print("⌚️ ContentView appeared. Readiness: \(session.readinessData?.readinessScore ?? -1), TSB: \(session.loadSummary?.currentTSB ?? -999)")
+        .sheet(isPresented: $showingAlertDetails) {
+            // Simple Detail View for the Watch
+            if let alert = session.weatherAlert {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.title)
+                            .foregroundStyle(.yellow)
+                        Text(alert.message)
+                            .font(.headline)
+                            .multilineTextAlignment(.center)
+                        Text("Check phone for details")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
     }
 }
