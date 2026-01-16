@@ -28,7 +28,7 @@ struct RideWeatherWatch_App: App {
 
 struct ContentView: View {
     @ObservedObject private var session = WatchSessionManager.shared
-    @State private var showingAlertDetails = false // State to toggle sheet
+    @State private var showingAlertDetails = false
     
     var body: some View {
         ZStack {
@@ -86,9 +86,14 @@ struct ContentView: View {
                     )
                     .containerBackground(.indigo.gradient, for: .tabView)
                 }
+                
+                // PAGE 5: DEBUG (NEW)
+                WatchDebugView()
+                    .containerBackground(.black.gradient, for: .tabView)
             }
             .tabViewStyle(.page)
-            // 2. The Global Alert Overlay
+            
+            // Global Alert Overlay
             if session.weatherAlert != nil {
                 VStack {
                     Button {
@@ -103,12 +108,12 @@ struct ContentView: View {
                         .foregroundStyle(.black)
                         .padding(.vertical, 4)
                         .padding(.horizontal, 8)
-                        .background(Color.yellow) // High visibility yellow
+                        .background(Color.yellow)
                         .clipShape(Capsule())
                         .shadow(radius: 2)
                     }
                     .buttonStyle(.plain)
-                    .padding(.top, 4) // Push to very top of screen
+                    .padding(.top, 4)
                     
                     Spacer()
                 }
@@ -116,7 +121,6 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingAlertDetails) {
-            // Simple Detail View for the Watch
             if let alert = session.weatherAlert {
                 ScrollView {
                     VStack(spacing: 8) {

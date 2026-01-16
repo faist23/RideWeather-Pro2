@@ -243,10 +243,12 @@ struct SettingsView: View {
                 Spacer()
                 Text(Bundle.main.buildNumber ?? "Unknown").foregroundStyle(.secondary)
             }
-            Section("Developer") {
-                Button("Force Watch Sync") {
-                    PhoneSessionManager.shared.sendUpdate()
-                }
+            
+            // DEBUG SYNC
+            NavigationLink {
+                DebugSyncView()
+            } label: {
+                Label("Watch Sync Debug", systemImage: "applewatch.and.arrow.forward")
             }
         }
     }

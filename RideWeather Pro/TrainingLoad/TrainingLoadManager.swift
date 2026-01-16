@@ -55,6 +55,14 @@ class TrainingLoadManager {
         
         // Save
         saveDailyLoads(updatedLoads)
+
+        // Sync to Watch - ALWAYS get fresh summary
+        if let summary = getCurrentSummary() {
+            print("🔄 Syncing Training Load to Watch: TSB=\(String(format: "%.1f", summary.currentTSB))")
+            PhoneSessionManager.shared.updateTrainingLoad(summary)
+        } else {
+            print("⚠️ Could not generate training load summary for Watch sync")
+        }
         
         // Save the PRECISE timestamp of this ride
         // We only update if this ride is newer than what we have (in case of historical imports)
@@ -700,6 +708,14 @@ extension TrainingLoadManager {
             print("\n🔎 DEBUG (Phone): Ignored batch date \(latestBatchDate.formatted()) because it is older than stored \(lastKnown.formatted())\n")
         }
         
+        // Sync to Watch - ALWAYS get fresh summary
+        if let summary = getCurrentSummary() {
+            print("🔄 Syncing Training Load to Watch: TSB=\(String(format: "%.1f", summary.currentTSB))")
+            PhoneSessionManager.shared.updateTrainingLoad(summary)
+        } else {
+            print("⚠️ Could not generate training load summary for Watch sync")
+        }
+        
         print("✅ Training Load: Successfully batch imported \(analyses.count) rides. I/O optimized.")
     }
     
@@ -757,6 +773,14 @@ extension TrainingLoadManager {
                 // Trigger sync immediately
                 PhoneSessionManager.shared.sendUpdate()
             }
+        }
+        
+        // Sync to Watch - ALWAYS get fresh summary
+        if let summary = getCurrentSummary() {
+            print("🔄 Syncing Training Load to Watch: TSB=\(String(format: "%.1f", summary.currentTSB))")
+            PhoneSessionManager.shared.updateTrainingLoad(summary)
+        } else {
+            print("⚠️ Could not generate training load summary for Watch sync")
         }
         
         print("✅ Training Load: Batch update complete. Processed \(updates.count) days.")

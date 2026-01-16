@@ -50,6 +50,15 @@ class WellnessManager: ObservableObject {
         let recentMetrics = dailyMetrics.filter { $0.date >= startDate && $0.date <= endDate }
         
         currentSummary = WellnessSummary(period: "Last \(days) Days", metrics: recentMetrics)
+        
+        // Sync to Watch - ALWAYS send fresh data
+        if let summary = currentSummary {
+            let todayMetrics = dailyMetrics.first { Calendar.current.isDateInToday($0.date) }
+            print("🔄 Syncing Wellness to Watch: Steps=\(summary.averageSteps.map { "\(Int($0))" } ?? "—")")
+            PhoneSessionManager.shared.updateWellness(summary, current: todayMetrics)
+        } else {
+            print("⚠️ No wellness summary to sync to Watch")
+        }
     }
        
     // MARK: - Insights

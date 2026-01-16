@@ -166,6 +166,10 @@ class HealthKitManager: ObservableObject {
             let sleepAvg = self.readiness.averageSleepDuration ?? 0
             print("  Sleep: \(Int((self.readiness.sleepDuration ?? 0) / 3600))h \(Int(((self.readiness.sleepDuration ?? 0).truncatingRemainder(dividingBy: 3600)) / 60))m (Avg: \(Int(sleepAvg / 3600))h \(Int((sleepAvg.truncatingRemainder(dividingBy: 3600)) / 60))m)")
         }
+        
+        // Sync to Watch - ALWAYS send fresh data
+        print("🔄 Syncing Readiness to Watch: Score=\(self.readiness.readinessScore)")
+        PhoneSessionManager.shared.updateReadiness(self.readiness)
     }
     
     // MARK: - Weight Fetching
