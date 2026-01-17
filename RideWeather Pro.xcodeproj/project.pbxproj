@@ -87,6 +87,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				TrainingLoad/PhysiologicalReadiness.swift,
+				TrainingLoad/RecoveryStatus.swift,
 				TrainingLoad/TrainingLoadModels.swift,
 				Utilities/WeatherAlert.swift,
 				Wellness/DailyWellnessMetrics.swift,

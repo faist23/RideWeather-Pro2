@@ -2,6 +2,8 @@
 //  RecoveryView.swift
 //  RideWeatherWatch Watch App
 //
+//  UPDATED: Now uses synced RecoveryStatus from iPhone instead of calculating locally
+//
 
 import SwiftUI
 
@@ -75,24 +77,21 @@ struct RecoveryView: View {
                         icon: "moon.stars.fill",
                         label: "Sleep Efficiency",
                         value: "\(Int(wellness.computedSleepEfficiency ?? 0))%",
-                        trend: nil,
                         status: (wellness.computedSleepEfficiency ?? 0) >= 85 ? .good : .warning
                     )
                     
                     RecoveryMetric(
                         icon: "heart.fill",
-                        label: "HRV Trend",
-                        value: "\(recovery.currentHRV)",
-                        trend: recovery.hrvTrend,
-                        status: recovery.hrvTrend == .up ? .good : .warning
+                        label: "HRV Status",
+                        value: recovery.hrvStatus,
+                        status: recovery.hrvStatus == "Good" ? .good : (recovery.hrvStatus == "Low" ? .bad : .warning)
                     )
                     
                     RecoveryMetric(
                         icon: "waveform.path.ecg",
                         label: "Resting HR",
                         value: "\(wellness.restingHeartRate ?? 0) bpm",
-                        trend: recovery.restingHRTrend,
-                        status: recovery.restingHRTrend == .down ? .good : .warning
+                        status: .good
                     )
                     
                     if let sleepDebt = recovery.sleepDebt, sleepDebt < -1 {
@@ -100,11 +99,17 @@ struct RecoveryView: View {
                             icon: "exclamationmark.triangle.fill",
                             label: "Sleep Debt",
                             value: "\(abs(Int(sleepDebt)))h behind",
-                            trend: nil,
                             status: .warning
                         )
                     }
                 }
+                
+                // RECOMMENDATION
+                Text(recovery.recommendation)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 4)
             }
             .padding()
         }
@@ -141,13 +146,12 @@ struct RecoveryRing: View {
     }
 }
 
-// MARK: - Recovery Metric
+// MARK: - Recovery Metric (Simplified - no trend icons)
 
 struct RecoveryMetric: View {
     let icon: String
     let label: String
     let value: String
-    let trend: TrendDirection?
     let status: MetricStatus
     
     var body: some View {
@@ -168,12 +172,6 @@ struct RecoveryMetric: View {
             }
             
             Spacer()
-            
-            if let trend = trend {
-                Image(systemName: trend.icon)
-                    .font(.system(size: 10))
-                    .foregroundStyle(trend.color)
-            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -198,81 +196,5 @@ enum MetricStatus {
     }
 }
 
-// MARK: - Recovery Status Model
-
-struct RecoveryStatus {
-    let recoveryPercent: Int
-    let hoursSinceWorkout: Int
-    let currentHRV: Int
-    let hrvTrend: TrendDirection
-    let restingHRTrend: TrendDirection
-    let sleepDebt: Double?
-    
-    static func calculate(
-        lastWorkoutDate: Date?,
-        currentHRV: Double,
-        baselineHRV: Double,
-        currentRestingHR: Double,
-        baselineRestingHR: Double,
-        wellness: DailyWellnessMetrics,
-        weekHistory: [DailyWellnessMetrics]
-    ) -> RecoveryStatus {
-        // Hours since last workout
-        let hoursSinceWorkout: Int
-        if let lastWorkout = lastWorkoutDate {
-            hoursSinceWorkout = Int(Date().timeIntervalSince(lastWorkout) / 3600)
-        } else {
-            hoursSinceWorkout = 48 // Default to "recovered" if no recent ride
-        }
-        
-        // Recovery Percentage (0-100)
-        // Based on: time elapsed, HRV recovery, HR recovery, sleep quality
-        var recoveryScore = 0.0
-        
-        // Time component (0-40 points): Full recovery at 48h
-        let timeScore = min(40.0, (Double(hoursSinceWorkout) / 48.0) * 40.0)
-        recoveryScore += timeScore
-        
-        // HRV component (0-30 points): At or above baseline = 30
-        let hrvRecovery = (currentHRV / baselineHRV)
-        let hrvScore = min(30.0, hrvRecovery * 30.0)
-        recoveryScore += hrvScore
-        
-        // HR component (0-20 points): At or below baseline = 20
-        let hrRecovery = (baselineRestingHR / currentRestingHR)
-        let hrScore = min(20.0, hrRecovery * 20.0)
-        recoveryScore += hrScore
-        
-        // Sleep component (0-10 points): 8h+ good sleep = 10
-        if let sleepHours = wellness.totalSleep {
-            let sleepScore = min(10.0, (sleepHours / 28800) * 10.0)
-            recoveryScore += sleepScore
-        }
-        
-        let finalRecovery = Int(min(100, recoveryScore))
-        
-        // HRV Trend (compare to 7-day average)
-        let recentHRVs = weekHistory.prefix(7).compactMap { $0.restingHeartRate }.map { Double($0) }
-        let avgRecentHRV = recentHRVs.isEmpty ? baselineHRV : recentHRVs.reduce(0, +) / Double(recentHRVs.count)
-        let hrvTrend: TrendDirection = currentHRV > avgRecentHRV + 2 ? .up : (currentHRV < avgRecentHRV - 2 ? .down : .stable)
-        
-        // Resting HR Trend
-        let recentHRs = weekHistory.prefix(7).compactMap { $0.restingHeartRate }.map { Double($0) }
-        let avgRecentHR = recentHRs.isEmpty ? baselineRestingHR : recentHRs.reduce(0, +) / Double(recentHRs.count)
-        let restingHRTrend: TrendDirection = currentRestingHR < avgRecentHR - 2 ? .down : (currentRestingHR > avgRecentHR + 2 ? .up : .stable)
-        
-        // Sleep Debt (last 7 days)
-        let totalSleep = weekHistory.prefix(7).compactMap { $0.totalSleep }.reduce(0, +)
-        let targetSleep = 8.0 * 3600 * 7 // 8 hours per night
-        let sleepDebt = (totalSleep - targetSleep) / 3600
-        
-        return RecoveryStatus(
-            recoveryPercent: finalRecovery,
-            hoursSinceWorkout: hoursSinceWorkout,
-            currentHRV: Int(currentHRV),
-            hrvTrend: hrvTrend,
-            restingHRTrend: restingHRTrend,
-            sleepDebt: sleepDebt < -1 ? sleepDebt : nil
-        )
-    }
-}
+// REMOVED: RecoveryStatus struct - now using the shared Codable version from iPhone
+// The recovery parameter passed to this view comes from WatchSessionManager.shared.recoveryStatus

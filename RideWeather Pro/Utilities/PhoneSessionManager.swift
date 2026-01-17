@@ -18,6 +18,7 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
     private var wellnessSummary: WellnessSummary?
     private var currentWellness: DailyWellnessMetrics?
     private var readinessData: PhysiologicalReadiness?
+    private var recoveryStatus: RecoveryStatus? // ADD THIS
     
     // Queue for serializing access
     private let syncQueue = DispatchQueue(label: "com.ridepro.phonesession", qos: .userInitiated)
@@ -56,6 +57,15 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
         syncQueue.async { [weak self] in
             self?.readinessData = readiness
             print("📱 Cached Readiness: \(readiness.readinessScore)")
+            self?.pushFullContext()
+        }
+    }
+    
+    /// Call this when Recovery Status is updated
+    func updateRecovery(_ recovery: RecoveryStatus) {
+        syncQueue.async { [weak self] in
+            self?.recoveryStatus = recovery
+            print("📱 Cached Recovery: \(recovery.recoveryPercent)%")
             self?.pushFullContext()
         }
     }
@@ -218,21 +228,30 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
                 print("⚠️ No Readiness data cached - call updateReadiness() first")
             }
             
-            // 7. Weather Summary (Widget)
+            // 7. Recovery Status (CACHED)
+            if let recovery = recoveryStatus {
+                mutableContext["recovery"] = try JSONEncoder().encode(recovery)
+                print("📱 Encoded Recovery: \(recovery.recoveryPercent)%")
+                finalKeyCount += 1
+            } else {
+                print("⚠️ No Recovery status cached - call updateRecovery() first")
+            }
+            
+            // 8. Weather Summary (Widget)
             if let weatherData = UserDefaultsManager.shared.loadWeatherSummary() {
                 mutableContext["weatherSummary"] = try JSONEncoder().encode(weatherData)
                 print("📱 Encoded Weather Summary")
                 finalKeyCount += 1
             }
             
-            // 8. Weather Alert (Cached)
+            // 9. Weather Alert (Cached)
             if let alert = currentAlert {
                 mutableContext["weatherAlert"] = try JSONEncoder().encode(alert)
                 print("📱 Encoded Weather Alert")
                 finalKeyCount += 1
             }
             
-            // 9. Precise Last Ride Date
+            // 10. Precise Last Ride Date
             if let lastRide = UserDefaults.standard.object(forKey: "last_ride_precise_date") as? Date {
                 mutableContext["lastRidePreciseDate_ts"] = lastRide.timeIntervalSinceReferenceDate
                 print("📱 Sending Timestamp: \(lastRide.timeIntervalSinceReferenceDate) (\(lastRide.formatted(date: .omitted, time: .standard)))")

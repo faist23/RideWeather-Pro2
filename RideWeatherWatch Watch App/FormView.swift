@@ -209,7 +209,7 @@ struct WeeklyProgress {
     }
 }
 
-enum TrendDirection {
+/*enum TrendDirection {
     case up, down, stable
     
     var icon: String {
@@ -227,4 +227,4 @@ enum TrendDirection {
         case .stable: return .gray
         }
     }
-}
+}*/

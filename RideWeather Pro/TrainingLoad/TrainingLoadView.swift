@@ -542,17 +542,15 @@ struct TrainingLoadView: View {
     private func calculateRecoveryStatus() -> RecoveryStatus? {
         guard let wellness = wellnessManager.dailyMetrics.last else { return nil }
         
-        // Get last ride date
         let trainingHistory = viewModel.dailyLoads.filter { $0.rideCount > 0 }
         let lastWorkoutDate = trainingHistory.sorted { $0.date > $1.date }.first?.date
         
-        // Get HRV/RHR from readiness
         let currentHRV = healthManager.readiness.latestHRV ?? Double(wellness.restingHeartRate ?? 60)
         let baselineHRV = healthManager.readiness.averageHRV ?? currentHRV
         let currentRHR = healthManager.readiness.latestRHR ?? Double(wellness.restingHeartRate ?? 60)
         let baselineRHR = healthManager.readiness.averageRHR ?? currentRHR
         
-        return RecoveryStatus.calculate(
+        let recovery = RecoveryStatus.calculate(
             lastWorkoutDate: lastWorkoutDate,
             currentHRV: currentHRV,
             baselineHRV: baselineHRV,
@@ -561,6 +559,11 @@ struct TrainingLoadView: View {
             wellness: wellness,
             weekHistory: wellnessManager.dailyMetrics
         )
+        
+        // Send to Watch
+        PhoneSessionManager.shared.updateRecovery(recovery)
+        
+        return recovery
     }
 }
 

@@ -136,7 +136,7 @@ struct ReadinessView: View {
     
     private var readinessStatus: String {
         switch readiness.readinessScore {
-        case 85...100: return "Ready to Race"
+        case 85...100: return "Ready to Go Hard"
         case 70..<85: return "Ready to Work"
         case 55..<70: return "Moderate Day"
         case 40..<55: return "Easy Day"
