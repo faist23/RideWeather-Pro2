@@ -16,6 +16,7 @@ class WatchSessionManager: NSObject, ObservableObject {
     static let shared = WatchSessionManager()
     
     // Raw data from phone
+    @Published var lastContextUpdate: Date?
     @Published var loadSummary: TrainingLoadSummary?
     @Published var wellnessSummary: WellnessSummary?
     @Published var currentWellness: DailyWellnessMetrics?
@@ -86,7 +87,10 @@ extension WatchSessionManager: WCSessionDelegate {
     }
     
     private func processContext(_ context: [String: Any]) {
-            print("⌚️ Processing context with \(context.keys.count) keys: \(context.keys.joined(separator: ", "))")
+        // Track when we received this update
+        self.lastContextUpdate = Date()
+        
+        print("⌚️ Processing context with \(context.keys.count) keys: \(context.keys.joined(separator: ", "))")
             
             // 1. Decode Training Load Summary
             if let loadData = context["trainingLoad"] as? Data {
@@ -233,13 +237,13 @@ extension WatchSessionManager: WCSessionDelegate {
                 .sorted { $0.date > $1.date }
                 .first?.date
             
-            let bestRideDate = self.lastPreciseRideDate ?? lastRideDaily
+            let bestWorkoutDate = self.lastPreciseRideDate ?? lastRideDaily
             
             // 🔎 SEARCHLIGHT 4: The Final Verdict
             print("\n🔎 DEBUG (Watch Calculation):")
             print("   - Stored Precise Date: \(self.lastPreciseRideDate?.formatted(date: .omitted, time: .standard) ?? "Nil")")
             print("   - Backup Daily Date: \(lastRideDaily?.formatted(date: .omitted, time: .standard) ?? "Nil")")
-            print("   - DATE USED FOR CALC: \(bestRideDate?.formatted(date: .omitted, time: .standard) ?? "Nil")")
+            print("   - DATE USED FOR CALC: \(bestWorkoutDate?.formatted(date: .omitted, time: .standard) ?? "Nil")")
             
             let currentHRV = readinessData?.latestHRV ?? Double(wellness.restingHeartRate ?? 60)
             let baselineHRV = readinessData?.averageHRV ?? currentHRV
@@ -247,7 +251,7 @@ extension WatchSessionManager: WCSessionDelegate {
             let baselineRestingHR = readinessData?.averageRHR ?? currentRestingHR
             
             self.recoveryStatus = RecoveryStatus.calculate(
-                lastRideDate: bestRideDate,
+                lastWorkoutDate: bestWorkoutDate,
                 currentHRV: currentHRV,
                 baselineHRV: baselineHRV,
                 currentRestingHR: currentRestingHR,

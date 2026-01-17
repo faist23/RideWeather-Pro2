@@ -77,19 +77,19 @@ struct TrainingLoadView: View {
                                 .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
                         }
                         
-                        // Recovery Status Card
-                        if let recovery = calculateRecoveryStatus(),
-                           let wellness = wellnessManager.dailyMetrics.last {
-                            RecoveryStatusCard(recovery: recovery, wellness: wellness)
-                                .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
-                        }
-
                         // Daily Wellness Card
                         if let latestWellness = wellnessManager.dailyMetrics.last {
                             DailyWellnessCard(metrics: latestWellness)
                                 .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
                         }
                         
+                        // Recovery Status Card 
+                        if let recovery = calculateRecoveryStatus(),
+                           let wellness = wellnessManager.dailyMetrics.last {
+                            RecoveryStatusCard(recovery: recovery, wellness: wellness)
+                                .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
+                        }
+
                         // Combined Insights (Training + Wellness)
                         let combinedInsights = wellnessManager.getCombinedInsights(trainingLoadSummary: summary)
                         if !combinedInsights.isEmpty {
@@ -537,12 +537,14 @@ struct TrainingLoadView: View {
         print("✅ Synced both Training Load AND Wellness data")
     }
     
+    // MARK: - Recovery Calculation Helper
+
     private func calculateRecoveryStatus() -> RecoveryStatus? {
         guard let wellness = wellnessManager.dailyMetrics.last else { return nil }
         
         // Get last ride date
         let trainingHistory = viewModel.dailyLoads.filter { $0.rideCount > 0 }
-        let lastRideDate = trainingHistory.sorted { $0.date > $1.date }.first?.date
+        let lastWorkoutDate = trainingHistory.sorted { $0.date > $1.date }.first?.date
         
         // Get HRV/RHR from readiness
         let currentHRV = healthManager.readiness.latestHRV ?? Double(wellness.restingHeartRate ?? 60)
@@ -551,7 +553,7 @@ struct TrainingLoadView: View {
         let baselineRHR = healthManager.readiness.averageRHR ?? currentRHR
         
         return RecoveryStatus.calculate(
-            lastRideDate: lastRideDate,
+            lastWorkoutDate: lastWorkoutDate,
             currentHRV: currentHRV,
             baselineHRV: baselineHRV,
             currentRestingHR: currentRHR,
@@ -559,6 +561,33 @@ struct TrainingLoadView: View {
             wellness: wellness,
             weekHistory: wellnessManager.dailyMetrics
         )
+    }
+}
+
+struct CardHeaderWithInfo: View {
+    let title: String
+    let infoTitle: String
+    let infoMessage: String
+    @State private var showingInfo = false
+    
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.headline)
+                        Button {
+                showingInfo = true
+            } label: {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(.blue)
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+        }
+        .alert(infoTitle, isPresented: $showingInfo) {
+            Button("Got It", role: .cancel) { }
+        } message: {
+            Text(infoMessage)
+        }
     }
 }
 
@@ -1299,115 +1328,3 @@ class TrainingLoadViewModel: ObservableObject {
     }
 }
 
-struct RecoveryStatusCard: View {
-    let recovery: RecoveryStatus
-    let wellness: DailyWellnessMetrics
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Recovery Status")
-                    .font(.headline)
-                
-                Spacer()
-                
-                Text("\(recovery.recoveryPercent)%")
-                    .font(.title2.weight(.bold))
-                    .foregroundColor(recoveryColor)
-            }
-            
-            // Recovery gauge
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    // Background
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(.systemGray6))
-                        .frame(height: 12)
-                    
-                    // Fill
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(
-                            LinearGradient(
-                                colors: [.red, .orange, .yellow, .green],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: geometry.size.width * CGFloat(recovery.recoveryPercent) / 100, height: 12)
-                }
-            }
-            .frame(height: 12)
-            
-            // Key metrics
-            LazyVGrid(columns: [
-                GridItem(.flexible()),
-                GridItem(.flexible()),
-                GridItem(.flexible())
-            ], spacing: 12) {
-                RecoveryMetricCompact(
-                    title: "Time Since Ride",
-                    value: recovery.timeSinceRide,
-                    icon: "clock"
-                )
-                
-                RecoveryMetricCompact(
-                    title: "HRV Status",
-                    value: recovery.hrvStatus,
-                    icon: "waveform.path.ecg"
-                )
-                
-                RecoveryMetricCompact(
-                    title: "Sleep Quality",
-                    value: recovery.sleepStatus,
-                    icon: "bed.double.fill"
-                )
-            }
-            
-            // Recommendation
-            Text(recovery.recommendation)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.top, 4)
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
-    }
-    
-    private var recoveryColor: Color {
-        switch recovery.recoveryPercent {
-        case 85...: return .green
-        case 70..<85: return .blue
-        case 50..<70: return .orange
-        default: return .red
-        }
-    }
-}
-
-struct RecoveryMetricCompact: View {
-    let title: String
-    let value: String
-    let icon: String
-    
-    var body: some View {
-        VStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundColor(.blue)
-            
-            Text(value)
-                .font(.callout)
-                .fontWeight(.semibold)
-            
-            Text(title)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(Color(.systemGray6).opacity(0.5))
-        .cornerRadius(10)
-    }
-}

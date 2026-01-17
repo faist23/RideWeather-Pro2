@@ -12,6 +12,9 @@ struct FormView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
+                WatchSyncIndicator()
+                    .padding(.bottom, 1)
+
                 // TSB GAUGE
                 VStack(spacing: 6) {
                     Gauge(value: summary.currentTSB, in: -30...30) {

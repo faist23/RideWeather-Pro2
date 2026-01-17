@@ -17,8 +17,11 @@ struct DailyWellnessCard: View {
         VStack(alignment: .leading, spacing: 16) {
             // Header
             HStack {
-                Text("Daily Wellness")
-                    .font(.headline)
+                CardHeaderWithInfo(
+                    title: "Daily Wellness",
+                    infoTitle: "Daily Wellness",
+                    infoMessage: "Tracks daily activity (steps), sleep duration, and body weight from your connected sources (Apple Health or Garmin). Helps monitor recovery patterns and lifestyle factors."
+                )
                 
                 Spacer()
                 

@@ -52,7 +52,9 @@ struct WeeklyView: View {
                         color: weekStats.fitnessChange > 0 ? .green : .red
                     )
                 }
-                
+                WatchSyncIndicator()
+                    .padding(.bottom, 1)
+
                 Divider()
                 
                 // INSIGHTS

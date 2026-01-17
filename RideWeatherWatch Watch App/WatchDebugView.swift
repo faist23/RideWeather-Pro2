@@ -17,6 +17,28 @@ struct WatchDebugView: View {
                     .font(.headline)
                     .padding(.bottom, 4)
                 
+                // SYNC TIMESTAMP
+                if let lastUpdate = session.lastContextUpdate {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Last Update")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(lastUpdate, style: .relative)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.green)
+                        Text(lastUpdate.formatted(date: .omitted, time: .standard))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.bottom, 8)
+                } else {
+                    Text("No data received yet")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .padding(.bottom, 8)
+                }
+                
                 // TRAINING LOAD
                 VStack(alignment: .leading, spacing: 4) {
                     Text("TRAINING LOAD")

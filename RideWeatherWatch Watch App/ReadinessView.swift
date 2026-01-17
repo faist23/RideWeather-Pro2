@@ -50,7 +50,10 @@ struct ReadinessView: View {
                     .padding(.horizontal)
                 }
                 .padding(.vertical, 12)
-                
+ 
+                WatchSyncIndicator()
+                    .padding(.bottom, 1)
+
                 // RECOMMENDATION
                 VStack(spacing: 4) {
                     Text("TODAY'S PLAN")

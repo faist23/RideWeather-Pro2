@@ -12,6 +12,9 @@ struct RecoveryView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
+                WatchSyncIndicator()
+                    .padding(.bottom, 1)
+
                 // RECOVERY PERCENTAGE WITH CONTEXT
                 VStack(spacing: 4) {
                     Text("RECOVERY STATUS")
@@ -34,7 +37,7 @@ struct RecoveryView: View {
                         .foregroundStyle(.secondary)
                         .tracking(1)
                     
-                    Text("\(recovery.hoursSinceRide)h since last workout")
+                    Text("\(recovery.hoursSinceWorkout)h since last workout")
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                 }
@@ -199,14 +202,14 @@ enum MetricStatus {
 
 struct RecoveryStatus {
     let recoveryPercent: Int
-    let hoursSinceRide: Int
+    let hoursSinceWorkout: Int
     let currentHRV: Int
     let hrvTrend: TrendDirection
     let restingHRTrend: TrendDirection
     let sleepDebt: Double?
     
     static func calculate(
-        lastRideDate: Date?,
+        lastWorkoutDate: Date?,
         currentHRV: Double,
         baselineHRV: Double,
         currentRestingHR: Double,
@@ -215,11 +218,11 @@ struct RecoveryStatus {
         weekHistory: [DailyWellnessMetrics]
     ) -> RecoveryStatus {
         // Hours since last workout
-        let hoursSinceRide: Int
-        if let lastRide = lastRideDate {
-            hoursSinceRide = Int(Date().timeIntervalSince(lastRide) / 3600)
+        let hoursSinceWorkout: Int
+        if let lastWorkout = lastWorkoutDate {
+            hoursSinceWorkout = Int(Date().timeIntervalSince(lastWorkout) / 3600)
         } else {
-            hoursSinceRide = 48 // Default to "recovered" if no recent ride
+            hoursSinceWorkout = 48 // Default to "recovered" if no recent ride
         }
         
         // Recovery Percentage (0-100)
@@ -227,7 +230,7 @@ struct RecoveryStatus {
         var recoveryScore = 0.0
         
         // Time component (0-40 points): Full recovery at 48h
-        let timeScore = min(40.0, (Double(hoursSinceRide) / 48.0) * 40.0)
+        let timeScore = min(40.0, (Double(hoursSinceWorkout) / 48.0) * 40.0)
         recoveryScore += timeScore
         
         // HRV component (0-30 points): At or above baseline = 30
@@ -265,7 +268,7 @@ struct RecoveryStatus {
         
         return RecoveryStatus(
             recoveryPercent: finalRecovery,
-            hoursSinceRide: hoursSinceRide,
+            hoursSinceWorkout: hoursSinceWorkout,
             currentHRV: Int(currentHRV),
             hrvTrend: hrvTrend,
             restingHRTrend: restingHRTrend,

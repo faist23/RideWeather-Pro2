@@ -15,8 +15,11 @@ struct DailyReadinessCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Daily Readiness")
-                    .font(.headline)
+                CardHeaderWithInfo(
+                    title: "Daily Readiness",
+                    infoTitle: "Daily Readiness",
+                    infoMessage: "Combines HRV, resting heart rate, and sleep quality from Apple Health to assess your body's readiness for intense training. Updated daily based on last night's data."
+                )
                 
                 Spacer()
                 
