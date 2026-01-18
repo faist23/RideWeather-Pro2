@@ -314,6 +314,10 @@ extension WatchSessionManager: WCSessionDelegate {
             defaults?.set(readiness.readinessScore, forKey: "widget_readiness")
         }
         
+        if let wellness = self.currentWellness {
+            defaults?.set(wellness.steps ?? 0, forKey: "widget_today_steps")
+        }
+
         // Force the widget to refresh immediately
         WidgetCenter.shared.reloadAllTimelines()
         print("⌚️ Widget data saved & timeline reload requested")

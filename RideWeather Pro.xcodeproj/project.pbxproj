@@ -598,6 +598,7 @@
 				DEVELOPMENT_TEAM = DT58WA8N32;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "RideWeatherWatch-Watch-App-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = RideWeatherWatch;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "-.RideWeather-Pro";
@@ -632,6 +633,7 @@
 				DEVELOPMENT_TEAM = DT58WA8N32;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "RideWeatherWatch-Watch-App-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = RideWeatherWatch;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "-.RideWeather-Pro";

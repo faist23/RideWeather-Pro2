@@ -2,14 +2,17 @@
 //  RideWeatherComplications.swift
 //  RideWeatherComplications
 //
-//  Created by Craig Faist on 1/12/26.
+//  Updated: Now includes 3 complications total
+//  1. Smart Ride Stats (original - switches by time of day)
+//  2. Ride Weather (new - always shows weather)
+//  3. Steps (new - always shows steps)
 //
 
 import WidgetKit
 import SwiftUI
 
-// 1. SHARED DATA MODELS
-// We redefine this here so the Widget knows what "Weather" looks like
+// MARK: - Shared Data Models
+
 struct SharedWeatherSummary: Codable {
     let temperature: Int
     let feelsLike: Int
@@ -26,7 +29,9 @@ enum ComplicationMode {
     case recovery  // Night (7 PM - 5 AM)
 }
 
-struct ComplicationEntry: TimelineEntry {
+// MARK: - Entry for Smart Ride Stats (Original)
+
+struct SmartRideStatsEntry: TimelineEntry {
     let date: Date
     let mode: ComplicationMode
     
@@ -43,14 +48,29 @@ struct ComplicationEntry: TimelineEntry {
     let conditionIcon: String
 }
 
-// 2. TIMELINE PROVIDER
-struct Provider: TimelineProvider {
-    // ⚠️ MATCH THIS TO YOUR APP GROUP ID
+// MARK: - Entry for Weather & Steps (New)
+
+struct SimpleComplicationEntry: TimelineEntry {
+    let date: Date
+    
+    // Weather Data
+    let temp: Int
+    let feelsLike: Int
+    let windSpeed: Int
+    let windDir: String
+    let conditionIcon: String
+    
+    // Steps Data
+    let todaySteps: Int
+}
+
+// MARK: - Timeline Provider for Smart Ride Stats (Original)
+
+struct SmartRideStatsProvider: TimelineProvider {
     let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
     
-    func placeholder(in context: Context) -> ComplicationEntry {
-        // Placeholder shows generic data
-        ComplicationEntry(
+    func placeholder(in context: Context) -> SmartRideStatsEntry {
+        SmartRideStatsEntry(
             date: Date(),
             mode: .readiness,
             tsb: 5, readiness: 90, status: "Fresh",
@@ -58,36 +78,30 @@ struct Provider: TimelineProvider {
         )
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (ComplicationEntry) -> ()) {
+    func getSnapshot(in context: Context, completion: @escaping (SmartRideStatsEntry) -> ()) {
         let entry = createEntry(for: Date())
         completion(entry)
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<ComplicationEntry>) -> ()) {
-        var entries: [ComplicationEntry] = []
+    func getTimeline(in context: Context, completion: @escaping (Timeline<SmartRideStatsEntry>) -> ()) {
+        var entries: [SmartRideStatsEntry] = []
         let currentDate = Date()
         
-        // Generate an entry for every hour for the next 24 hours
-        // This allows the watch to switch modes automatically
         for hourOffset in 0..<24 {
             if let entryDate = Calendar.current.date(byAdding: .hour, value: hourOffset, to: currentDate) {
                 entries.append(createEntry(for: entryDate))
             }
         }
 
-        // Refresh at the end of this 24 hour batch
         let timeline = Timeline(entries: entries, policy: .atEnd)
         completion(timeline)
     }
     
-    // Helper to build an entry based on time of day
-    private func createEntry(for date: Date) -> ComplicationEntry {
-        // 1. Fetch TSB/Readiness
+    private func createEntry(for date: Date) -> SmartRideStatsEntry {
         let tsb = defaults?.double(forKey: "widget_tsb") ?? 0
         let readiness = defaults?.integer(forKey: "widget_readiness") ?? 0
         let status = defaults?.string(forKey: "widget_status") ?? "Unknown"
         
-        // 2. Fetch Weather
         var temp = 0
         var feelsLike = 0
         var wind = 0
@@ -103,17 +117,16 @@ struct Provider: TimelineProvider {
             icon = weather.conditionIcon
         }
         
-        // 3. Determine Mode based on Hour
         let hour = Calendar.current.component(.hour, from: date)
         let mode: ComplicationMode
         
         switch hour {
-        case 5..<11:  mode = .readiness // 5AM - 11AM: Morning Check
-        case 11..<19: mode = .ride      // 11AM - 7PM: Ride Weather
-        default:      mode = .recovery  // 7PM - 5AM: Recovery
+        case 5..<11:  mode = .readiness
+        case 11..<19: mode = .ride
+        default:      mode = .recovery
         }
         
-        return ComplicationEntry(
+        return SmartRideStatsEntry(
             date: date,
             mode: mode,
             tsb: tsb, readiness: readiness, status: status,
@@ -122,9 +135,68 @@ struct Provider: TimelineProvider {
     }
 }
 
-// 3. THE VIEWS
-struct RideWeatherComplicationsEntryView: View {
-    var entry: Provider.Entry
+// MARK: - Timeline Provider for Weather & Steps (New)
+
+struct SimpleComplicationProvider: TimelineProvider {
+    let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
+    
+    func placeholder(in context: Context) -> SimpleComplicationEntry {
+        SimpleComplicationEntry(
+            date: Date(),
+            temp: 72, feelsLike: 70, windSpeed: 10, windDir: "NW", conditionIcon: "sun.max",
+            todaySteps: 8543
+        )
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (SimpleComplicationEntry) -> ()) {
+        let entry = createEntry(for: Date())
+        completion(entry)
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<SimpleComplicationEntry>) -> ()) {
+        var entries: [SimpleComplicationEntry] = []
+        let currentDate = Date()
+        
+        for offset in 0..<8 {
+            if let entryDate = Calendar.current.date(byAdding: .minute, value: offset * 15, to: currentDate) {
+                entries.append(createEntry(for: entryDate))
+            }
+        }
+
+        let timeline = Timeline(entries: entries, policy: .atEnd)
+        completion(timeline)
+    }
+    
+    private func createEntry(for date: Date) -> SimpleComplicationEntry {
+        var temp = 0
+        var feelsLike = 0
+        var wind = 0
+        var dir = "--"
+        var icon = "questionmark"
+        
+        if let data = defaults?.data(forKey: "widget_weather_summary"),
+           let weather = try? JSONDecoder().decode(SharedWeatherSummary.self, from: data) {
+            temp = weather.temperature
+            feelsLike = weather.feelsLike
+            wind = weather.windSpeed
+            dir = weather.windDirection
+            icon = weather.conditionIcon
+        }
+        
+        let todaySteps = defaults?.integer(forKey: "widget_today_steps") ?? 0
+        
+        return SimpleComplicationEntry(
+            date: date,
+            temp: temp, feelsLike: feelsLike, windSpeed: wind, windDir: dir, conditionIcon: icon,
+            todaySteps: todaySteps
+        )
+    }
+}
+
+// MARK: - Smart Ride Stats View (Original)
+
+struct SmartRideStatsEntryView: View {
+    var entry: SmartRideStatsProvider.Entry
     @Environment(\.widgetFamily) var family
     
     var body: some View {
@@ -142,13 +214,10 @@ struct RideWeatherComplicationsEntryView: View {
         }
     }
     
-    // MARK: - Subviews
-    
     @ViewBuilder
     var circularView: some View {
         switch entry.mode {
         case .readiness:
-            // Morning: Show TSB
             Gauge(value: entry.tsb, in: -30...30) {
                 Text("TSB")
             } currentValueLabel: {
@@ -159,15 +228,12 @@ struct RideWeatherComplicationsEntryView: View {
             .tint(tsbColor(entry.tsb))
             
         case .ride:
-            // Day: Show Weather (Wind)
             VStack(spacing: 1) {
-                // Top: Feels Like Temp
                 Text("\(entry.temp)°")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                 Text("FL \(entry.feelsLike)°")
                     .font(.system(size: 12, weight: .regular, design: .rounded))
 
-                // Bottom: Wind Icon + Speed
                 HStack(spacing: 1) {
                     Image(systemName: "wind")
                         .font(.system(size: 8))
@@ -179,7 +245,6 @@ struct RideWeatherComplicationsEntryView: View {
             }
             
         case .recovery:
-            // Night: Show Readiness
             Gauge(value: Double(entry.readiness), in: 0...100) {
                 Image(systemName: "bed.double.fill")
                     .font(.system(size: 10))
@@ -212,9 +277,7 @@ struct RideWeatherComplicationsEntryView: View {
             }
             
         case .ride:
-            // Cleaner, centered layout for Rectangular
             HStack {
-                // Left: Temps
                 VStack(alignment: .leading) {
                     Text("\(entry.temp)°")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
@@ -227,9 +290,8 @@ struct RideWeatherComplicationsEntryView: View {
                 
                 Spacer()
                 
-                // Stacked Wind Info (Icon + Speed + Dir)
                 VStack(alignment: .trailing) {
-                    Image(systemName: entry.conditionIcon) // Sun/Cloud icon
+                    Image(systemName: entry.conditionIcon)
                         .font(.title3)
                     
                     HStack(spacing: 2) {
@@ -272,10 +334,7 @@ struct RideWeatherComplicationsEntryView: View {
                 .widgetLabel("Readiness")
         case .ride:
             Text("\(entry.temp)°")
-            // 1. Use explicit size (34 is about max for corner)
-            // 2. Use .rounded design for a modern, wider look
                 .font(.system(size: 34, weight: .bold, design: .rounded))
-            // 3. Ensure 3-digit temps don't get cut off
                 .minimumScaleFactor(0.7)
                 .widgetLabel {
                     Image(systemName: "wind")
@@ -299,7 +358,6 @@ struct RideWeatherComplicationsEntryView: View {
         }
     }
     
-    // Helper
     func tsbColor(_ val: Double) -> Color {
         if val > 10 { return .green }
         if val < -20 { return .red }
@@ -307,18 +365,182 @@ struct RideWeatherComplicationsEntryView: View {
     }
 }
 
-// 4. MAIN CONFIGURATION
+// MARK: - Ride Weather View (New)
+
+struct RideWeatherComplicationEntryView: View {
+    var entry: SimpleComplicationProvider.Entry
+    @Environment(\.widgetFamily) var family
+    
+    var body: some View {
+        switch family {
+        case .accessoryCircular:
+            circularView
+                .widgetURL(URL(string: "rideweather://weather")!)
+       case .accessoryCorner:
+            cornerView
+                .widgetURL(URL(string: "rideweather://weather")!)
+        case .accessoryInline:
+            inlineView
+                .widgetURL(URL(string: "rideweather://weather")!)
+        default:
+            Text("\(entry.temp)°")
+                .widgetURL(URL(string: "rideweather://weather")!)
+        }
+    }
+    
+    @ViewBuilder
+    var circularView: some View {
+        Link(destination: URL(string: "weather://")!) {
+            VStack(spacing: 1) {
+                Text("\(entry.temp)°")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                Text("FL \(entry.feelsLike)°")
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                
+                HStack(spacing: 1) {
+                    Image(systemName: "wind")
+                        .font(.system(size: 8))
+                        .symbolRenderingMode(.hierarchical)
+                    Text("\(entry.windSpeed)")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    var cornerView: some View {
+        Link(destination: URL(string: "weather://")!) {
+            Text("\(entry.temp)°")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .minimumScaleFactor(0.7)
+                .widgetLabel {
+                    Image(systemName: "wind")
+                    Text("\(entry.windSpeed) \(entry.windDir)  FL \(entry.feelsLike)°")
+                }
+        }
+    }
+    
+    @ViewBuilder
+    var inlineView: some View {
+        Link(destination: URL(string: "weather://")!) {
+            Text("Feels \(entry.feelsLike)° • Wind \(entry.windSpeed) \(entry.windDir)")
+        }
+    }
+}
+
+// MARK: - Steps View (New)
+
+struct StepsComplicationEntryView: View {
+    var entry: SimpleComplicationProvider.Entry
+    @Environment(\.widgetFamily) var family
+    
+    var body: some View {
+        switch family {
+        case .accessoryCircular:
+            circularView
+                .widgetURL(URL(string: "rideweather://steps")!)
+        case .accessoryCorner:
+            cornerView
+                .widgetURL(URL(string: "rideweather://steps")!)
+        case .accessoryInline:
+            inlineView
+                .widgetURL(URL(string: "rideweather://steps")!)
+        default:
+            Text("\(entry.todaySteps)")
+                .widgetURL(URL(string: "rideweather://steps")!)
+        }
+    }
+    
+    @ViewBuilder
+    var circularView: some View {
+            VStack(spacing: 2) {
+                Image(systemName: "figure.walk")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.green)
+                
+                Text(formatSteps(entry.todaySteps))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                
+                Text("steps")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.secondary)
+            }
+    }
+    
+    @ViewBuilder
+    var cornerView: some View {
+            Image(systemName: "figure.walk")
+                .font(.system(size: 24))
+                .widgetLabel {
+                    Text("\(formatSteps(entry.todaySteps)) steps")
+                }
+    }
+    
+    @ViewBuilder
+        var inlineView: some View {
+            Text("\(formatSteps(entry.todaySteps)) steps")
+    }
+    
+    private func formatSteps(_ steps: Int) -> String {
+        if steps >= 1000 {
+            let thousands = Double(steps) / 1000.0
+            return String(format: "%.1fk", thousands)
+        }
+        return "\(steps)"
+    }
+}
+
+// MARK: - Widget Configurations
+
 @main
-struct RideWeatherComplications: Widget {
-    let kind: String = "RideWeatherComplications"
+struct RideWeatherComplicationsBundle: WidgetBundle {
+    var body: some Widget {
+        SmartRideStatsWidget()
+        RideWeatherComplication()
+        StepsComplication()
+    }
+}
+
+struct SmartRideStatsWidget: Widget {
+    let kind: String = "SmartRideStatsWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: Provider()) { entry in
-            RideWeatherComplicationsEntryView(entry: entry)
+        StaticConfiguration(kind: kind, provider: SmartRideStatsProvider()) { entry in
+            SmartRideStatsEntryView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Smart Ride Stats")
         .description("Auto-switches between Form, Weather, and Recovery.")
         .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryCorner, .accessoryInline])
+    }
+}
+
+struct RideWeatherComplication: Widget {
+    let kind: String = "RideWeatherComplication"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: SimpleComplicationProvider()) { entry in
+            RideWeatherComplicationEntryView(entry: entry)
+                .containerBackground(.fill.tertiary, for: .widget)
+        }
+        .configurationDisplayName("Ride Weather")
+        .description("Current temperature, feels like, and wind conditions.")
+        .supportedFamilies([.accessoryCircular, .accessoryCorner, .accessoryInline])
+    }
+}
+
+struct StepsComplication: Widget {
+    let kind: String = "StepsComplication"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: SimpleComplicationProvider()) { entry in
+            StepsComplicationEntryView(entry: entry)
+                .containerBackground(.fill.tertiary, for: .widget)
+        }
+        .configurationDisplayName("Steps")
+        .description("Today's step count and progress toward goal.")
+        .supportedFamilies([.accessoryCircular, .accessoryCorner, .accessoryInline])
     }
 }

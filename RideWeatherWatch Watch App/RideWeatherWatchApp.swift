@@ -8,22 +8,55 @@ import UserNotifications
 
 @main
 struct RideWeatherWatch_App: App {
+    @State private var selectedDestination: ComplicationDestination?
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .onAppear {
-                    // ✅ REQUEST PERMISSION ON LAUNCH
-                    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-                        if granted {
-                            print("⌚️ Notification permission granted")
-                        } else if let error = error {
-                            print("⌚️ Notification permission error: \(error.localizedDescription)")
+            NavigationStack {
+                ContentView()
+                    .navigationDestination(item: $selectedDestination) { destination in
+                        switch destination {
+                        case .weather:
+                            WeatherDetailView()
+                        case .steps:
+                            StepsDetailView()
                         }
                     }
+                    .onOpenURL { url in
+                        handleURL(url)
+                    }
+            }
+            .onAppear {
+                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                    if granted {
+                        print("⌚️ Notification permission granted")
+                    } else if let error = error {
+                        print("⌚️ Notification permission error: \(error.localizedDescription)")
+                    }
                 }
+            }
         }
     }
+    
+    private func handleURL(_ url: URL) {
+        print("⌚️ Received URL: \(url.absoluteString)")
+        
+        switch url.host {
+        case "weather":
+            selectedDestination = .weather
+        case "steps":
+            selectedDestination = .steps
+        default:
+            break
+        }
+    }
+}
+
+enum ComplicationDestination: Hashable, Identifiable {
+    case weather
+    case steps
+    
+    var id: Self { self }
 }
 
 struct ContentView: View {
