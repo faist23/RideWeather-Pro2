@@ -2,19 +2,22 @@
 //  RideWeatherWatchApp.swift
 //  RideWeatherWatch Watch App
 //
+//  Updated with URL handling for complication taps
+//
 
 import SwiftUI
 import UserNotifications
+import Combine
 
 @main
 struct RideWeatherWatch_App: App {
-    @State private var selectedDestination: ComplicationDestination?
+    @StateObject private var navigationManager = NavigationManager()
     
     var body: some Scene {
         WindowGroup {
-            NavigationStack {
+            NavigationStack(path: $navigationManager.path) {
                 ContentView()
-                    .navigationDestination(item: $selectedDestination) { destination in
+                    .navigationDestination(for: ComplicationDestination.self) { destination in
                         switch destination {
                         case .weather:
                             WeatherDetailView()
@@ -22,9 +25,10 @@ struct RideWeatherWatch_App: App {
                             StepsDetailView()
                         }
                     }
-                    .onOpenURL { url in
-                        handleURL(url)
-                    }
+            }
+            .environmentObject(navigationManager)
+            .onOpenURL { url in
+                navigationManager.handleURL(url)
             }
             .onAppear {
                 UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
@@ -37,17 +41,31 @@ struct RideWeatherWatch_App: App {
             }
         }
     }
+}
+
+// MARK: - Navigation Manager
+
+@MainActor
+class NavigationManager: ObservableObject {
+    @Published var path = NavigationPath()
     
-    private func handleURL(_ url: URL) {
+    func handleURL(_ url: URL) {
         print("⌚️ Received URL: \(url.absoluteString)")
+        print("⌚️ URL Host: \(url.host ?? "none")")
         
+        // Clear existing path first
+        path.removeLast(path.count)
+        
+        // Navigate based on URL
         switch url.host {
         case "weather":
-            selectedDestination = .weather
+            print("⌚️ Navigating to weather")
+            path.append(ComplicationDestination.weather)
         case "steps":
-            selectedDestination = .steps
+            print("⌚️ Navigating to steps")
+            path.append(ComplicationDestination.steps)
         default:
-            break
+            print("⌚️ Unknown destination: \(url.host ?? "none")")
         }
     }
 }
@@ -120,7 +138,7 @@ struct ContentView: View {
                     .containerBackground(.indigo.gradient, for: .tabView)
                 }
                 
-                // PAGE 5: DEBUG (NEW)
+                // PAGE 5: DEBUG
                 WatchDebugView()
                     .containerBackground(.black.gradient, for: .tabView)
             }

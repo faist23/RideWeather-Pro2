@@ -390,7 +390,6 @@ struct RideWeatherComplicationEntryView: View {
     
     @ViewBuilder
     var circularView: some View {
-        Link(destination: URL(string: "weather://")!) {
             VStack(spacing: 1) {
                 Text("\(entry.temp)°")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -406,12 +405,10 @@ struct RideWeatherComplicationEntryView: View {
                 }
                 .foregroundStyle(.secondary)
             }
-        }
     }
     
     @ViewBuilder
     var cornerView: some View {
-        Link(destination: URL(string: "weather://")!) {
             Text("\(entry.temp)°")
                 .font(.system(size: 34, weight: .bold, design: .rounded))
                 .minimumScaleFactor(0.7)
@@ -419,14 +416,11 @@ struct RideWeatherComplicationEntryView: View {
                     Image(systemName: "wind")
                     Text("\(entry.windSpeed) \(entry.windDir)  FL \(entry.feelsLike)°")
                 }
-        }
     }
     
     @ViewBuilder
     var inlineView: some View {
-        Link(destination: URL(string: "weather://")!) {
             Text("Feels \(entry.feelsLike)° • Wind \(entry.windSpeed) \(entry.windDir)")
-        }
     }
 }
 
