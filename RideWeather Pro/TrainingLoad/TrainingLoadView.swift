@@ -543,7 +543,9 @@ struct TrainingLoadView: View {
         guard let wellness = wellnessManager.dailyMetrics.last else { return nil }
         
         let trainingHistory = viewModel.dailyLoads.filter { $0.rideCount > 0 }
-        let lastWorkoutDate = trainingHistory.sorted { $0.date > $1.date }.first?.date
+//        let lastWorkoutDate = trainingHistory.sorted { $0.date > $1.date }.first?.date
+        // NEW (Uses the exact time saved in TrainingLoadManager)
+        let lastWorkoutDate = UserDefaults.standard.object(forKey: "last_ride_precise_date") as? Date
         
         let currentHRV = healthManager.readiness.latestHRV ?? Double(wellness.restingHeartRate ?? 60)
         let baselineHRV = healthManager.readiness.averageHRV ?? currentHRV
@@ -662,7 +664,123 @@ struct DataSourceHeader: View {
     }
 }
 
-// MARK: - Enhanced Sync Status Banner
+// MARK: - Enhanced Sync Status Banner (Compact)
+
+struct EnhancedSyncStatusBanner: View {
+    @ObservedObject var trainingSync: UnifiedTrainingLoadSync
+    @ObservedObject var wellnessSync: UnifiedWellnessSync
+
+    let trainingDaysCount: Int
+    let wellnessDaysCount: Int
+
+    let onTrainingSync: () -> Void
+    let onWellnessSync: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Training Load Row
+            if trainingSync.lastSyncDate != nil || trainingSync.needsSync {
+                compactSyncRow(
+                    label: "Training",
+                    needsSync: trainingSync.needsSync,
+                    lastSync: trainingSync.lastSyncDate,
+                    count: trainingDaysCount,
+                    statusColor: .orange,
+                    isSyncing: trainingSync.isSyncing,
+                    action: onTrainingSync
+                )
+            }
+            
+            // Divider (only if both are visible)
+            if (trainingSync.lastSyncDate != nil || trainingSync.needsSync) &&
+               (wellnessSync.lastSyncDate != nil || wellnessSync.needsSync) {
+                Divider()
+                    .padding(.leading, 50) // Indent divider to align with text
+            }
+            
+            // Wellness Row
+            if wellnessSync.lastSyncDate != nil || wellnessSync.needsSync {
+                compactSyncRow(
+                    label: "Wellness",
+                    needsSync: wellnessSync.needsSync,
+                    lastSync: wellnessSync.lastSyncDate,
+                    count: wellnessDaysCount,
+                    statusColor: .red,
+                    isSyncing: wellnessSync.isSyncing,
+                    action: onWellnessSync
+                )
+            }
+        }
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+    
+    @ViewBuilder
+    private func compactSyncRow(
+        label: String,
+        needsSync: Bool,
+        lastSync: Date?,
+        count: Int,
+        statusColor: Color,
+        isSyncing: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 12) {
+            // 1. Status Icon
+            ZStack {
+                if isSyncing {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else {
+                    Image(systemName: needsSync ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .foregroundColor(needsSync ? statusColor : .secondary) // Grey checkmark when good, Color when alert
+                }
+            }
+            .frame(width: 20)
+            
+            // 2. Info Text
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(label)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    
+                    if count > 0 {
+                        Text("• \(count) days")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                if let lastSync = lastSync {
+                    Text(needsSync ? "Sync needed" : "Updated \(lastSync.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption2)
+                        .foregroundColor(needsSync ? .primary : .secondary)
+                }
+            }
+            
+            Spacer()
+            
+            // 3. Action Button (Only visible if action needed)
+            if needsSync && !isSyncing {
+                Button(action: action) {
+                    Text("Sync")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(statusColor)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(statusColor.opacity(0.1))
+                        .cornerRadius(6)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+}
+
+/*// MARK: - Enhanced Sync Status Banner
 
 struct EnhancedSyncStatusBanner: View {
     @ObservedObject var trainingSync: UnifiedTrainingLoadSync
@@ -749,7 +867,7 @@ struct EnhancedSyncStatusBanner: View {
         .background(Color(.systemGray6))
         .cornerRadius(12)
     }
-}
+}*/
 
 // MARK: - Current Form Card
 
@@ -797,6 +915,11 @@ struct FormIndicator: View {
     let value: Double
     let status: DailyTrainingLoad.FormStatus
     
+    // Define the range constants here to ensure consistency
+    // Using a symmetrical range (-40 to +40) ensures 0 is exactly in the center
+    private let minTSB: Double = -40
+    private let maxTSB: Double = 40
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
@@ -806,28 +929,30 @@ struct FormIndicator: View {
                     .frame(height: 30)
                     .cornerRadius(15)
                 
-                // Indicator
-                let normalizedPosition = normalizePosition(value, in: geometry.size.width)
+                // 1. Draw the Center Line at the true '0' position
+                // (If range is symmetrical -40 to +40, this will naturally be 50%)
+                Rectangle()
+                    .fill(Color.primary.opacity(0.3)) // Increased opacity slightly for visibility
+                    .frame(width: 2, height: 40)
+                    .offset(x: normalizePosition(0, in: geometry.size.width) - 1)
+                    .zIndex(1) // Ensure line is above background but below dot? Or above dot? Usually below.
+                
+                // 2. The Indicator Dot
                 Circle()
                     .fill(Color(status.color))
                     .frame(width: 40, height: 40)
                     .shadow(radius: 4)
-                    .offset(x: normalizedPosition - 20)
-                
-                // Center line
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.3))
-                    .frame(width: 2, height: 40)
-                    .offset(x: geometry.size.width / 2 - 1)
+                    .overlay(
+                        Circle().stroke(Color.white, lineWidth: 2) // Optional: adds pop
+                    )
+                    .offset(x: normalizePosition(value, in: geometry.size.width) - 20)
+                    .zIndex(2)
             }
         }
         .frame(height: 40)
     }
     
     private func normalizePosition(_ value: Double, in width: CGFloat) -> CGFloat {
-        // Map TSB (-40 to +20) to width (0 to width)
-        let minTSB: Double = -40
-        let maxTSB: Double = 20
         let clamped = max(minTSB, min(maxTSB, value))
         let normalized = (clamped - minTSB) / (maxTSB - minTSB)
         return CGFloat(normalized) * width

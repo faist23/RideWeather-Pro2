@@ -160,13 +160,22 @@ struct RideWeatherComplicationsEntryView: View {
             
         case .ride:
             // Day: Show Weather (Wind)
-            VStack(spacing: 0) {
-                Image(systemName: "wind")
-                    .font(.system(size: 10))
-                Text("\(entry.windSpeed)")
-                    .font(.system(size: 14, weight: .bold))
-                Text(entry.windDir)
-                    .font(.system(size: 8))
+            VStack(spacing: 1) {
+                // Top: Feels Like Temp
+                Text("\(entry.temp)°")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                Text("FL \(entry.feelsLike)°")
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
+
+                // Bottom: Wind Icon + Speed
+                HStack(spacing: 1) {
+                    Image(systemName: "wind")
+                        .font(.system(size: 8))
+                        .symbolRenderingMode(.hierarchical)
+                    Text("\(entry.windSpeed)")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(.secondary)
             }
             
         case .recovery:
@@ -262,8 +271,16 @@ struct RideWeatherComplicationsEntryView: View {
                 .font(.title.bold())
                 .widgetLabel("Readiness")
         case .ride:
-            Image(systemName: "wind")
-                .widgetLabel("\(entry.windSpeed) mph \(entry.windDir)")
+            Text("\(entry.temp)°")
+            // 1. Use explicit size (34 is about max for corner)
+            // 2. Use .rounded design for a modern, wider look
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+            // 3. Ensure 3-digit temps don't get cut off
+                .minimumScaleFactor(0.7)
+                .widgetLabel {
+                    Image(systemName: "wind")
+                    Text("\(entry.windSpeed) \(entry.windDir)  FL \(entry.feelsLike)°")
+                }
         case .recovery:
             Image(systemName: "bed.double.fill")
                 .widgetLabel("Recovery")
@@ -276,7 +293,7 @@ struct RideWeatherComplicationsEntryView: View {
         case .readiness:
             Text("Readiness: \(entry.readiness)%")
         case .ride:
-            Text("\(entry.temp)° • Wind \(entry.windSpeed)\(entry.windDir)")
+            Text("Feels \(entry.feelsLike)° • Wind \(entry.windSpeed) \(entry.windDir)")
         case .recovery:
             Text("Recovery: Good")
         }
