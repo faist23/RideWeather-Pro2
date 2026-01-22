@@ -84,17 +84,24 @@ struct SmartRideStatsProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<SmartRideStatsEntry>) -> ()) {
-        var entries: [SmartRideStatsEntry] = []
-        let currentDate = Date()
-        
-        for hourOffset in 0..<24 {
-            if let entryDate = Calendar.current.date(byAdding: .hour, value: hourOffset, to: currentDate) {
-                entries.append(createEntry(for: entryDate))
+        Task {
+            // Fetch fresh data every refresh
+            await WidgetDataFetcher.shared.fetchAllData()
+            
+            var entries: [SmartRideStatsEntry] = []
+            let currentDate = Date()
+            
+            for hourOffset in 0..<24 {
+                if let entryDate = Calendar.current.date(byAdding: .hour, value: hourOffset, to: currentDate) {
+                    entries.append(createEntry(for: entryDate))
+                }
             }
-        }
 
-        let timeline = Timeline(entries: entries, policy: .atEnd)
-        completion(timeline)
+            // Refresh every hour
+            let nextUpdate = Calendar.current.date(byAdding: .hour, value: 1, to: currentDate)!
+            let timeline = Timeline(entries: entries, policy: .after(nextUpdate))
+            completion(timeline)
+        }
     }
     
     private func createEntry(for date: Date) -> SmartRideStatsEntry {
@@ -154,17 +161,39 @@ struct SimpleComplicationProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<SimpleComplicationEntry>) -> ()) {
-        var entries: [SimpleComplicationEntry] = []
-        let currentDate = Date()
-        
-        for offset in 0..<8 {
-            if let entryDate = Calendar.current.date(byAdding: .minute, value: offset * 15, to: currentDate) {
-                entries.append(createEntry(for: entryDate))
+        Task {
+            // Debug: Check what data we currently have
+            let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
+            let currentSteps = defaults?.integer(forKey: "widget_today_steps") ?? 0
+            let hasWeather = defaults?.data(forKey: "widget_weather_summary") != nil
+            let lat = defaults?.double(forKey: "user_latitude") ?? 0
+            let lon = defaults?.double(forKey: "user_longitude") ?? 0
+            
+            print("📊 WIDGET TIMELINE REFRESH")
+            print("   Current steps in storage: \(currentSteps)")
+            print("   Has weather data: \(hasWeather)")
+            print("   Has location: \(lat != 0 && lon != 0)")
+            
+            // Fetch fresh data every refresh
+            await WidgetDataFetcher.shared.fetchAllData()
+            
+            var entries: [SimpleComplicationEntry] = []
+            let currentDate = Date()
+            
+            // Generate entries every 30 minutes for the next 4 hours
+            for offset in 0..<8 {
+                if let entryDate = Calendar.current.date(byAdding: .minute, value: offset * 30, to: currentDate) {
+                    entries.append(createEntry(for: entryDate))
+                }
             }
-        }
 
-        let timeline = Timeline(entries: entries, policy: .atEnd)
-        completion(timeline)
+            // Refresh every 30 minutes
+            let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: currentDate)!
+            let timeline = Timeline(entries: entries, policy: .after(nextUpdate))
+            
+            print("✅ Timeline created with \(entries.count) entries, next update: \(nextUpdate)")
+            completion(timeline)
+        }
     }
     
     private func createEntry(for date: Date) -> SimpleComplicationEntry {
@@ -376,7 +405,7 @@ struct RideWeatherComplicationEntryView: View {
         case .accessoryCircular:
             circularView
                 .widgetURL(URL(string: "rideweather://weather")!)
-       case .accessoryCorner:
+        case .accessoryCorner:
             cornerView
                 .widgetURL(URL(string: "rideweather://weather")!)
         case .accessoryInline:
@@ -390,37 +419,37 @@ struct RideWeatherComplicationEntryView: View {
     
     @ViewBuilder
     var circularView: some View {
-            VStack(spacing: 1) {
-                Text("\(entry.temp)°")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                Text("FL \(entry.feelsLike)°")
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                
-                HStack(spacing: 1) {
-                    Image(systemName: "wind")
-                        .font(.system(size: 8))
-                        .symbolRenderingMode(.hierarchical)
-                    Text("\(entry.windSpeed)")
-                        .font(.system(size: 10, weight: .semibold))
-                }
-                .foregroundStyle(.secondary)
+        VStack(spacing: 1) {
+            Text("\(entry.temp)°")
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+            Text("FL \(entry.feelsLike)°")
+                .font(.system(size: 12, weight: .regular, design: .rounded))
+
+            HStack(spacing: 1) {
+                Image(systemName: "wind")
+                    .font(.system(size: 8))
+                    .symbolRenderingMode(.hierarchical)
+                Text("\(entry.windSpeed)")
+                    .font(.system(size: 10, weight: .semibold))
             }
+            .foregroundStyle(.secondary)
+        }
     }
     
     @ViewBuilder
     var cornerView: some View {
-            Text("\(entry.temp)°")
-                .font(.system(size: 34, weight: .bold, design: .rounded))
-                .minimumScaleFactor(0.7)
-                .widgetLabel {
-                    Image(systemName: "wind")
-                    Text("\(entry.windSpeed) \(entry.windDir)  FL \(entry.feelsLike)°")
-                }
+        Text("\(entry.temp)°")
+            .font(.system(size: 34, weight: .bold, design: .rounded))
+            .minimumScaleFactor(0.7)
+            .widgetLabel {
+                Image(systemName: "wind")
+                Text("\(entry.windSpeed) \(entry.windDir)  FL \(entry.feelsLike)°")
+            }
     }
     
     @ViewBuilder
     var inlineView: some View {
-            Text("Feels \(entry.feelsLike)° • Wind \(entry.windSpeed) \(entry.windDir)")
+        Text("Feels \(entry.feelsLike)° • Wind \(entry.windSpeed) \(entry.windDir)")
     }
 }
 
@@ -449,36 +478,36 @@ struct StepsComplicationEntryView: View {
     
     @ViewBuilder
     var circularView: some View {
-            VStack(spacing: 2) {
-                Image(systemName: "figure.walk")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.green)
-                
-                Text(formatSteps(entry.todaySteps))
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                
-                Text("steps")
-                    .font(.system(size: 8))
-                    .foregroundStyle(.secondary)
-            }
+        VStack(spacing: 2) {
+            Image(systemName: "figure.walk")
+                .font(.system(size: 12))
+                .foregroundStyle(.green)
+            
+            Text(formatSteps(entry.todaySteps))
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+            
+            Text("steps")
+                .font(.system(size: 8))
+                .foregroundStyle(.secondary)
+        }
     }
     
     @ViewBuilder
     var cornerView: some View {
-            Image(systemName: "figure.walk")
-                .font(.system(size: 24))
-                .widgetLabel {
-                    Text("\(formatSteps(entry.todaySteps)) steps")
-                }
+        Image(systemName: "figure.walk")
+            .font(.system(size: 24))
+            .widgetLabel {
+                Text("\(formatSteps(entry.todaySteps)) steps")
+            }
     }
     
     @ViewBuilder
-        var inlineView: some View {
-            Text("\(formatSteps(entry.todaySteps)) steps")
+    var inlineView: some View {
+        Text("\(formatSteps(entry.todaySteps)) steps")
     }
     
     private func formatSteps(_ steps: Int) -> String {
-        if steps >= 1000 {
+        if steps >= 10000 {
             let thousands = Double(steps) / 1000.0
             return String(format: "%.1fk", thousands)
         }

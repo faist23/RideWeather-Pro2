@@ -1,0 +1,96 @@
+
+//
+//  WatchLocationManager.swift
+//  RideWeatherWatch Watch App
+//
+//  Independent location manager for watch
+//
+
+import CoreLocation
+import Combine
+import ClockKit
+
+class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+    static let shared = WatchLocationManager()
+    
+    private let locationManager = CLLocationManager()
+    @Published var location: CLLocation?
+    @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    
+    private override init() {
+        super.init()
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        locationManager.distanceFilter = 100
+        
+        print("📍 WatchLocationManager initialized")
+    }
+    
+    func startUpdating() async {
+        print("📍 Starting location updates, status: \(authorizationStatus.rawValue)")
+        
+        switch authorizationStatus {
+        case .notDetermined:
+            print("📍 Requesting location permission")
+            locationManager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse, .authorizedAlways:
+            print("📍 Already authorized, starting updates")
+            locationManager.startUpdatingLocation()
+        case .denied, .restricted:
+            print("❌ Location access denied or restricted")
+        @unknown default:
+            print("⚠️ Unknown authorization status")
+        }
+    }
+    
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last else { return }
+        print("📍 Location: \(location.coordinate.latitude), \(location.coordinate.longitude)")
+        
+        self.location = location
+        
+        Task {
+            await fetchWeatherForCurrentLocation()
+        }
+    }
+    
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let newStatus = manager.authorizationStatus
+        print("📍 Authorization changed: \(authorizationStatus.rawValue) → \(newStatus.rawValue)")
+        authorizationStatus = newStatus
+        
+        if newStatus == .authorizedWhenInUse || newStatus == .authorizedAlways {
+            print("📍 Permission granted, starting updates")
+            locationManager.startUpdatingLocation()
+        }
+    }
+    
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("❌ Location error: \(error.localizedDescription)")
+    }
+    
+    private func fetchWeatherForCurrentLocation() async {
+        guard let location = location else {
+            print("⚠️ No location for weather fetch")
+            return
+        }
+        
+        print("🌤️ Fetching weather: \(location.coordinate.latitude), \(location.coordinate.longitude)")
+        
+        do {
+            let weatherData = try await WatchWeatherService.shared.fetchWeather(for: location.coordinate)
+            print("✅ Weather fetched: \(weatherData.temperature)°")
+            
+            WatchAppGroupManager.shared.saveWeatherData(weatherData)
+            print("💾 Weather saved")
+            
+            // Reload complications
+            let server = CLKComplicationServer.sharedInstance()
+            for complication in server.activeComplications ?? [] {
+                server.reloadTimeline(for: complication)
+            }
+        } catch {
+            print("❌ Weather fetch failed: \(error.localizedDescription)")
+        }
+    }
+}

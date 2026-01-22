@@ -143,6 +143,14 @@ extension WatchSessionManager: WCSessionDelegate {
             do {
                 let decoded = try JSONDecoder().decode(DailyWellnessMetrics.self, from: currentWellnessData)
                 self.currentWellness = decoded
+                
+                // ✅ SAVE STEPS FOR WIDGET
+                if let steps = decoded.steps {
+                    let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
+                    defaults?.set(steps, forKey: "widget_today_steps")
+                    print("✅ Saved \(steps) steps for widget")
+                }
+                
                 print("✅ Decoded Current Wellness")
             } catch {
                 print("❌ Failed to decode Current Wellness: \(error)")
@@ -318,6 +326,12 @@ extension WatchSessionManager: WCSessionDelegate {
             defaults?.set(wellness.steps ?? 0, forKey: "widget_today_steps")
         }
 
+        // Save steps immediately
+        if let steps = self.currentWellness?.steps {
+            defaults?.set(steps, forKey: "widget_today_steps")
+            print("⌚️ Saved steps to widget: \(steps)")
+        }
+        
         // Force the widget to refresh immediately
         WidgetCenter.shared.reloadAllTimelines()
         print("⌚️ Widget data saved & timeline reload requested")

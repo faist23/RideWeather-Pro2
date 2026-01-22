@@ -330,6 +330,9 @@ class WeatherViewModel: ObservableObject {
             return
         }
         
+        // ✅ SAVE LOCATION FOR WIDGET
+        saveLocationForWidget(location)
+        
         uiState = .loading
         Task { await cityNameResolver.getCityName(for: location, into: self) }
         
@@ -363,6 +366,35 @@ class WeatherViewModel: ObservableObject {
         }
     }
     
+    private func saveLocationForWidget(_ location: CLLocation) {
+        // Try BOTH standard and shared
+        let sharedDefaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
+        let standardDefaults = UserDefaults.standard
+        
+        // Save to shared
+        sharedDefaults?.set(location.coordinate.latitude, forKey: "user_latitude")
+        sharedDefaults?.set(location.coordinate.longitude, forKey: "user_longitude")
+        sharedDefaults?.synchronize()
+        
+        // Also save to standard (for debugging)
+        standardDefaults.set(location.coordinate.latitude, forKey: "user_latitude_standard")
+        standardDefaults.synchronize()
+        
+        print("✅ Saved location for widget: \(location.coordinate.latitude), \(location.coordinate.longitude)")
+        
+        // CRITICAL: Verify it was actually saved to SHARED container
+        let verifyLat = sharedDefaults?.double(forKey: "user_latitude")
+        let verifyLon = sharedDefaults?.double(forKey: "user_longitude")
+        print("   Verified in SHARED: \(verifyLat ?? -999), \(verifyLon ?? -999)")
+        
+        // Check all keys in shared container
+        if let dict = sharedDefaults?.dictionaryRepresentation() {
+            print("   Shared container has \(dict.keys.count) total keys")
+            let userKeys = dict.keys.filter { $0.hasPrefix("user_") || $0.hasPrefix("widget_") }
+            print("   User/widget keys: \(userKeys.sorted())")
+        }
+    }
+
     func openAnalytics() async {
         if !allHourlyData.isEmpty {
             showingAnalytics = true

@@ -83,9 +83,19 @@
 			);
 			target = 7E5B80AA2E4C3B2D005D114F /* RideWeather Pro */;
 		};
+		7E6593D82F1DC33500552215 /* Exceptions for "RideWeather Pro" folder in "RideWeatherComplicationsExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				OpenWeatherAPIModels.swift,
+				WeatherService.swift,
+				WeatherView/WeatherMapper.swift,
+			);
+			target = 7E87E94D2F15F2840050060A /* RideWeatherComplicationsExtension */;
+		};
 		7E87E92C2F12F0160050060A /* Exceptions for "RideWeather Pro" folder in "RideWeatherWatch Watch App" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				OpenWeather.plist,
 				TrainingLoad/PhysiologicalReadiness.swift,
 				TrainingLoad/RecoveryStatus.swift,
 				TrainingLoad/TrainingLoadModels.swift,
@@ -109,6 +119,7 @@
 			exceptions = (
 				7E5B80E12E4C3F24005D114F /* Exceptions for "RideWeather Pro" folder in "RideWeather Pro" target */,
 				7E87E92C2F12F0160050060A /* Exceptions for "RideWeather Pro" folder in "RideWeatherWatch Watch App" target */,
+				7E6593D82F1DC33500552215 /* Exceptions for "RideWeather Pro" folder in "RideWeatherComplicationsExtension" target */,
 			);
 			path = "RideWeather Pro";
 			sourceTree = "<group>";
@@ -531,8 +542,8 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -568,8 +579,8 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -600,6 +611,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "RideWeatherWatch-Watch-App-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = RideWeatherWatch;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Track daily steps for watch complications";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Not used";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Access your location to provide weather updates on watch complications";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "-.RideWeather-Pro";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -635,6 +649,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "RideWeatherWatch-Watch-App-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = RideWeatherWatch;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Track daily steps for watch complications";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Not used";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Access your location to provide weather updates on watch complications";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "-.RideWeather-Pro";
 				LD_RUNPATH_SEARCH_PATHS = (

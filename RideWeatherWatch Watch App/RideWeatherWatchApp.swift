@@ -38,6 +38,17 @@ struct RideWeatherWatch_App: App {
                         print("⌚️ Notification permission error: \(error.localizedDescription)")
                     }
                 }
+                
+                // START BACKGROUND STEPS UPDATES
+                Task { @MainActor in
+                    BackgroundStepsUpdater.shared.startBackgroundUpdates()
+                }
+                
+                // Start independent location/weather
+                Task {
+                    await WatchLocationManager.shared.startUpdating()
+                }
+
             }
         }
     }
@@ -123,7 +134,10 @@ struct ContentView: View {
                     .containerBackground(.black.gradient, for: .tabView)
                 }
                 
-                // PAGE 4: WEEKLY SUMMARY
+                StepsDetailView()
+                WeatherDetailView()
+                
+                /*                // PAGE 4: WEEKLY SUMMARY
                 if let weekStats = session.weeklyStats {
                     WeeklyView(
                         weekStats: weekStats,
@@ -137,10 +151,10 @@ struct ContentView: View {
                     )
                     .containerBackground(.indigo.gradient, for: .tabView)
                 }
-                
+ */
                 // PAGE 5: DEBUG
-                WatchDebugView()
-                    .containerBackground(.black.gradient, for: .tabView)
+//                WatchDebugView()
+//                    .containerBackground(.black.gradient, for: .tabView)
             }
             .tabViewStyle(.page)
             

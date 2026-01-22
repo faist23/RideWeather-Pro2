@@ -2,131 +2,114 @@
 //  WidgetDataFetcher.swift
 //  RideWeatherComplications
 //
-//  Fetches fresh data for complications independently from the main app
+//  Fetches fresh weather data for complications
+//  Steps come from Watch app background updates - widget NEVER touches HealthKit
 //
 
 import Foundation
-import HealthKit
 
 @MainActor
 class WidgetDataFetcher {
     static let shared = WidgetDataFetcher()
     private let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
-    private let healthStore = HKHealthStore()
     
-    private init() {}
+    // Load API key from config file
+    private var apiKey: String {
+        guard let path = Bundle.main.path(forResource: "OpenWeather", ofType: "plist"),
+              let dict = NSDictionary(contentsOfFile: path) as? [String: String],
+              let key = dict["OpenWeatherApiKey"] else {
+            print("❌ Widget: Failed to load OpenWeather API key")
+            return ""
+        }
+        return key
+    }
+    
+    private init() {
+        // Debug: Print all keys in the shared container
+        if let defaults = defaults {
+            print("🔍 Widget UserDefaults Debug:")
+            print("   Suite: group.com.ridepro.rideweather")
+            if let dict = defaults.dictionaryRepresentation() as? [String: Any] {
+                print("   Total keys: \(dict.keys.count)")
+                for key in dict.keys.sorted() {
+                    if key.contains("widget") || key.contains("user_") {
+                        let value = dict[key]
+                        print("   - \(key): \(value ?? "nil")")
+                    }
+                }
+            }
+        } else {
+            print("❌ Widget: Failed to initialize UserDefaults with app group!")
+        }
+    }
     
     // MARK: - Fetch All Data
     
     func fetchAllData() async {
-        // Run all fetches concurrently
-        async let stepsTask = fetchTodaySteps()
-        async let weatherTask = fetchWeather()
+        print("🔄 Widget: Refreshing weather only (steps come from Watch app)")
         
-        let (steps, weather) = await (stepsTask, weatherTask)
+        // Steps are updated by Watch app background process - just read current value
+        let currentSteps = defaults?.integer(forKey: "widget_today_steps") ?? 0
+        print("📊 Widget: Current steps from Watch: \(currentSteps)")
         
-        // Save to UserDefaults
-        if let steps = steps {
-            defaults?.set(steps, forKey: "widget_today_steps")
-        }
+        // Only fetch weather
+        await fetchWeather()
         
-        if let weatherData = weather {
-            defaults?.set(weatherData, forKey: "widget_weather_summary")
-        }
-        
-        print("🔄 Widget data refresh complete")
+        print("🔄 Widget: Weather refresh complete")
     }
     
-    // MARK: - Fetch Steps from HealthKit
+    // MARK: - Fetch Weather from OpenWeather API 3.0
     
-    private func fetchTodaySteps() async -> Int? {
-        guard HKHealthStore.isHealthDataAvailable() else {
-            print("⚠️ HealthKit not available")
-            return nil
-        }
-        
-        let stepsType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
-        
-        // Request authorization (will be instant if already authorized)
-        let typesToRead: Set<HKObjectType> = [stepsType]
-        
-        do {
-            try await healthStore.requestAuthorization(toShare: [], read: typesToRead)
-        } catch {
-            print("❌ HealthKit authorization failed: \(error)")
-            return nil
-        }
-        
-        // Query today's steps
-        let calendar = Calendar.current
-        let now = Date()
-        let startOfDay = calendar.startOfDay(for: now)
-        
-        let predicate = HKQuery.predicateForSamples(
-            withStart: startOfDay,
-            end: now,
-            options: .strictStartDate
-        )
-        
-        return await withCheckedContinuation { continuation in
-            let query = HKStatisticsQuery(
-                quantityType: stepsType,
-                quantitySamplePredicate: predicate,
-                options: .cumulativeSum
-            ) { _, result, error in
-                if let error = error {
-                    print("❌ Steps query failed: \(error)")
-                    continuation.resume(returning: nil)
-                    return
-                }
-                
-                let steps = result?.sumQuantity()?.doubleValue(for: .count()) ?? 0
-                print("✅ Fetched steps: \(Int(steps))")
-                continuation.resume(returning: Int(steps))
-            }
-            
-            healthStore.execute(query)
-        }
-    }
-    
-    // MARK: - Fetch Weather from API
-    
+    @discardableResult
     private func fetchWeather() async -> Data? {
-        // Get stored location (you should have this saved from the main app)
+        // Get stored location from iOS app
         guard let latitude = defaults?.double(forKey: "user_latitude"),
               let longitude = defaults?.double(forKey: "user_longitude"),
               latitude != 0, longitude != 0 else {
-            print("⚠️ No location data available")
+            print("⚠️ Widget: No location available")
+            print("   Lat: \(defaults?.double(forKey: "user_latitude") ?? 0)")
+            print("   Lon: \(defaults?.double(forKey: "user_longitude") ?? 0)")
             return nil
         }
         
-        // Use your weather API (replace with your actual API key and endpoint)
-        let apiKey = "YOUR_WEATHER_API_KEY" // TODO: Replace with your API key
-        let urlString = "https://api.openweathermap.org/data/2.5/weather?lat=\(latitude)&lon=\(longitude)&appid=\(apiKey)&units=imperial"
+        print("📍 Widget: Using location \(latitude), \(longitude)")
+        
+        guard !apiKey.isEmpty else {
+            print("❌ Widget: No API key")
+            return nil
+        }
+        
+        let urlString = "https://api.openweathermap.org/data/3.0/onecall?lat=\(latitude)&lon=\(longitude)&exclude=minutely,daily,alerts&appid=\(apiKey)&units=imperial"
         
         guard let url = URL(string: urlString) else {
-            print("❌ Invalid weather URL")
+            print("❌ Widget: Invalid URL")
             return nil
         }
         
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
             
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                print("❌ Weather API returned error")
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Widget: Invalid response")
                 return nil
             }
             
-            // Parse and convert to your format
+            guard httpResponse.statusCode == 200 else {
+                print("❌ Widget: API error \(httpResponse.statusCode)")
+                return nil
+            }
+            
             if let weatherData = parseWeatherResponse(data) {
-                print("✅ Fetched weather: \(weatherData.temperature)°F")
-                return try? JSONEncoder().encode(weatherData)
+                let encoded = try? JSONEncoder().encode(weatherData)
+                defaults?.set(encoded, forKey: "widget_weather_summary")
+                defaults?.synchronize()
+                print("✅ Widget: Weather updated - \(weatherData.temperature)°F, \(weatherData.windSpeed)mph \(weatherData.windDirection)")
+                return encoded
             }
             
             return nil
         } catch {
-            print("❌ Weather fetch failed: \(error)")
+            print("❌ Widget: Fetch failed - \(error.localizedDescription)")
             return nil
         }
     }
@@ -134,69 +117,66 @@ class WidgetDataFetcher {
     // MARK: - Parse Weather Response
     
     private func parseWeatherResponse(_ data: Data) -> SharedWeatherSummary? {
-        struct OpenWeatherResponse: Codable {
-            let main: Main
-            let weather: [Weather]
-            let wind: Wind
+        struct OneCallResponse: Codable {
+            let current: Current
+            let hourly: [Hourly]
             
-            struct Main: Codable {
+            struct Current: Codable {
                 let temp: Double
                 let feels_like: Double
+                let weather: [Weather]
+                let wind_speed: Double
+                let wind_deg: Int
+            }
+            
+            struct Hourly: Codable {
+                let pop: Double
             }
             
             struct Weather: Codable {
-                let main: String
                 let icon: String
-            }
-            
-            struct Wind: Codable {
-                let speed: Double
-                let deg: Int
             }
         }
         
         do {
-            let response = try JSONDecoder().decode(OpenWeatherResponse.self, from: data)
+            let response = try JSONDecoder().decode(OneCallResponse.self, from: data)
             
-            // Map weather condition to SF Symbol
-            let conditionIcon = mapWeatherIcon(response.weather.first?.main ?? "Clear")
-            
-            // Convert wind direction
-            let windDirection = degreesToCardinal(response.wind.deg)
+            let conditionIcon = mapWeatherIcon(response.current.weather.first?.icon ?? "01d")
+            let windDirection = degreesToCardinal(response.current.wind_deg)
+            let pop = Int((response.hourly.first?.pop ?? 0) * 100)
             
             return SharedWeatherSummary(
-                temperature: Int(response.main.temp.rounded()),
-                feelsLike: Int(response.main.feels_like.rounded()),
+                temperature: Int(response.current.temp.rounded()),
+                feelsLike: Int(response.current.feels_like.rounded()),
                 conditionIcon: conditionIcon,
-                windSpeed: Int(response.wind.speed.rounded()),
+                windSpeed: Int(response.current.wind_speed.rounded()),
                 windDirection: windDirection,
-                pop: 0, // OpenWeather free tier doesn't include precipitation
+                pop: pop,
                 generatedAt: Date()
             )
         } catch {
-            print("❌ Failed to parse weather: \(error)")
+            print("❌ Widget: Parse failed - \(error.localizedDescription)")
             return nil
         }
     }
     
     // MARK: - Helper Functions
     
-    private func mapWeatherIcon(_ condition: String) -> String {
-        switch condition.lowercased() {
-        case "clear":
-            return "sun.max.fill"
-        case "clouds":
-            return "cloud.fill"
-        case "rain", "drizzle":
-            return "cloud.rain.fill"
-        case "thunderstorm":
-            return "cloud.bolt.fill"
-        case "snow":
-            return "cloud.snow.fill"
-        case "mist", "fog":
-            return "cloud.fog.fill"
-        default:
-            return "cloud.fill"
+    private func mapWeatherIcon(_ icon: String) -> String {
+        switch icon {
+        case "01d": return "sun.max.fill"
+        case "01n": return "moon.fill"
+        case "02d": return "cloud.sun.fill"
+        case "02n": return "cloud.moon.fill"
+        case "03d", "03n": return "cloud.fill"
+        case "04d", "04n": return "smoke.fill"
+        case "09d", "09n": return "cloud.drizzle.fill"
+        case "10d": return "cloud.sun.rain.fill"
+        case "10n": return "cloud.moon.rain.fill"
+        case "11d", "11n": return "cloud.bolt.fill"
+        case "13d", "13n": return "snow"
+        case "50d", "50n": return "cloud.fog.fill"
+        default: return "cloud.fill"
         }
     }
     
@@ -205,15 +185,4 @@ class WidgetDataFetcher {
         let index = Int((Double(degrees) + 22.5) / 45.0) % 8
         return directions[index]
     }
-}
-
-// Shared data structure (should match your complications file)
-struct SharedWeatherSummary: Codable {
-    let temperature: Int
-    let feelsLike: Int
-    let conditionIcon: String
-    let windSpeed: Int
-    let windDirection: String
-    let pop: Int
-    let generatedAt: Date
 }

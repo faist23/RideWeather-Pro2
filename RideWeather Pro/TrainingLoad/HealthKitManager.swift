@@ -153,6 +153,10 @@ class HealthKitManager: ObservableObject {
         
         let (hrv, hrvAvg, rhr, rhrAvg, sleepData, avgSleepData) = await (todaysHRV, averageHRV, todaysRHR, averageRHR, sleep, avgSleep)
         
+        // Context from other managers
+        let sleepDebt = WellnessManager.shared.currentSummary?.sleepDebt
+        let tsb = TrainingLoadManager.shared.getCurrentSummary()?.currentTSB
+        
         await MainActor.run {
             self.readiness = PhysiologicalReadiness(
                 latestHRV: hrv,
@@ -160,15 +164,18 @@ class HealthKitManager: ObservableObject {
                 latestRHR: rhr,
                 averageRHR: rhrAvg,
                 sleepDuration: sleepData,
-                averageSleepDuration: avgSleepData
+                averageSleepDuration: avgSleepData,
+                sleepDebt: sleepDebt,
+                trainingStressBalance: tsb
             )
             
-            let sleepAvg = self.readiness.averageSleepDuration ?? 0
-            print("  Sleep: \(Int((self.readiness.sleepDuration ?? 0) / 3600))h \(Int(((self.readiness.sleepDuration ?? 0).truncatingRemainder(dividingBy: 3600)) / 60))m (Avg: \(Int(sleepAvg / 3600))h \(Int((sleepAvg.truncatingRemainder(dividingBy: 3600)) / 60))m)")
+            print("✅ Readiness Calculated: \(self.readiness.readinessScore)%")
+            if let tsb = tsb, tsb < -20 {
+                print("   ⚠️ TSB Penalty Applied (TSB: \(Int(tsb)))")
+            }
         }
         
-        // Sync to Watch - ALWAYS send fresh data
-        print("🔄 Syncing Readiness to Watch: Score=\(self.readiness.readinessScore)")
+        // Sync to Watch
         PhoneSessionManager.shared.updateReadiness(self.readiness)
     }
     
