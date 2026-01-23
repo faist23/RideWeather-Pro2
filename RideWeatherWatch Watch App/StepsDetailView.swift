@@ -48,27 +48,27 @@ struct StepsDetailView: View {
                     ZStack {
                         // Move Ring (outermost - red)
                         ActivityRingView(
-                            progress: min(moveCalories / moveGoal, 1.0),
+                            progress: moveCalories / moveGoal,
                             color: Color(red: 1.0, green: 0.1, blue: 0.4),
-                            lineWidth: 5.5
+                            lineWidth: 8
                         )
-                        .frame(width: 60, height: 60)
+                        .frame(width: 70, height: 70)
                         
                         // Exercise Ring (middle - green)
                         ActivityRingView(
-                            progress: min(exerciseMinutes / exerciseGoal, 1.0),
+                            progress: exerciseMinutes / exerciseGoal,
                             color: Color(red: 0.5, green: 1.0, blue: 0.2),
-                            lineWidth: 5.5
+                            lineWidth: 8
                         )
-                        .frame(width: 46, height: 46)
+                        .frame(width: 54, height: 54)
                         
                         // Stand Ring (innermost - blue)
                         ActivityRingView(
-                            progress: min(Double(standHours) / Double(standGoal), 1.0),
+                            progress: Double(standHours) / Double(standGoal),
                             color: Color(red: 0.0, green: 0.8, blue: 1.0),
-                            lineWidth: 5.5
+                            lineWidth: 8
                         )
-                        .frame(width: 32, height: 32)
+                        .frame(width: 38, height: 38)
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -361,19 +361,32 @@ struct ActivityRingView: View {
     
     var body: some View {
         ZStack {
-            // Background ring
+            // Background ring (empty state)
             Circle()
-                .stroke(color.opacity(0.3), lineWidth: lineWidth)
+                .stroke(color.opacity(0.15), lineWidth: lineWidth)
             
-            // Progress ring
-            Circle()
-                .trim(from: 0, to: progress)
-                .stroke(
-                    color,
-                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-                .animation(.easeInOut(duration: 0.5), value: progress)
+            if progress > 0 {
+                // Main progress ring (0% to 100%)
+                Circle()
+                    .trim(from: 0, to: min(progress, 1.0))
+                    .stroke(
+                        color,
+                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                
+                // Overflow ring (beyond 100%) - creates double-thick appearance
+                if progress > 1.0 {
+                    Circle()
+                        .trim(from: 0, to: min(progress - 1.0, 1.0))
+                        .stroke(
+                            color,
+                            style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                }
+            }
         }
+        .animation(.easeInOut(duration: 0.5), value: progress)
     }
 }
