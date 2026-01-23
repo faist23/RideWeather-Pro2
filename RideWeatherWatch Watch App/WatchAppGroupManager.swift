@@ -6,9 +6,11 @@
 //
 
 import Foundation
+import WidgetKit
 
 class WatchAppGroupManager {
     static let shared = WatchAppGroupManager()
+    private let suiteName = "group.com.ridepro.rideweather"
     
     private static let sharedDefaults: UserDefaults? = {
         guard let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather") else {
@@ -24,26 +26,28 @@ class WatchAppGroupManager {
     
     private init() {}
     
-    func saveWeatherData(_ data: WatchWeatherData) {
-        guard let defaults = Self.sharedDefaults else { return }
-        
-        // Convert to SharedWeatherSummary format used by complications
-        let weatherSummary = SharedWeatherSummary(
-            temperature: Int(data.temperature),
-            feelsLike: Int(data.feelsLike),
-            conditionIcon: data.condition,
-            windSpeed: Int(data.windSpeed),
-            windDirection: "N", // TODO: Calculate from wind direction if available
-            pop: 0,
-            generatedAt: data.timestamp
-        )
-        
-        if let encoded = try? JSONEncoder().encode(weatherSummary) {
-            defaults.set(encoded, forKey: weatherKey)
-            defaults.synchronize()
-            print("💾 Weather saved to complications key")
+    // Updated: Accepts optional Alert
+        func saveWeatherData(_ data: WatchWeatherData, alert: WeatherAlert? = nil) {
+            let defaults = UserDefaults(suiteName: suiteName)
+            
+            // Map to Shared Summary (matches Widget definition)
+            let summary = SharedWeatherSummary(
+                temperature: Int(data.temperature),
+                feelsLike: Int(data.feelsLike),
+                conditionIcon: data.condition,
+                windSpeed: Int(data.windSpeed),
+                windDirection: compassDirection(for: 0), // Simplification if wind deg missing
+                pop: 0, // Pop not always available in current current-weather call
+                generatedAt: Date(),
+                alertSeverity: alert?.severity.rawValue // NEW FIELD
+            )
+            
+            if let encoded = try? JSONEncoder().encode(summary) {
+                defaults?.set(encoded, forKey: "widget_weather_summary")
+                print("💾 Widget Data Saved. Alert: \(alert?.severity.rawValue ?? "None")")
+                WidgetCenter.shared.reloadAllTimelines()
+            }
         }
-    }
     
     func getWeatherData() -> WatchWeatherData? {
         guard let defaults = Self.sharedDefaults,
@@ -68,11 +72,16 @@ class WatchAppGroupManager {
     }
     
     func saveSteps(_ steps: Int) {
-        guard let defaults = Self.sharedDefaults else { return }
-        defaults.set(steps, forKey: stepsKey)
-        defaults.synchronize()
-        print("💾 Steps saved: \(steps)")
-    }
+            let defaults = UserDefaults(suiteName: suiteName)
+            defaults?.set(steps, forKey: "widget_today_steps")
+            WidgetCenter.shared.reloadAllTimelines()
+        }
+        
+        private func compassDirection(for degrees: Double) -> String {
+            let directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+            let index = Int((degrees + 22.5) / 45.0) & 7
+            return directions[index]
+        }
     
     func getSteps() -> Int {
         guard let defaults = Self.sharedDefaults else { return 0 }
@@ -92,7 +101,7 @@ class WatchAppGroupManager {
     }
 }
 
-// Shared weather summary structure - MUST match complications
+// SHARED DATA MODEL (Must match Widget)
 struct SharedWeatherSummary: Codable {
     let temperature: Int
     let feelsLike: Int
@@ -101,4 +110,5 @@ struct SharedWeatherSummary: Codable {
     let windDirection: String
     let pop: Int
     let generatedAt: Date
+    let alertSeverity: String? // NEW
 }

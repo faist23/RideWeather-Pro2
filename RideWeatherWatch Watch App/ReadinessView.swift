@@ -2,6 +2,8 @@
 //  ReadinessView.swift
 //  RideWeatherWatch Watch App
 //
+//  Fixed: Vibrant Backgrounds + White Text for max legibility
+//
 
 import SwiftUI
 
@@ -11,110 +13,91 @@ struct ReadinessView: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                // GIANT READINESS SCORE WITH LABEL
-                VStack(spacing: 8) {
-                    Text("READINESS")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .tracking(1)
-                    
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text("\(readiness.readinessScore)")
-                            .font(.system(size: 80, weight: .black, design: .rounded))
-                            .foregroundStyle(readinessColor)
-                        
-                        Text("/100")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    Text(readinessStatus.uppercased())
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(readinessColor)
-                        .tracking(1)
-                    
-                    // Progress Bar
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.gray.opacity(0.3))
-                                .frame(height: 6)
-                            
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(readinessColor.gradient)
-                                .frame(width: geometry.size.width * CGFloat(readiness.readinessScore) / 100, height: 6)
-                        }
-                    }
-                    .frame(height: 6)
-                    .padding(.horizontal)
-                }
-                .padding(.vertical, 12)
- 
-                WatchSyncIndicator()
-                    .padding(.bottom, 1)
-
-                // RECOMMENDATION
-                VStack(spacing: 4) {
-                    Text("TODAY'S PLAN")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .tracking(1)
-                    
-                    Text(recommendation)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.horizontal)
+            VStack(spacing: 8) {
                 
-                // KEY METRICS PILLS
-                VStack(spacing: 4) {
-                    Text("KEY METRICS")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .tracking(1)
+                // --- SECTION 1: DASHBOARD ---
+                HStack(alignment: .center, spacing: 8) {
                     
-                    HStack(spacing: 8) {
-                        MetricPill(
-                            label: "Form",
+                    // LEFT: Score
+                    VStack(spacing: -2) {
+                        Text("\(readiness.readinessScore)")
+                            .font(.system(size: 56, weight: .black, design: .rounded))
+                            .foregroundStyle(readinessColor) // Colored Text
+                            .shadow(color: readinessColor.opacity(0.3), radius: 4, x: 0, y: 2)
+                        
+                        Text("READINESS")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .tracking(0.5)
+                    }
+                    .frame(maxWidth: .infinity)
+                    
+                    // RIGHT: Drivers
+                    VStack(alignment: .leading, spacing: 6) {
+                        CompactMetricRow(
+                            icon: "figure.strengthtraining.traditional",
                             value: tsb > 0 ? "+\(Int(tsb))" : "\(Int(tsb))",
-                            color: .green
+                            unit: "TSB",
+                            color: tsb > 10 ? .green : (tsb < -20 ? .red : .yellow)
                         )
                         
                         if let sleep = readiness.sleepDuration {
-                            MetricPill(
-                                label: "Sleep",
-                                value: String(format: "%.1fh", sleep / 3600),
+                            CompactMetricRow(
+                                icon: "bed.double.fill",
+                                value: String(format: "%.1f", sleep / 3600),
+                                unit: "hrs",
                                 color: .blue
                             )
                         }
                         
                         if let hrv = readiness.latestHRV {
-                            MetricPill(
-                                label: "HRV",
+                            CompactMetricRow(
+                                icon: "heart.fill",
                                 value: "\(Int(hrv))",
+                                unit: "ms",
                                 color: .purple
-                            )
-                        } else if let rhr = readiness.latestRHR {
-                            MetricPill(
-                                label: "RHR",
-                                value: "\(Int(rhr))",
-                                color: .red
                             )
                         }
                     }
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, 4)
+                .padding(.top, 4)
+                
+                // --- SECTION 2: CONTEXT ---
+                Capsule()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(height: 4)
+                    .overlay(alignment: .leading) {
+                        Capsule()
+                            .fill(readinessColor)
+                            .frame(width: 40 + (CGFloat(readiness.readinessScore) / 100.0) * 100)
+                    }
+                    .padding(.vertical, 4)
+                
+                VStack(spacing: 2) {
+                    Text(readinessStatus.uppercased())
+                        .font(.system(size: 11, weight: .black))
+                        .foregroundStyle(readinessColor)
+                    
+                    Text(recommendation)
+                        .font(.caption2)
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(8)
+                .background(Color.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                
+                WatchSyncIndicator().scaleEffect(0.7).opacity(0.5)
             }
-            .padding()
+            .padding(.horizontal)
         }
+        // Restored Original Dark Backgrounds
         .containerBackground(backgroundColor.gradient, for: .tabView)
     }
     
-    // MARK: - Computed Properties
+    // MARK: - Helpers
     
     private var readinessColor: Color {
         switch readiness.readinessScore {
@@ -126,6 +109,7 @@ struct ReadinessView: View {
     }
     
     private var backgroundColor: Color {
+        // Darker gradients to allow white text to pop
         switch readiness.readinessScore {
         case 80...100: return Color(red: 0, green: 0.3, blue: 0)
         case 60..<80: return Color(red: 0.3, green: 0.3, blue: 0)
@@ -136,47 +120,48 @@ struct ReadinessView: View {
     
     private var readinessStatus: String {
         switch readiness.readinessScore {
-        case 85...100: return "Ready to Go Hard"
-        case 70..<85: return "Ready to Work"
-        case 55..<70: return "Moderate Day"
-        case 40..<55: return "Easy Day"
-        default: return "Rest Day"
+        case 85...100: return "Prime Condition"
+        case 70..<85: return "Ready to Train"
+        case 55..<70: return "Moderate Fatigue"
+        case 40..<55: return "High Fatigue"
+        default: return "Recovery Needed"
         }
     }
     
     private var recommendation: String {
         switch readiness.readinessScore {
-        case 85...100: return "Peak form - intervals or race pace"
-        case 70..<85: return "Good day for hard efforts"
-        case 55..<70: return "Steady endurance or tempo"
-        case 40..<55: return "Keep it light - recovery pace"
-        default: return "Prioritize recovery today"
+        case 85...100: return "Go for intervals or race efforts."
+        case 70..<85: return "Good day for a standard training block."
+        case 55..<70: return "Stick to Zone 2 or steady tempo."
+        case 40..<55: return "Keep it strictly aerobic (Z1/Z2)."
+        default: return "Rest day or very light spin."
         }
     }
 }
 
-struct MetricPill: View {
-    let label: String
+// SHARED HELPER (Ensure text is white)
+struct CompactMetricRow: View {
+    let icon: String
     let value: String
-    let color: Color
+    let unit: String
+    let color: Color // Used for Icon
     
     var body: some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
                 .foregroundStyle(color)
+                .frame(width: 12)
             
-            Text(label)
-                .font(.system(size: 9))
-                .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                
+                Text(unit)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.7))
+            }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(Color.white.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(color.opacity(0.5), lineWidth: 1)
-        )
     }
 }

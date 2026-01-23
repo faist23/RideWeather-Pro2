@@ -52,6 +52,15 @@ class WatchSessionManager: NSObject, ObservableObject {
         
         print("⌚️ WCSession activation requested")
     }
+    
+    func updateWeatherAlertIndependent(_ alert: WeatherAlert?) {
+        self.weatherAlert = alert
+        
+        // Haptic for locally detected alerts
+        if let alert = alert, alert.severity == .severe {
+            WKInterfaceDevice.current().play(.notification)
+        }
+    }
 }
 
 // MARK: - WCSessionDelegate (non-isolated)
@@ -192,22 +201,26 @@ extension WatchSessionManager: WCSessionDelegate {
         
         // 7. Decode Weather Alert
         if let weatherData = context["weatherAlert"] as? Data {
-            do {
-                let decoded = try JSONDecoder().decode(WeatherAlert.self, from: weatherData)
-                self.weatherAlert = decoded
-                
-                // Trigger a different haptic for severe weather
-                if decoded.severity == .severe {
-                    WKInterfaceDevice.current().play(.notification)
+                do {
+                    let decoded = try JSONDecoder().decode(WeatherAlert.self, from: weatherData)
+                    self.weatherAlert = decoded
+                    
+                    // FIX: Immediately save this new alert to the Widget Key
+                    let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
+                    defaults?.set(decoded.severity.rawValue, forKey: "widget_active_alert")
+                    
+                    if decoded.severity == .severe {
+                        WKInterfaceDevice.current().play(.notification)
+                    }
+                } catch {
+                    print("❌ Failed to decode Weather Alert")
                 }
-                print("✅ Decoded Weather Alert: \(decoded.message)")
-            } catch {
-                print("❌ Failed to decode Weather Alert: \(error)")
+            } else {
+                // If context has NO alert, we should clear it
+                self.weatherAlert = nil
+                let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
+                defaults?.removeObject(forKey: "widget_active_alert")
             }
-        } else {
-            // Clear alert if missing (optional, depends on if nil means 'no alert')
-            self.weatherAlert = nil
-        }
         
         // 8. Save Weather Data for Widget
         // We don't need to decode it here; just pass the raw data to the Widget's storage
@@ -330,6 +343,14 @@ extension WatchSessionManager: WCSessionDelegate {
         if let steps = self.currentWellness?.steps {
             defaults?.set(steps, forKey: "widget_today_steps")
             print("⌚️ Saved steps to widget: \(steps)")
+        }
+        
+        // FIX: Ensure the current alert state is enforced
+        if let alert = self.weatherAlert {
+            defaults?.set(alert.severity.rawValue, forKey: "widget_active_alert")
+        } else {
+            // Only remove if we are sure we want to clear it (optional, usually safer to let Fetchers handle this)
+            defaults?.removeObject(forKey: "widget_active_alert")
         }
         
         // Force the widget to refresh immediately

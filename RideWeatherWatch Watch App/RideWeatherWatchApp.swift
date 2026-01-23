@@ -2,12 +2,22 @@
 //  RideWeatherWatchApp.swift
 //  RideWeatherWatch Watch App
 //
-//  Updated with URL handling for complication taps
+//  Updated: Adds Conditional Alert Tab at Index 0
 //
 
 import SwiftUI
 import UserNotifications
 import Combine
+
+// MARK: - Tab Definitions
+enum WatchTab: Hashable {
+    case readiness
+    case form
+    case recovery
+    case steps
+    case weather
+    case alert
+}
 
 @main
 struct RideWeatherWatch_App: App {
@@ -17,38 +27,22 @@ struct RideWeatherWatch_App: App {
         WindowGroup {
             NavigationStack(path: $navigationManager.path) {
                 ContentView()
-                    .navigationDestination(for: ComplicationDestination.self) { destination in
-                        switch destination {
-                        case .weather:
-                            WeatherDetailView()
-                        case .steps:
-                            StepsDetailView()
-                        }
-                    }
             }
             .environmentObject(navigationManager)
             .onOpenURL { url in
                 navigationManager.handleURL(url)
             }
             .onAppear {
-                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-                    if granted {
-                        print("⌚️ Notification permission granted")
-                    } else if let error = error {
-                        print("⌚️ Notification permission error: \(error.localizedDescription)")
-                    }
-                }
+                // Permissions & Background Tasks
+                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
                 
-                // START BACKGROUND STEPS UPDATES
                 Task { @MainActor in
                     BackgroundStepsUpdater.shared.startBackgroundUpdates()
                 }
                 
-                // Start independent location/weather
                 Task {
                     await WatchLocationManager.shared.startUpdating()
                 }
-
             }
         }
     }
@@ -59,148 +53,88 @@ struct RideWeatherWatch_App: App {
 @MainActor
 class NavigationManager: ObservableObject {
     @Published var path = NavigationPath()
+    @Published var selectedTab: WatchTab = .readiness
     
     func handleURL(_ url: URL) {
-        print("⌚️ Received URL: \(url.absoluteString)")
-        print("⌚️ URL Host: \(url.host ?? "none")")
+        // Reset stack
+        if !path.isEmpty { path.removeLast(path.count) }
         
-        // Clear existing path first
-        path.removeLast(path.count)
-        
-        // Navigate based on URL
+        // Deep Link Handling
         switch url.host {
-        case "weather":
-            print("⌚️ Navigating to weather")
-            path.append(ComplicationDestination.weather)
-        case "steps":
-            print("⌚️ Navigating to steps")
-            path.append(ComplicationDestination.steps)
-        default:
-            print("⌚️ Unknown destination: \(url.host ?? "none")")
+        case "weather": selectedTab = .weather
+        case "steps": selectedTab = .steps
+        case "alert": selectedTab = .alert // Handle alert deep links
+        default: break
         }
     }
 }
 
-enum ComplicationDestination: Hashable, Identifiable {
-    case weather
-    case steps
-    
-    var id: Self { self }
-}
-
 struct ContentView: View {
+    @EnvironmentObject var navigationManager: NavigationManager
     @ObservedObject private var session = WatchSessionManager.shared
-    @State private var showingAlertDetails = false
     
     var body: some View {
-        ZStack {
-            TabView {
-                // PAGE 1: READINESS (The Decision Maker)
+        // We bind the selection to the navigation manager.
+        TabView(selection: $navigationManager.selectedTab) {
+            
+            // PAGE 1: READINESS
+            Group {
                 if let readiness = session.readinessData,
                    let load = session.loadSummary {
                     ReadinessView(readiness: readiness, tsb: load.currentTSB)
                 } else {
-                    ContentUnavailableView(
-                        "No Readiness Data",
-                        systemImage: "figure.strengthtraining.traditional",
-                        description: Text("Open iPhone app to sync")
-                    )
-                    .containerBackground(.gray.gradient, for: .tabView)
+                    ContentUnavailableView("No Data", systemImage: "figure.strengthtraining.traditional")
+                        .containerBackground(.gray.gradient, for: .tabView)
                 }
-                
-                // PAGE 2: FORM (Training Load)
+            }
+            .tag(WatchTab.readiness)
+            
+            // PAGE 2: FORM
+            Group {
                 if let load = session.loadSummary,
                    let weeklyProgress = session.weeklyProgress {
                     FormView(summary: load, weeklyProgress: weeklyProgress)
                 } else {
-                    ContentUnavailableView(
-                        "No Form Data",
-                        systemImage: "chart.bar.xaxis",
-                        description: Text("Open iPhone app to sync")
-                    )
-                    .containerBackground(.blue.gradient, for: .tabView)
+                    ContentUnavailableView("No Data", systemImage: "chart.bar.xaxis")
+                        .containerBackground(.blue.gradient, for: .tabView)
                 }
-                
-                // PAGE 3: RECOVERY
+            }
+            .tag(WatchTab.form)
+            
+            // PAGE 3: RECOVERY
+            Group {
                 if let recovery = session.recoveryStatus,
                    let wellness = session.currentWellness {
                     RecoveryView(recovery: recovery, wellness: wellness)
                 } else {
-                    ContentUnavailableView(
-                        "No Recovery Data",
-                        systemImage: "heart.slash",
-                        description: Text("Open iPhone app to sync")
-                    )
-                    .containerBackground(.black.gradient, for: .tabView)
+                    ContentUnavailableView("No Data", systemImage: "heart.slash")
+                        .containerBackground(.black.gradient, for: .tabView)
                 }
-                
-                StepsDetailView()
-                WeatherDetailView()
-                
-                /*                // PAGE 4: WEEKLY SUMMARY
-                if let weekStats = session.weeklyStats {
-                    WeeklyView(
-                        weekStats: weekStats,
-                        weatherAlert: session.weatherAlert
-                    )
-                } else {
-                    ContentUnavailableView(
-                        "No Weekly Data",
-                        systemImage: "calendar",
-                        description: Text("Open iPhone app to sync")
-                    )
-                    .containerBackground(.indigo.gradient, for: .tabView)
-                }
- */
-                // PAGE 5: DEBUG
-//                WatchDebugView()
-//                    .containerBackground(.black.gradient, for: .tabView)
             }
-            .tabViewStyle(.page)
+            .tag(WatchTab.recovery)
             
-            // Global Alert Overlay
-            if session.weatherAlert != nil {
-                VStack {
-                    Button {
-                        showingAlertDetails = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                            Text("ALERT")
-                                .font(.caption2)
-                                .fontWeight(.black)
-                        }
-                        .foregroundStyle(.black)
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 8)
-                        .background(Color.yellow)
-                        .clipShape(Capsule())
-                        .shadow(radius: 2)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 4)
-                    
-                    Spacer()
-                }
-                .ignoresSafeArea()
+            // PAGE 4: STEPS
+            StepsDetailView()
+                .tag(WatchTab.steps)
+            
+            // PAGE 5: WEATHER
+            WeatherDetailView()
+                .tag(WatchTab.weather)
+            
+            // PAGE 6: ALERT (Only if active)
+            if let alert = session.weatherAlert {
+                AlertView(alert: alert)
+                    .tag(WatchTab.alert)
             }
         }
-        .sheet(isPresented: $showingAlertDetails) {
-            if let alert = session.weatherAlert {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.title)
-                            .foregroundStyle(.yellow)
-                        Text(alert.message)
-                            .font(.headline)
-                            .multilineTextAlignment(.center)
-                        Text("Check phone for details")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+        .tabViewStyle(.page)
+        // Auto-switch to alert ONLY if it's a new, severe warning.
+        // Otherwise, let the user discover it via the banner.
+        .onChange(of: session.weatherAlert?.message) { _, newValue in
+            if let alert = session.weatherAlert, alert.severity == .severe {
+                withAnimation { navigationManager.selectedTab = .alert }
             }
         }
     }
 }
+

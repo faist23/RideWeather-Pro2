@@ -67,8 +67,6 @@ class WidgetDataFetcher {
               let longitude = defaults?.double(forKey: "user_longitude"),
               latitude != 0, longitude != 0 else {
             print("⚠️ Widget: No location available")
-            print("   Lat: \(defaults?.double(forKey: "user_latitude") ?? 0)")
-            print("   Lon: \(defaults?.double(forKey: "user_longitude") ?? 0)")
             return nil
         }
         
@@ -79,7 +77,8 @@ class WidgetDataFetcher {
             return nil
         }
         
-        let urlString = "https://api.openweathermap.org/data/3.0/onecall?lat=\(latitude)&lon=\(longitude)&exclude=minutely,daily,alerts&appid=\(apiKey)&units=imperial"
+        // UPDATED: Removed 'alerts' from exclude list
+        let urlString = "https://api.openweathermap.org/data/3.0/onecall?lat=\(latitude)&lon=\(longitude)&exclude=minutely,daily&appid=\(apiKey)&units=imperial"
         
         guard let url = URL(string: urlString) else {
             print("❌ Widget: Invalid URL")
@@ -89,13 +88,8 @@ class WidgetDataFetcher {
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
             
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("❌ Widget: Invalid response")
-                return nil
-            }
-            
-            guard httpResponse.statusCode == 200 else {
-                print("❌ Widget: API error \(httpResponse.statusCode)")
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                print("❌ Widget: API error")
                 return nil
             }
             
@@ -103,7 +97,7 @@ class WidgetDataFetcher {
                 let encoded = try? JSONEncoder().encode(weatherData)
                 defaults?.set(encoded, forKey: "widget_weather_summary")
                 defaults?.synchronize()
-                print("✅ Widget: Weather updated - \(weatherData.temperature)°F, \(weatherData.windSpeed)mph \(weatherData.windDirection)")
+                print("✅ Widget: Weather updated - \(weatherData.temperature)°F, Alert: \(weatherData.alertSeverity ?? "None")")
                 return encoded
             }
             
@@ -120,6 +114,7 @@ class WidgetDataFetcher {
         struct OneCallResponse: Codable {
             let current: Current
             let hourly: [Hourly]
+            let alerts: [Alert]? // NEW: Capture alerts
             
             struct Current: Codable {
                 let temp: Double
@@ -136,6 +131,10 @@ class WidgetDataFetcher {
             struct Weather: Codable {
                 let icon: String
             }
+            
+            struct Alert: Codable {
+                let event: String
+            }
         }
         
         do {
@@ -145,6 +144,12 @@ class WidgetDataFetcher {
             let windDirection = degreesToCardinal(response.current.wind_deg)
             let pop = Int((response.hourly.first?.pop ?? 0) * 100)
             
+            // Map Alert Severity
+            var alertSeverity: String? = nil
+            if let firstAlert = response.alerts?.first {
+                alertSeverity = mapSeverity(firstAlert.event)
+            }
+            
             return SharedWeatherSummary(
                 temperature: Int(response.current.temp.rounded()),
                 feelsLike: Int(response.current.feels_like.rounded()),
@@ -152,7 +157,8 @@ class WidgetDataFetcher {
                 windSpeed: Int(response.current.wind_speed.rounded()),
                 windDirection: windDirection,
                 pop: pop,
-                generatedAt: Date()
+                generatedAt: Date(),
+                alertSeverity: alertSeverity // NEW: Pass the mapped severity
             )
         } catch {
             print("❌ Widget: Parse failed - \(error.localizedDescription)")
@@ -161,6 +167,16 @@ class WidgetDataFetcher {
     }
     
     // MARK: - Helper Functions
+    
+    private func mapSeverity(_ event: String) -> String {
+        let lower = event.lowercased()
+        if lower.contains("warning") || lower.contains("tornado") || lower.contains("severe") {
+            return "severe"
+        } else if lower.contains("watch") || lower.contains("advisory") {
+            return "warning"
+        }
+        return "advisory"
+    }
     
     private func mapWeatherIcon(_ icon: String) -> String {
         switch icon {

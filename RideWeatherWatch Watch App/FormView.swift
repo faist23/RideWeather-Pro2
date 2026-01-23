@@ -2,6 +2,8 @@
 //  FormView.swift
 //  RideWeatherWatch Watch App
 //
+//  Design: "Cockpit Density" - TSB Left, CTL/ATL Right.
+//
 
 import SwiftUI
 
@@ -11,125 +13,98 @@ struct FormView: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 14) {
-                WatchSyncIndicator()
-                    .padding(.bottom, 1)
-
-                // TSB GAUGE
-                VStack(spacing: 6) {
-                    Gauge(value: summary.currentTSB, in: -30...30) {
-                        Text("Form")
-                            .font(.system(size: 9))
-                    } currentValueLabel: {
+            VStack(spacing: 10) {
+                
+                // --- PRIMARY DASHBOARD ---
+                HStack(alignment: .center, spacing: 8) {
+                    
+                    // LEFT: The TSB (Form)
+                    VStack(spacing: -2) {
                         Text(summary.currentTSB > 0 ? "+\(Int(summary.currentTSB))" : "\(Int(summary.currentTSB))")
-                            .font(.system(size: 28, weight: .black, design: .rounded))
+                            .font(.system(size: 52, weight: .black, design: .rounded))
                             .foregroundStyle(formColor(summary.currentTSB))
-                    } minimumValueLabel: {
-                        Text("-30").font(.system(size: 8))
-                    } maximumValueLabel: {
-                        Text("+30").font(.system(size: 8))
-                    }
-                    .gaugeStyle(.accessoryCircular)
-                    .tint(Gradient(colors: [.red, .orange, .gray, .green, .mint]))
-                    
-                    Text(summary.formStatus.rawValue.uppercased())
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(formColor(summary.currentTSB))
-                }
-                
-                Divider()
-                
-                // FITNESS & FATIGUE with Trends
-                HStack(spacing: 12) {
-                    MetricWithTrend(
-                        title: "FITNESS",
-                        value: Int(summary.currentCTL),
-                        trend: weeklyProgress.ctlTrend,
-                        color: .blue
-                    )
-                    
-                    MetricWithTrend(
-                        title: "FATIGUE",
-                        value: Int(summary.currentATL),
-                        trend: weeklyProgress.atlTrend,
-                        color: .pink
-                    )
-                }
-                
-                // WEEKLY TSS PROGRESS
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("WEEK TSS")
-                            .font(.system(size: 9, weight: .semibold))
+                        
+                        Text("FORM (TSB)")
+                            .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    
+                    // RIGHT: Fitness & Fatigue
+                    VStack(alignment: .leading, spacing: 8) {
+                        // Fitness
+                        CompactMetricRow(
+                            icon: "arrow.up.forward",
+                            value: "\(Int(summary.currentCTL))",
+                            unit: "Fitness",
+                            color: .blue
+                        )
                         
+                        // Fatigue
+                        CompactMetricRow(
+                            icon: "arrow.down.forward",
+                            value: "\(Int(summary.currentATL))",
+                            unit: "Fatigue",
+                            color: .pink
+                        )
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .padding(.top, 4)
+                
+                // --- WEEKLY LOAD BAR ---
+                VStack(spacing: 4) {
+                    HStack {
+                        Text("WEEKLY LOAD")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
                         Spacer()
-                        
-                        Text("\(Int(summary.weeklyTSS))/\(weeklyProgress.weeklyTarget)")
-                            .font(.system(size: 12, weight: .bold))
+                        Text("\(Int(summary.weeklyTSS)) / \(weeklyProgress.weeklyTarget)")
+                            .font(.caption2.bold())
                             .foregroundStyle(.white)
                     }
                     
-                    GeometryReader { geometry in
+                    GeometryReader { geo in
                         ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.gray.opacity(0.3))
-                                .frame(height: 6)
-                            
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [.blue, .green],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .frame(
-                                    width: min(geometry.size.width, geometry.size.width * CGFloat(summary.weeklyTSS / Double(weeklyProgress.weeklyTarget))),
-                                    height: 6
-                                )
+                            Capsule().fill(Color.gray.opacity(0.3))
+                            Capsule()
+                                .fill(LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: min(geo.size.width, geo.size.width * (summary.weeklyTSS / Double(weeklyProgress.weeklyTarget))))
                         }
                     }
                     .frame(height: 6)
                 }
-                .padding(.vertical, 4)
                 
-                // RAMP RATE WARNING
+                // --- RAMP RATE ---
                 HStack {
                     Image(systemName: rampRateIcon(summary.rampRate))
-                        .font(.system(size: 10))
                         .foregroundStyle(rampRateColor(summary.rampRate))
                     
-                    Text("Ramp Rate")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
-                    
-                    Spacer()
-                    
-                    Text(String(format: "%+.1f TSS/wk", summary.rampRate))
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(rampRateColor(summary.rampRate))
+                    Text("Ramp Rate: \(String(format: "%+.1f", summary.rampRate))")
+                        .font(.caption2.bold())
+                        .foregroundStyle(.white)
                 }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 6)
-                .background(rampRateColor(summary.rampRate).opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .padding(8)
+                .frame(maxWidth: .infinity)
+                .background(rampRateColor(summary.rampRate).opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                WatchSyncIndicator()
+                    .scaleEffect(0.7)
+                    .opacity(0.5)
             }
-            .padding()
+            .padding(.horizontal)
         }
         .containerBackground(.blue.gradient, for: .tabView)
     }
     
-    // MARK: - Helper Functions
+    // MARK: - Helpers
     
     func formColor(_ tsb: Double) -> Color {
-        switch tsb {
-        case ..<(-20): return .red
-        case -20..<(-5): return .orange
-        case -5...10: return .gray
-        case 10...25: return .green
-        default: return .mint
-        }
+        if tsb > 10 { return .green }       // Fresh
+        if tsb < -20 { return .red }        // Overload
+        if tsb < -5 { return .orange }      // Optimal Training
+        return .gray                        // Neutral
     }
     
     func rampRateColor(_ rate: Double) -> Color {
@@ -140,39 +115,7 @@ struct FormView: View {
     
     func rampRateIcon(_ rate: Double) -> String {
         if rate > 8 { return "exclamationmark.triangle.fill" }
-        if rate < -5 { return "arrow.down.circle.fill" }
-        return "checkmark.circle.fill"
-    }
-}
-
-// MARK: - Metric With Trend
-
-struct MetricWithTrend: View {
-    let title: String
-    let value: Int
-    let trend: TrendDirection
-    let color: Color
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
-                Text(title)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                
-                Image(systemName: trend.icon)
-                    .font(.system(size: 8))
-                    .foregroundStyle(trend.color)
-            }
-            
-            Text("\(value)")
-                .font(.system(size: 20, weight: .black, design: .rounded))
-                .foregroundStyle(color)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .background(Color.white.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        return "chart.xyaxis.line"
     }
 }
 

@@ -13,6 +13,7 @@ import SwiftUI
 
 // MARK: - Shared Data Models
 
+// MARK: - Shared Data Model
 struct SharedWeatherSummary: Codable {
     let temperature: Int
     let feelsLike: Int
@@ -21,6 +22,7 @@ struct SharedWeatherSummary: Codable {
     let windDirection: String
     let pop: Int
     let generatedAt: Date
+    let alertSeverity: String? // NEW
 }
 
 enum ComplicationMode {
@@ -48,8 +50,7 @@ struct SmartRideStatsEntry: TimelineEntry {
     let conditionIcon: String
 }
 
-// MARK: - Entry for Weather & Steps (New)
-
+// MARK: - Entry
 struct SimpleComplicationEntry: TimelineEntry {
     let date: Date
     
@@ -59,6 +60,9 @@ struct SimpleComplicationEntry: TimelineEntry {
     let windSpeed: Int
     let windDir: String
     let conditionIcon: String
+    
+    // Alert Data
+    let alertSeverity: String? // NEW
     
     // Steps Data
     let todaySteps: Int
@@ -142,8 +146,7 @@ struct SmartRideStatsProvider: TimelineProvider {
     }
 }
 
-// MARK: - Timeline Provider for Weather & Steps (New)
-
+// MARK: - Provider
 struct SimpleComplicationProvider: TimelineProvider {
     let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
     
@@ -151,50 +154,29 @@ struct SimpleComplicationProvider: TimelineProvider {
         SimpleComplicationEntry(
             date: Date(),
             temp: 72, feelsLike: 70, windSpeed: 10, windDir: "NW", conditionIcon: "sun.max",
+            alertSeverity: nil,
             todaySteps: 8543
         )
     }
 
     func getSnapshot(in context: Context, completion: @escaping (SimpleComplicationEntry) -> ()) {
-        let entry = createEntry(for: Date())
-        completion(entry)
+        completion(createEntry(for: Date()))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<SimpleComplicationEntry>) -> ()) {
-        Task {
-            // Debug: Check what data we currently have
-            let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
-            let currentSteps = defaults?.integer(forKey: "widget_today_steps") ?? 0
-            let hasWeather = defaults?.data(forKey: "widget_weather_summary") != nil
-            let lat = defaults?.double(forKey: "user_latitude") ?? 0
-            let lon = defaults?.double(forKey: "user_longitude") ?? 0
-            
-            print("📊 WIDGET TIMELINE REFRESH")
-            print("   Current steps in storage: \(currentSteps)")
-            print("   Has weather data: \(hasWeather)")
-            print("   Has location: \(lat != 0 && lon != 0)")
-            
-            // Fetch fresh data every refresh
-            await WidgetDataFetcher.shared.fetchAllData()
-            
-            var entries: [SimpleComplicationEntry] = []
-            let currentDate = Date()
-            
-            // Generate entries every 30 minutes for the next 4 hours
-            for offset in 0..<8 {
-                if let entryDate = Calendar.current.date(byAdding: .minute, value: offset * 30, to: currentDate) {
-                    entries.append(createEntry(for: entryDate))
-                }
+            Task {
+                // ✅ CRITICAL FIX: Actually fetch fresh data (including alerts)
+                await WidgetDataFetcher.shared.fetchAllData()
+                
+                let entry = createEntry(for: Date())
+                
+                // Refresh every 30 minutes
+                let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: Date())!
+                let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
+                
+                completion(timeline)
             }
-
-            // Refresh every 30 minutes
-            let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: currentDate)!
-            let timeline = Timeline(entries: entries, policy: .after(nextUpdate))
-            
-            print("✅ Timeline created with \(entries.count) entries, next update: \(nextUpdate)")
-            completion(timeline)
         }
-    }
     
     private func createEntry(for date: Date) -> SimpleComplicationEntry {
         var temp = 0
@@ -202,6 +184,7 @@ struct SimpleComplicationProvider: TimelineProvider {
         var wind = 0
         var dir = "--"
         var icon = "questionmark"
+        var alert: String? = nil
         
         if let data = defaults?.data(forKey: "widget_weather_summary"),
            let weather = try? JSONDecoder().decode(SharedWeatherSummary.self, from: data) {
@@ -210,6 +193,7 @@ struct SimpleComplicationProvider: TimelineProvider {
             wind = weather.windSpeed
             dir = weather.windDirection
             icon = weather.conditionIcon
+            alert = weather.alertSeverity // Load Alert
         }
         
         let todaySteps = defaults?.integer(forKey: "widget_today_steps") ?? 0
@@ -217,6 +201,7 @@ struct SimpleComplicationProvider: TimelineProvider {
         return SimpleComplicationEntry(
             date: date,
             temp: temp, feelsLike: feelsLike, windSpeed: wind, windDir: dir, conditionIcon: icon,
+            alertSeverity: alert,
             todaySteps: todaySteps
         )
     }
@@ -394,62 +379,100 @@ struct SmartRideStatsEntryView: View {
     }
 }
 
-// MARK: - Ride Weather View (New)
-
+// MARK: - Weather View
 struct RideWeatherComplicationEntryView: View {
     var entry: SimpleComplicationProvider.Entry
     @Environment(\.widgetFamily) var family
     
-    var body: some View {
-        switch family {
-        case .accessoryCircular:
-            circularView
-                .widgetURL(URL(string: "rideweather://weather")!)
-        case .accessoryCorner:
-            cornerView
-                .widgetURL(URL(string: "rideweather://weather")!)
-        case .accessoryInline:
-            inlineView
-                .widgetURL(URL(string: "rideweather://weather")!)
-        default:
-            Text("\(entry.temp)°")
-                .widgetURL(URL(string: "rideweather://weather")!)
+    var destinationURL: URL {
+        if entry.alertSeverity != nil {
+            return URL(string: "rideweather://alert")!
         }
+        return URL(string: "rideweather://weather")!
+    }
+    
+    var body: some View {
+        Group {
+            switch family {
+            case .accessoryCircular:
+                circularView
+            case .accessoryCorner:
+                cornerView
+            case .accessoryInline:
+                inlineView
+            default:
+                Text("\(entry.temp)°")
+            }
+        }
+        .widgetURL(destinationURL)
     }
     
     @ViewBuilder
     var circularView: some View {
-        VStack(spacing: 1) {
-            Text("\(entry.temp)°")
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-            Text("FL \(entry.feelsLike)°")
-                .font(.system(size: 12, weight: .regular, design: .rounded))
-
-            HStack(spacing: 1) {
-                Image(systemName: "wind")
+            VStack(spacing: 0) {
+                // 1. Temperature (Always Visible)
+                Text("\(entry.temp)°")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .minimumScaleFactor(0.8)
+                
+                // 2. Feels Like (Always Visible)
+                Text("FL \(entry.feelsLike)°")
                     .font(.system(size: 8))
-                    .symbolRenderingMode(.hierarchical)
-                Text("\(entry.windSpeed)")
-                    .font(.system(size: 10, weight: .semibold))
+                    .minimumScaleFactor(0.8)
+                    .foregroundStyle(.secondary)
+                
+                // 3. Icon Slot: Shows Alert Triangle OR Weather Icon
+                if entry.alertSeverity != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(alertColor) // Red/Yellow
+                        .padding(.top, 1)
+                } else {
+                    Image(systemName: entry.conditionIcon)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.blue.opacity(0.8))
+                        .padding(.top, 1)
+                }
             }
-            .foregroundStyle(.secondary)
         }
-    }
     
     @ViewBuilder
     var cornerView: some View {
-        Text("\(entry.temp)°")
-            .font(.system(size: 34, weight: .bold, design: .rounded))
-            .minimumScaleFactor(0.7)
-            .widgetLabel {
-                Image(systemName: "wind")
-                Text("\(entry.windSpeed) \(entry.windDir)  FL \(entry.feelsLike)°")
+        HStack(spacing: 2) {
+            // 1. Icon (Only if Alert)
+            if entry.alertSeverity != nil {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(alertColor)
+                    .imageScale(.medium)
             }
+            
+            // 2. Temperature (Scales to fit)
+            Text("\(entry.temp)°")
+                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .minimumScaleFactor(0.3) // Crucial: Allows text to shrink instead of wrapping
+                .lineLimit(1)            // Crucial: Forces single line
+        }
+        .widgetLabel {
+            // 3. Label (ALWAYS Data, NEVER Alert Text)
+            Image(systemName: "wind")
+                        Text("\(entry.windSpeed) \(entry.windDir) • FL \(entry.feelsLike)°")
+                    }
     }
     
     @ViewBuilder
     var inlineView: some View {
-        Text("Feels \(entry.feelsLike)° • Wind \(entry.windSpeed) \(entry.windDir)")
+            if let severity = entry.alertSeverity {
+                // "⚠️ 72° • Severe Warning"
+                Text("⚠️ \(entry.temp)° • \(severity.capitalized) Alert")
+                    .foregroundStyle(alertColor)
+            } else {
+                Text("Feels \(entry.feelsLike)° • Wind \(entry.windSpeed) \(entry.windDir)")
+            }
+        }
+    
+    var alertColor: Color {
+        if entry.alertSeverity == "severe" { return .red }
+        return .yellow
     }
 }
 

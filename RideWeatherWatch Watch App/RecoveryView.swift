@@ -2,7 +2,7 @@
 //  RecoveryView.swift
 //  RideWeatherWatch Watch App
 //
-//  UPDATED: Now uses synced RecoveryStatus from iPhone instead of calculating locally
+//  Design: "Cockpit Density" - % Left, Biometrics Right.
 //
 
 import SwiftUI
@@ -13,107 +13,85 @@ struct RecoveryView: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 14) {
-                WatchSyncIndicator()
-                    .padding(.bottom, 1)
-
-                // RECOVERY PERCENTAGE WITH CONTEXT
-                VStack(spacing: 4) {
-                    Text("RECOVERY STATUS")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .tracking(1)
+            VStack(spacing: 8) {
+                
+                // --- PRIMARY DASHBOARD ---
+                HStack(alignment: .center, spacing: 8) {
                     
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    // LEFT: Recovery Score
+                    VStack(spacing: -2) {
                         Text("\(recovery.recoveryPercent)")
-                            .font(.system(size: 52, weight: .black, design: .rounded))
-                            .foregroundStyle(.cyan)
+                            .font(.system(size: 56, weight: .black, design: .rounded))
+                            .foregroundStyle(recoveryColor)
+                            .shadow(color: recoveryColor.opacity(0.3), radius: 4, x: 0, y: 2)
                         
                         Text("%")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundStyle(.cyan.opacity(0.7))
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .offset(y: -4)
                     }
+                    .frame(maxWidth: .infinity)
                     
-                    Text("RECOVERED")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .tracking(1)
-                    
-                    Text("\(recovery.hoursSinceWorkout)h since last workout")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 8)
-                
-                // RECOVERY RINGS
-                HStack(spacing: 12) {
-                    RecoveryRing(
-                        progress: min((wellness.totalSleep ?? 0) / 28800, 1.0),
-                        valueText: String(format: "%.1fh", (wellness.totalSleep ?? 0) / 3600),
-                        icon: "bed.double.fill",
-                        color: .blue
-                    )
-
-                    RecoveryRing(
-                        progress: min(Double(recovery.currentHRV) / 100, 1.0),
-                        valueText: "\(recovery.currentHRV)",
-                        icon: "heart.fill",
-                        color: .purple
-                    )
-
-                    RecoveryRing(
-                        progress: min((100 - Double(wellness.restingHeartRate ?? 60)) / 100, 1.0),
-                        valueText: "\(wellness.restingHeartRate ?? 60)",
-                        icon: "waveform.path.ecg",
-                        color: .red
-                    )
-                }
-                
-                Divider()
-                
-                // DETAILED METRICS
-                VStack(spacing: 6) {
-                    RecoveryMetric(
-                        icon: "moon.stars.fill",
-                        label: "Sleep Efficiency",
-                        value: "\(Int(wellness.computedSleepEfficiency ?? 0))%",
-                        status: (wellness.computedSleepEfficiency ?? 0) >= 85 ? .good : .warning
-                    )
-                    
-                    RecoveryMetric(
-                        icon: "heart.fill",
-                        label: "HRV Status",
-                        value: recovery.hrvStatus,
-                        status: recovery.hrvStatus == "Good" ? .good : (recovery.hrvStatus == "Low" ? .bad : .warning)
-                    )
-                    
-                    RecoveryMetric(
-                        icon: "waveform.path.ecg",
-                        label: "Resting HR",
-                        value: "\(wellness.restingHeartRate ?? 0) bpm",
-                        status: .good
-                    )
-                    
-                    if let sleepDebt = recovery.sleepDebt, sleepDebt < -1 {
-                        RecoveryMetric(
-                            icon: "exclamationmark.triangle.fill",
-                            label: "Sleep Debt",
-                            value: "\(abs(Int(sleepDebt)))h behind",
-                            status: .warning
+                    // RIGHT: Biometrics
+                    VStack(alignment: .leading, spacing: 6) {
+                        // Sleep
+                        CompactMetricRow(
+                            icon: "moon.stars.fill",
+                            value: String(format: "%.1f", (wellness.totalSleep ?? 0) / 3600),
+                            unit: "hrs",
+                            color: .blue
+                        )
+                        
+                        // HRV
+                        CompactMetricRow(
+                            icon: "heart.fill",
+                            value: "\(recovery.currentHRV)",
+                            unit: "HRV",
+                            color: .purple
+                        )
+                        
+                        // RHR
+                        CompactMetricRow(
+                            icon: "waveform.path.ecg",
+                            value: "\(wellness.restingHeartRate ?? 0)",
+                            unit: "bpm",
+                            color: .red
                         )
                     }
+                    .frame(maxWidth: .infinity)
                 }
+                .padding(.top, 4)
                 
-                // RECOMMENDATION
-                Text(recovery.recommendation)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 4)
+                // --- ACTION ---
+                VStack(spacing: 2) {
+                    Text(recovery.hrvStatus.uppercased())
+                        .font(.system(size: 11, weight: .black))
+                        .foregroundStyle(recoveryColor)
+                    
+                    Text(recovery.recommendation)
+                        .font(.caption2)
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity)
+                .background(Color.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                
+                WatchSyncIndicator()
+                    .scaleEffect(0.7)
+                    .opacity(0.5)
             }
-            .padding()
+            .padding(.horizontal)
         }
-        .containerBackground(.black.gradient, for: .tabView)
+        .containerBackground(Color(red: 0, green: 0, blue: 0.3).gradient, for: .tabView)
+    }
+    
+    private var recoveryColor: Color {
+        if recovery.recoveryPercent >= 80 { return .green }
+        if recovery.recoveryPercent >= 50 { return .yellow }
+        return .red
     }
 }
 

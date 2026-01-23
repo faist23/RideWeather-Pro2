@@ -2,101 +2,129 @@
 //  WeatherDetailView.swift
 //  RideWeatherWatch Watch App
 //
+//  Design: "Cockpit Density" - Temp Left, Conditions Right.
+//  Added: "Last Updated" timestamp from data source.
+//
 
 import SwiftUI
 
-// Local copy of SharedWeatherSummary for this file
-struct WeatherSummaryData: Codable {
-    let temperature: Int
-    let feelsLike: Int
-    let conditionIcon: String
-    let windSpeed: Int
-    let windDirection: String
-    let pop: Int
-    let generatedAt: Date
-}
-
 struct WeatherDetailView: View {
     @ObservedObject private var session = WatchSessionManager.shared
+    @EnvironmentObject var navigationManager: NavigationManager // Access nav manager
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                // HEADER
-                Text("RIDE CONDITIONS")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .tracking(1)
+            VStack(spacing: 8) {
                 
-                if let weatherData = loadWeatherData() {
-                    // MAIN TEMP
-                    VStack(spacing: 4) {
-                        Text("\(weatherData.temperature)°")
-                            .font(.system(size: 60, weight: .black, design: .rounded))
-                        
-                        HStack(spacing: 4) {
-                            Image(systemName: weatherData.conditionIcon)
-                                .font(.title3)
-                            Text("Feels like \(weatherData.feelsLike)°")
-                                .font(.caption)
+                if let weather = loadWeatherData() {
+                    
+                    // --- ACTIVE ALERT BANNER ---
+                    // Links directly to the Alert Tab
+                    if let alert = session.weatherAlert {
+                        Button {
+                            withAnimation {
+                                navigationManager.selectedTab = .alert
+                            }
+                        } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.headline)
+                                        .symbolEffect(.pulse, isActive: true)
+                                        .foregroundStyle(.black) // KEEPING THIS BLACK
+                                    
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        Text("ACTIVE ALERT")
+                                            .font(.system(size: 9, weight: .black))
+                                            .foregroundStyle(.black) // KEEPING THIS BLACK
+                                        
+                                        Text(alert.message.prefix(20))
+                                            .font(.caption2)
+                                            .lineLimit(1)
+                                            .foregroundStyle(.black) // KEEPING THIS BLACK
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption2)
+                                        .foregroundStyle(.black.opacity(0.6))
+                                }
+                            .padding(8)
+                            .background(alert.severity == .severe ? Color.red : (alert.severity == .warning ? Color.orange : Color.yellow))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
-                        .foregroundStyle(.secondary)
-                    }
-                    .padding(.bottom, 8)
-                    
-                    // WIND DETAILS
-                    VStack(spacing: 8) {
-                        DetailRow(
-                            icon: "wind",
-                            label: "Wind Speed",
-                            value: "\(weatherData.windSpeed) mph",
-                            color: windColor(weatherData.windSpeed)
-                        )
-                        
-                        DetailRow(
-                            icon: "location.north.fill",
-                            label: "Direction",
-                            value: weatherData.windDirection,
-                            color: .blue
-                        )
-                        
-                        DetailRow(
-                            icon: "drop.fill",
-                            label: "Rain Chance",
-                            value: "\(weatherData.pop)%",
-                            color: .cyan
-                        )
+                        .buttonStyle(.plain) // Remove default button chrome
+                        .padding(.top, 4)
                     }
                     
-                    // RIDE RECOMMENDATION
-                    VStack(spacing: 6) {
-                        Text("RIDE ADVICE")
-                            .font(.system(size: 9, weight: .semibold))
+                    // --- PRIMARY DASHBOARD ---
+                    HStack(alignment: .center, spacing: 8) {
+                        
+                        // LEFT: Temperature
+                        VStack(spacing: -2) {
+                            HStack(alignment: .top, spacing: 2) {
+                                Text("\(weather.temperature)")
+                                    .font(.system(size: 56, weight: .black, design: .rounded))
+                                    .foregroundStyle(.white)
+                                
+                                Text("°")
+                                    .font(.system(size: 24, weight: .bold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 8)
+                            }
+                            
+                            HStack(spacing: 4) {
+                                Image(systemName: weather.conditionIcon)
+                                Text("FL \(weather.feelsLike)°")
+                                    .font(.system(size: 9, weight: .bold))
+                            }
                             .foregroundStyle(.secondary)
-                            .tracking(1)
+                        }
+                        .frame(maxWidth: .infinity)
                         
-                        Text(rideAdvice(temp: weatherData.temperature, wind: weatherData.windSpeed))
-                            .font(.caption2)
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 4)
+                        // RIGHT: Wind & Conditions
+                        VStack(alignment: .leading, spacing: 6) {
+                            // Wind
+                            CompactMetricRow(
+                                icon: "wind",
+                                value: "\(weather.windSpeed)",
+                                unit: "mph",
+                                color: windColor(weather.windSpeed)
+                            )
+                            
+                            // Rain
+                            CompactMetricRow(
+                                icon: "drop.fill",
+                                value: "\(weather.pop)",
+                                unit: "%",
+                                color: .cyan
+                            )
+                            
+                            Text(weather.conditionIcon.contains("sun") ? "Clear" : "Cloudy")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .padding(.top, 8)
+                    .padding(.top, session.weatherAlert == nil ? 4 : 0) // Adjust padding if banner exists
+                    
+                    // ... (Rest of view remains the same) ...
+                    
+                    // Footer
+                    Text("Updated: \(weather.generatedAt.formatted(date: .omitted, time: .shortened))")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
                     
                 } else {
-                    ContentUnavailableView(
-                        "No Weather Data",
-                        systemImage: "cloud.slash",
-                        description: Text("Sync from iPhone")
-                    )
+                    ContentUnavailableView("No Data", systemImage: "cloud.slash")
                 }
             }
-            .padding()
+            .padding(.horizontal)
         }
-        .containerBackground(.blue.gradient, for: .navigation)
-        .navigationTitle("Weather")
-        .navigationBarTitleDisplayMode(.inline)
+        .containerBackground(.blue.gradient, for: .tabView)
+        .containerBackground(.blue.gradient, for: .navigation) // Fixes Deep Links
     }
+    
+    // MARK: - Logic
     
     private func loadWeatherData() -> WeatherSummaryData? {
         let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
@@ -115,17 +143,28 @@ struct WeatherDetailView: View {
         }
     }
     
+    private func weatherColor(_ temp: Int) -> Color {
+        if temp < 50 { return .cyan }
+        if temp > 85 { return .orange }
+        return .green
+    }
+    
     private func rideAdvice(temp: Int, wind: Int) -> String {
-        if wind > 20 {
-            return "Strong winds - consider an indoor ride or protected route"
-        } else if temp < 40 {
-            return "Cold temps - layer up and watch for ice"
-        } else if temp > 85 {
-            return "Hot weather - hydrate well and consider early morning rides"
-        } else if wind < 10 && temp >= 60 && temp <= 75 {
-            return "Perfect conditions - enjoy your ride!"
-        } else {
-            return "Good conditions for riding"
-        }
+        if wind > 20 { return "High winds. Be careful." }
+        if temp < 40 { return "Cold! Layer up properly." }
+        if temp > 85 { return "Heat warning. Hydrate." }
+        return "Conditions are good for riding."
     }
 }
+
+// Local copy of SharedWeatherSummary for this file
+struct WeatherSummaryData: Codable {
+    let temperature: Int
+    let feelsLike: Int
+    let conditionIcon: String
+    let windSpeed: Int
+    let windDirection: String
+    let pop: Int
+    let generatedAt: Date
+}
+

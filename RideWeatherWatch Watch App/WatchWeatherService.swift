@@ -1,9 +1,8 @@
-
 //
 //  WatchWeatherService.swift
 //  RideWeatherWatch Watch App
 //
-//  Independent weather service for watch
+//  Updated: Uses OneCall API to fetch Alerts independently
 //
 
 import Foundation
@@ -22,50 +21,59 @@ class WatchWeatherService {
         loadConfig()
     }
     
-    func fetchWeather(for coordinate: CLLocationCoordinate2D) async throws -> WatchWeatherData {
-        let urlString = "https://api.openweathermap.org/data/2.5/weather?lat=\(coordinate.latitude)&lon=\(coordinate.longitude)&appid=\(apiKey)&units=imperial"
+    // Updated return type to include optional Alert
+    func fetchWeather(for coordinate: CLLocationCoordinate2D) async throws -> (data: WatchWeatherData, alert: WeatherAlert?) {
+        // Switch to One Call API (exclude minutely, hourly, daily to save data/battery)
+        let urlString = "https://api.openweathermap.org/data/3.0/onecall?lat=\(coordinate.latitude)&lon=\(coordinate.longitude)&exclude=minutely,hourly,daily&appid=\(apiKey)&units=imperial"
         
         guard let url = URL(string: urlString) else {
             throw WatchWeatherError.invalidURL
         }
         
         let (data, _) = try await URLSession.shared.data(from: url)
-        let response = try JSONDecoder().decode(WatchOpenWeatherResponse.self, from: data)
+        let response = try JSONDecoder().decode(WatchOneCallResponse.self, from: data)
         
-        return WatchWeatherData(
-            temperature: response.main.temp,
-            feelsLike: response.main.feels_like,
-            condition: mapConditionToIcon(response.weather.first?.main ?? "Clear"),
-            description: response.weather.first?.description.capitalized ?? "Clear",
-            location: response.name,
-            humidity: response.main.humidity,
-            windSpeed: response.wind.speed,
+        // Map Basic Data
+        let weatherData = WatchWeatherData(
+            temperature: response.current.temp,
+            feelsLike: response.current.feels_like,
+            condition: mapConditionToIcon(response.current.weather.first?.main ?? "Clear"),
+            description: response.current.weather.first?.description.capitalized ?? "Clear",
+            location: "Current Location", // OneCall doesn't return city name, generic fallback
+            humidity: response.current.humidity,
+            windSpeed: response.current.wind_speed,
             timestamp: Date(),
-            highTemp: response.main.temp_max,
-            lowTemp: response.main.temp_min
+            highTemp: 0, // OneCall 'current' doesn't have daily high/low, would need 'daily' include
+            lowTemp: 0
         )
+        
+        // Map Alert (if exists)
+        var weatherAlert: WeatherAlert? = nil
+        if let firstAlert = response.alerts?.first {
+            weatherAlert = WeatherAlert(
+                message: firstAlert.event,
+                description: firstAlert.description,
+                severity: mapSeverity(firstAlert.event) // Heuristic mapping
+            )
+        }
+        
+        return (weatherData, weatherAlert)
     }
     
+    // ... loadConfig and configValue remain the same ...
     private func loadConfig() {
         guard let path = Bundle.main.path(forResource: "OpenWeather", ofType: "plist"),
               let dict = NSDictionary(contentsOfFile: path) as? [String: String] else {
-            print("🚨 WatchWeatherService: OpenWeather.plist not found!")
-            openWeather = nil
             return
         }
-        
         openWeather = dict
-        print("✅ WatchWeatherService: Config loaded")
-        
-        if configValue(forKey: "OpenWeatherApiKey") == nil {
-            print("🚨 WatchWeatherService: OpenWeatherApiKey missing!")
-        }
     }
-    
+
     private func configValue(forKey key: String) -> String? {
         return openWeather?[key]
     }
     
+    // ... mapConditionToIcon remains the same ...
     private func mapConditionToIcon(_ condition: String) -> String {
         switch condition.lowercased() {
         case "clear": return "sun.max.fill"
@@ -78,6 +86,17 @@ class WatchWeatherService {
         default: return "cloud.fill"
         }
     }
+    
+    // Heuristic to map text event to severity
+    private func mapSeverity(_ event: String) -> WeatherAlert.Severity {
+        let lower = event.lowercased()
+        if lower.contains("warning") || lower.contains("tornado") || lower.contains("severe") {
+            return .severe
+        } else if lower.contains("watch") || lower.contains("advisory") {
+            return .warning
+        }
+        return .advisory
+    }
 }
 
 enum WatchWeatherError: Error {
@@ -85,28 +104,33 @@ enum WatchWeatherError: Error {
     case networkError
 }
 
-struct WatchOpenWeatherResponse: Codable {
-    let main: WatchMainWeather
-    let weather: [WatchWeatherCondition]
-    let wind: WatchWind
-    let name: String
+// MARK: - One Call Structs
+
+struct WatchOneCallResponse: Codable {
+    let current: WatchCurrentWeather
+    let alerts: [WatchOpenWeatherAlert]?
 }
 
-struct WatchMainWeather: Codable {
+struct WatchCurrentWeather: Codable {
     let temp: Double
     let feels_like: Double
-    let temp_min: Double
-    let temp_max: Double
     let humidity: Int
+    let wind_speed: Double
+    let weather: [WatchWeatherCondition]
 }
 
-struct WatchWeatherCondition: Codable {
-    let main: String
+struct WatchOpenWeatherAlert: Codable {
+    let sender_name: String
+    let event: String
+    let start: TimeInterval
+    let end: TimeInterval
     let description: String
 }
 
-struct WatchWind: Codable {
-    let speed: Double
+// Reuse existing support structs
+struct WatchWeatherCondition: Codable {
+    let main: String
+    let description: String
 }
 
 struct WatchWeatherData: Codable {

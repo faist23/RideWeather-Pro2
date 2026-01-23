@@ -70,27 +70,24 @@ class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegat
     }
     
     private func fetchWeatherForCurrentLocation() async {
-        guard let location = location else {
-            print("⚠️ No location for weather fetch")
-            return
-        }
-        
-        print("🌤️ Fetching weather: \(location.coordinate.latitude), \(location.coordinate.longitude)")
-        
-        do {
-            let weatherData = try await WatchWeatherService.shared.fetchWeather(for: location.coordinate)
-            print("✅ Weather fetched: \(weatherData.temperature)°")
+            guard let location = location else { return }
             
-            WatchAppGroupManager.shared.saveWeatherData(weatherData)
-            print("💾 Weather saved")
-            
-            // Reload complications
-            let server = CLKComplicationServer.sharedInstance()
-            for complication in server.activeComplications ?? [] {
-                server.reloadTimeline(for: complication)
+            do {
+                // 1. Fetch Data & Alert
+                let (weatherData, alert) = try await WatchWeatherService.shared.fetchWeather(for: location.coordinate)
+                
+                // 2. Save BOTH to App Group (This was the missing link!)
+                WatchAppGroupManager.shared.saveWeatherData(weatherData, alert: alert)
+                
+                // 3. Update Session (for App UI)
+                await MainActor.run {
+                    WatchSessionManager.shared.updateWeatherAlertIndependent(alert)
+                }
+                
+                print("✅ Watch Fetched Weather. Alert: \(alert?.severity.rawValue ?? "None")")
+                
+            } catch {
+                print("❌ Watch Weather Fetch Failed: \(error.localizedDescription)")
             }
-        } catch {
-            print("❌ Weather fetch failed: \(error.localizedDescription)")
         }
-    }
 }
