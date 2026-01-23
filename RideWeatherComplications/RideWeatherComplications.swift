@@ -386,7 +386,7 @@ struct RideWeatherComplicationEntryView: View {
     
     var destinationURL: URL {
         if entry.alertSeverity != nil {
-            return URL(string: "rideweather://alert")!
+            return URL(string: "rideweather://weather")! // weather was alert to go to alert tab
         }
         return URL(string: "rideweather://weather")!
     }
