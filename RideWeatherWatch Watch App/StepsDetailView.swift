@@ -2,8 +2,7 @@
 //  StepsDetailView.swift
 //  RideWeatherWatch Watch App
 //
-//  Design: "Cockpit Density" - Steps Left, Activity Metrics Right.
-//  Added: "Last Updated" timestamp.
+//  Design: Steps count with Apple Fitness Activity Rings
 //
 
 import WidgetKit
@@ -13,6 +12,12 @@ import HealthKit
 struct StepsDetailView: View {
     @ObservedObject private var session = WatchSessionManager.shared
     @State private var todaySteps: Int = 0
+    @State private var moveCalories: Double = 0
+    @State private var moveGoal: Double = 400
+    @State private var exerciseMinutes: Double = 0
+    @State private var exerciseGoal: Double = 30
+    @State private var standHours: Int = 0
+    @State private var standGoal: Int = 12
     @State private var isLoading = true
     @State private var lastUpdate: Date = Date()
     
@@ -26,7 +31,7 @@ struct StepsDetailView: View {
                     // LEFT: Steps Count
                     VStack(spacing: -2) {
                         Text("\(todaySteps)")
-                            .font(.system(size: 42, weight: .black, design: .rounded)) // Slightly smaller to fit 5 digits
+                            .font(.system(size: 42, weight: .black, design: .rounded))
                             .foregroundStyle(.green)
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
@@ -39,62 +44,91 @@ struct StepsDetailView: View {
                     }
                     .frame(maxWidth: .infinity)
                     
-                    // RIGHT: Activity Metrics
-                    VStack(alignment: .leading, spacing: 6) {
+                    // RIGHT: Apple Fitness-style Activity Rings
+                    ZStack {
+                        // Move Ring (outermost - red)
+                        ActivityRingView(
+                            progress: min(moveCalories / moveGoal, 1.0),
+                            color: Color(red: 1.0, green: 0.1, blue: 0.4),
+                            lineWidth: 5.5
+                        )
+                        .frame(width: 60, height: 60)
                         
-                        // Active Calories (from Wellness sync)
-                        if let wellness = session.currentWellness,
-                           let activeEnergy = wellness.activeEnergyBurned {
-                            CompactMetricRow(
-                                icon: "flame.fill",
-                                value: "\(Int(activeEnergy))",
-                                unit: "cal",
-                                color: .red
-                            )
-                        } else {
-                            // Placeholder if no sync yet
-                            CompactMetricRow(
-                                icon: "flame",
-                                value: "--",
-                                unit: "cal",
-                                color: .gray
-                            )
-                        }
+                        // Exercise Ring (middle - green)
+                        ActivityRingView(
+                            progress: min(exerciseMinutes / exerciseGoal, 1.0),
+                            color: Color(red: 0.5, green: 1.0, blue: 0.2),
+                            lineWidth: 5.5
+                        )
+                        .frame(width: 46, height: 46)
                         
-                        // Activity Score
-                        if let wellness = session.currentWellness,
-                           let score = wellness.activityScore {
-                            CompactMetricRow(
-                                icon: "chart.bar.fill",
-                                value: "\(Int(score))",
-                                unit: "score",
-                                color: scoreColor(Int(score))
-                            )
-                        }
+                        // Stand Ring (innermost - blue)
+                        ActivityRingView(
+                            progress: min(Double(standHours) / Double(standGoal), 1.0),
+                            color: Color(red: 0.0, green: 0.8, blue: 1.0),
+                            lineWidth: 5.5
+                        )
+                        .frame(width: 32, height: 32)
                     }
                     .frame(maxWidth: .infinity)
                 }
                 .padding(.top, 4)
                 
-                /*                // --- PROGRESS BAR ---
-                 // Visual goal (assuming 10k target for visualization)
-                 Capsule()
-                 .fill(Color.gray.opacity(0.3))
-                 .frame(height: 4)
-                 .overlay(alignment: .leading) {
-                 Capsule()
-                 .fill(Color.green)
-                 .frame(width: min(1.0, CGFloat(todaySteps) / 10000.0) * 100 + 40) // Dynamic visual
-                 }
-                 .padding(.vertical, 4)
-                 */
+                // --- ACTIVITY METRICS ---
+                VStack(alignment: .leading, spacing: 6) {
+                    // Move
+                    HStack {
+                        Circle()
+                            .fill(.red)
+                            .frame(width: 8, height: 8)
+                        Text("Move")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(Int(moveCalories)) / \(Int(moveGoal)) cal")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    
+                    // Exercise
+                    HStack {
+                        Circle()
+                            .fill(.green)
+                            .frame(width: 8, height: 8)
+                        Text("Exercise")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(Int(exerciseMinutes)) / \(Int(exerciseGoal)) min")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    
+                    // Stand
+                    HStack {
+                        Circle()
+                            .fill(.cyan)
+                            .frame(width: 8, height: 8)
+                        Text("Stand")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(standHours) / \(standGoal) hrs")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .padding(8)
+                .background(Color.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                
                 // --- ADVICE ---
                 VStack(spacing: 2) {
-                    Text(activityTitle(steps: todaySteps).uppercased())
+                    Text(activityTitle().uppercased())
                         .font(.system(size: 11, weight: .black))
                         .foregroundStyle(.green)
                     
-                    Text(activityAdvice(steps: todaySteps))
+                    Text(activityAdvice())
                         .font(.caption2)
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
@@ -114,9 +148,9 @@ struct StepsDetailView: View {
             .padding(.horizontal)
         }
         .containerBackground(.green.gradient, for: .tabView)
-        .containerBackground(.green.gradient, for: .navigation) // Fixes Deep Links
+        .containerBackground(.green.gradient, for: .navigation)
         .onAppear {
-            loadSteps()
+            loadActivityData()
         }
         .onDisappear {
             refreshWidgetData()
@@ -125,17 +159,61 @@ struct StepsDetailView: View {
     
     // MARK: - Logic
     
-    private func loadSteps() {
+    private func loadActivityData() {
         Task {
-            let steps = await fetchTodaySteps()
+            // Request permissions first
+            await requestHealthKitPermissions()
+            
+            async let steps = fetchTodaySteps()
+            async let move = fetchActivitySummary(.activeEnergyBurned)
+            async let exercise = fetchActivitySummary(.appleExerciseTime)
+            async let stand = fetchStandHours()
+            
+            let (stepsValue, moveValue, exerciseValue, standValue) = await (steps, move, exercise, stand)
+            
             await MainActor.run {
-                self.todaySteps = steps
+                self.todaySteps = stepsValue
+                self.moveCalories = moveValue.current
+                self.moveGoal = moveValue.goal
+                self.exerciseMinutes = exerciseValue.current / 60 // Convert seconds to minutes
+                self.exerciseGoal = exerciseValue.goal / 60
+                self.standHours = standValue
                 self.isLoading = false
                 self.lastUpdate = Date()
                 
+                print("📊 Activity Data Loaded:")
+                print("   Steps: \(stepsValue)")
+                print("   Move: \(Int(moveValue.current))/\(Int(moveValue.goal)) cal")
+                print("   Exercise: \(Int(exerciseValue.current/60))/\(Int(exerciseValue.goal/60)) min")
+                print("   Stand: \(standValue)/\(standGoal) hrs")
+                
                 // Save to widget storage
-                WatchAppGroupManager.shared.saveSteps(steps)
+                WatchAppGroupManager.shared.saveSteps(stepsValue)
             }
+        }
+    }
+    
+    private func requestHealthKitPermissions() async {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            print("❌ HealthKit not available")
+            return
+        }
+        
+        let healthStore = HKHealthStore()
+        
+        let typesToRead: Set<HKObjectType> = [
+            HKObjectType.quantityType(forIdentifier: .stepCount)!,
+            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
+            HKObjectType.quantityType(forIdentifier: .appleExerciseTime)!,
+            HKObjectType.quantityType(forIdentifier: .appleStandTime)!,
+            HKObjectType.activitySummaryType()
+        ]
+        
+        do {
+            try await healthStore.requestAuthorization(toShare: [], read: typesToRead)
+            print("✅ HealthKit permissions requested")
+        } catch {
+            print("❌ HealthKit authorization failed: \(error)")
         }
     }
     
@@ -158,34 +236,144 @@ struct StepsDetailView: View {
         }
     }
     
+    private func fetchActivitySummary(_ identifier: HKQuantityTypeIdentifier) async -> (current: Double, goal: Double) {
+        let healthStore = HKHealthStore()
+        let calendar = Calendar.current
+        let now = Date()
+        
+        let predicate = HKQuery.predicateForActivitySummary(with: DateComponents(
+            calendar: calendar,
+            year: calendar.component(.year, from: now),
+            month: calendar.component(.month, from: now),
+            day: calendar.component(.day, from: now)
+        ))
+        
+        return await withCheckedContinuation { continuation in
+            let query = HKActivitySummaryQuery(predicate: predicate) { _, summaries, error in
+                if let error = error {
+                    print("❌ Activity summary error for \(identifier.rawValue): \(error)")
+                    continuation.resume(returning: (0, identifier == .activeEnergyBurned ? 400 : 30))
+                    return
+                }
+                
+                guard let summary = summaries?.first else {
+                    print("⚠️ No activity summary found for today")
+                    continuation.resume(returning: (0, identifier == .activeEnergyBurned ? 400 : 30))
+                    return
+                }
+                
+                switch identifier {
+                case .activeEnergyBurned:
+                    let current = summary.activeEnergyBurned.doubleValue(for: .kilocalorie())
+                    let goal = summary.activeEnergyBurnedGoal.doubleValue(for: .kilocalorie())
+                    print("📊 Move: \(Int(current))/\(Int(goal)) cal")
+                    continuation.resume(returning: (current, goal))
+                case .appleExerciseTime:
+                    let current = summary.appleExerciseTime.doubleValue(for: .second())
+                    let goal = summary.appleExerciseTimeGoal.doubleValue(for: .second())
+                    print("📊 Exercise: \(Int(current/60))/\(Int(goal/60)) min")
+                    continuation.resume(returning: (current, goal))
+                default:
+                    continuation.resume(returning: (0, 0))
+                }
+            }
+            healthStore.execute(query)
+        }
+    }
+    
+    private func fetchStandHours() async -> Int {
+        let healthStore = HKHealthStore()
+        let calendar = Calendar.current
+        let now = Date()
+        
+        let predicate = HKQuery.predicateForActivitySummary(with: DateComponents(
+            calendar: calendar,
+            year: calendar.component(.year, from: now),
+            month: calendar.component(.month, from: now),
+            day: calendar.component(.day, from: now)
+        ))
+        
+        return await withCheckedContinuation { continuation in
+            let query = HKActivitySummaryQuery(predicate: predicate) { _, summaries, error in
+                if let error = error {
+                    print("❌ Stand hours error: \(error)")
+                    continuation.resume(returning: 0)
+                    return
+                }
+                
+                guard let summary = summaries?.first else {
+                    print("⚠️ No stand hours summary found")
+                    continuation.resume(returning: 0)
+                    return
+                }
+                let hours = Int(summary.appleStandHours.doubleValue(for: .count()))
+                print("📊 Stand: \(hours)/12 hrs")
+                continuation.resume(returning: hours)
+            }
+            healthStore.execute(query)
+        }
+    }
+    
     private func refreshWidgetData() {
         WatchAppGroupManager.shared.saveSteps(todaySteps)
         WidgetCenter.shared.reloadAllTimelines()
     }
     
-    private func activityTitle(steps: Int) -> String {
-        switch steps {
-        case 0..<3000: return "Get Moving"
-        case 3000..<7000: return "Good Start"
-        case 7000..<10000: return "Almost There"
-        case 10000..<15000: return "Goal Hit"
-        default: return "Unstoppable"
+    private func activityTitle() -> String {
+        let movePercent = moveCalories / moveGoal
+        let exercisePercent = exerciseMinutes / exerciseGoal
+        
+        if movePercent >= 1.0 && exercisePercent >= 1.0 && standHours >= standGoal {
+            return "All Rings Closed!"
+        } else if movePercent >= 1.0 {
+            return "Move Goal Hit"
+        } else if exercisePercent >= 0.8 {
+            return "Almost There"
+        } else {
+            return "Keep Moving"
         }
     }
     
-    private func activityAdvice(steps: Int) -> String {
-        switch steps {
-        case 0..<3000: return "Consider a short walk to boost circulation."
-        case 3000..<7000: return "You're moving well. Keep it up!"
-        case 7000..<10000: return "Great job! Closing in on 10k."
-        case 10000..<15000: return "Excellent activity level today!"
-        default: return "Outstanding daily volume!"
+    private func activityAdvice() -> String {
+        let movePercent = moveCalories / moveGoal
+        let exercisePercent = exerciseMinutes / exerciseGoal
+        
+        if movePercent >= 1.0 && exercisePercent >= 1.0 && standHours >= standGoal {
+            return "Outstanding! All activity goals achieved today."
+        } else if movePercent < 0.5 {
+            return "Get active to start closing your Move ring."
+        } else if exercisePercent < 1.0 {
+            return "You're \(Int((1.0 - exercisePercent) * exerciseGoal)) minutes from your Exercise goal."
+        } else if standHours < standGoal {
+            return "Stand up \(standGoal - standHours) more times to complete Stand goal."
+        } else {
+            return "Great progress! Keep it up."
         }
     }
+}
+
+// MARK: - Activity Ring View
+
+struct ActivityRingView: View {
+    let progress: Double
+    let color: Color
+    let lineWidth: CGFloat
     
-    private func scoreColor(_ score: Int) -> Color {
-        if score >= 80 { return .green }
-        if score >= 60 { return .yellow }
-        return .orange
+    var body: some View {
+        ZStack {
+            // Background ring
+            Circle()
+                .stroke(color.opacity(0.3), lineWidth: lineWidth)
+            
+            // Progress ring
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(
+                    color,
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+                .animation(.easeInOut(duration: 0.5), value: progress)
+        }
     }
 }
