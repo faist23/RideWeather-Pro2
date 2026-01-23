@@ -68,7 +68,7 @@ class WatchWeatherService {
         }
         openWeather = dict
     }
-
+    
     private func configValue(forKey key: String) -> String? {
         return openWeather?[key]
     }

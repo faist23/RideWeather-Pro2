@@ -120,11 +120,11 @@ struct WatchDebugView: View {
                         DebugDataRow("Weekly Progress", "✓")
                     }
                     
-/*                    if let stats = session.weeklyStats {
-                        DebugDataRow("Week Rides", "\(stats.rideCount)")
-                        DebugDataRow("Week Hours", String(format: "%.1f", stats.totalHours))
-                        DebugDataRow("CTL Change", String(format: "%.1f", stats.fitnessChange))
-                    } */
+                    /*                    if let stats = session.weeklyStats {
+                     DebugDataRow("Week Rides", "\(stats.rideCount)")
+                     DebugDataRow("Week Hours", String(format: "%.1f", stats.totalHours))
+                     DebugDataRow("CTL Change", String(format: "%.1f", stats.fitnessChange))
+                     } */
                 }
             }
             .padding()

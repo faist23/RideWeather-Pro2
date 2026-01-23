@@ -97,7 +97,7 @@ struct FormView: View {
                     .frame(maxWidth: .infinity)
                     .background(rampRateColor(summary.rampRate).opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
-
+                    
                     WatchSyncIndicator()
                         .scaleEffect(0.7)
                         .opacity(0.5)

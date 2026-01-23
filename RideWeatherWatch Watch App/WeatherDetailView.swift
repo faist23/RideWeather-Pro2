@@ -3,14 +3,14 @@
 //  RideWeatherWatch Watch App
 //
 //  Design: "Cockpit Density" - Temp Left, Conditions Right.
-//  Added: "Last Updated" timestamp from data source.
+//  Updated: More prominent feels-like temperature display
 //
 
 import SwiftUI
 
 struct WeatherDetailView: View {
     @ObservedObject private var session = WatchSessionManager.shared
-    @EnvironmentObject var navigationManager: NavigationManager // Access nav manager
+    @EnvironmentObject var navigationManager: NavigationManager
     
     var body: some View {
         ScrollView {
@@ -19,39 +19,38 @@ struct WeatherDetailView: View {
                 if let weather = loadWeatherData() {
                     
                     // --- ACTIVE ALERT BANNER ---
-                    // Links directly to the Alert Tab
                     if let alert = session.weatherAlert {
                         Button {
                             withAnimation {
                                 navigationManager.selectedTab = .alert
                             }
                         } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .font(.headline)
-                                        .symbolEffect(.pulse, isActive: true)
-                                        .foregroundStyle(.black) // KEEPING THIS BLACK
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.headline)
+                                    .symbolEffect(.pulse, isActive: true)
+                                    .foregroundStyle(.black)
+                                
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Text("ACTIVE ALERT")
+                                        .font(.system(size: 9, weight: .black))
+                                        .foregroundStyle(.black)
                                     
-                                    VStack(alignment: .leading, spacing: 0) {
-                                        Text("ACTIVE ALERT")
-                                            .font(.system(size: 9, weight: .black))
-                                            .foregroundStyle(.black) // KEEPING THIS BLACK
-                                        
-                                        Text(alert.message.prefix(20))
-                                            .font(.caption2)
-                                            .lineLimit(1)
-                                            .foregroundStyle(.black) // KEEPING THIS BLACK
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
+                                    Text(alert.message.prefix(20))
                                         .font(.caption2)
-                                        .foregroundStyle(.black.opacity(0.6))
+                                        .lineLimit(1)
+                                        .foregroundStyle(.black)
                                 }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.black.opacity(0.6))
+                            }
                             .padding(8)
                             .background(alert.severity == .severe ? Color.red : (alert.severity == .warning ? Color.orange : Color.yellow))
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
-                        .buttonStyle(.plain) // Remove default button chrome
+                        .buttonStyle(.plain)
                         .padding(.top, 4)
                     }
                     
@@ -59,7 +58,7 @@ struct WeatherDetailView: View {
                     HStack(alignment: .center, spacing: 8) {
                         
                         // LEFT: Temperature
-                        VStack(spacing: -2) {
+                        VStack(spacing: 2) {
                             HStack(alignment: .top, spacing: 2) {
                                 Text("\(weather.temperature)")
                                     .font(.system(size: 56, weight: .black, design: .rounded))
@@ -71,12 +70,22 @@ struct WeatherDetailView: View {
                                     .padding(.top, 8)
                             }
                             
+                            // Updated Feels Like - more prominent
                             HStack(spacing: 4) {
                                 Image(systemName: weather.conditionIcon)
-                                Text("FL \(weather.feelsLike)°")
-                                    .font(.system(size: 9, weight: .bold))
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                                
+                                VStack(spacing: 0) {
+                                    Text("Feels")
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                    
+                                    Text("\(weather.feelsLike)°")
+                                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.white.opacity(0.9))
+                                }
                             }
-                            .foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity)
                         
@@ -104,9 +113,7 @@ struct WeatherDetailView: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .padding(.top, session.weatherAlert == nil ? 4 : 0) // Adjust padding if banner exists
-                    
-                    // ... (Rest of view remains the same) ...
+                    .padding(.top, session.weatherAlert == nil ? 4 : 0)
                     
                     // Footer
                     Text("Updated: \(weather.generatedAt.formatted(date: .omitted, time: .shortened))")
@@ -121,7 +128,7 @@ struct WeatherDetailView: View {
             .padding(.horizontal)
         }
         .containerBackground(.blue.gradient, for: .tabView)
-        .containerBackground(.blue.gradient, for: .navigation) // Fixes Deep Links
+        .containerBackground(.blue.gradient, for: .navigation)
     }
     
     // MARK: - Logic
@@ -142,22 +149,8 @@ struct WeatherDetailView: View {
         default: return .red
         }
     }
-    
-    private func weatherColor(_ temp: Int) -> Color {
-        if temp < 50 { return .cyan }
-        if temp > 85 { return .orange }
-        return .green
-    }
-    
-    private func rideAdvice(temp: Int, wind: Int) -> String {
-        if wind > 20 { return "High winds. Be careful." }
-        if temp < 40 { return "Cold! Layer up properly." }
-        if temp > 85 { return "Heat warning. Hydrate." }
-        return "Conditions are good for riding."
-    }
 }
 
-// Local copy of SharedWeatherSummary for this file
 struct WeatherSummaryData: Codable {
     let temperature: Int
     let feelsLike: Int
@@ -167,4 +160,3 @@ struct WeatherSummaryData: Codable {
     let pop: Int
     let generatedAt: Date
 }
-

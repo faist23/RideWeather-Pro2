@@ -27,27 +27,27 @@ class WatchAppGroupManager {
     private init() {}
     
     // Updated: Accepts optional Alert
-        func saveWeatherData(_ data: WatchWeatherData, alert: WeatherAlert? = nil) {
-            let defaults = UserDefaults(suiteName: suiteName)
-            
-            // Map to Shared Summary (matches Widget definition)
-            let summary = SharedWeatherSummary(
-                temperature: Int(data.temperature),
-                feelsLike: Int(data.feelsLike),
-                conditionIcon: data.condition,
-                windSpeed: Int(data.windSpeed),
-                windDirection: compassDirection(for: 0), // Simplification if wind deg missing
-                pop: 0, // Pop not always available in current current-weather call
-                generatedAt: Date(),
-                alertSeverity: alert?.severity.rawValue // NEW FIELD
-            )
-            
-            if let encoded = try? JSONEncoder().encode(summary) {
-                defaults?.set(encoded, forKey: "widget_weather_summary")
-                print("💾 Widget Data Saved. Alert: \(alert?.severity.rawValue ?? "None")")
-                WidgetCenter.shared.reloadAllTimelines()
-            }
+    func saveWeatherData(_ data: WatchWeatherData, alert: WeatherAlert? = nil) {
+        let defaults = UserDefaults(suiteName: suiteName)
+        
+        // Map to Shared Summary (matches Widget definition)
+        let summary = SharedWeatherSummary(
+            temperature: Int(data.temperature),
+            feelsLike: Int(data.feelsLike),
+            conditionIcon: data.condition,
+            windSpeed: Int(data.windSpeed),
+            windDirection: compassDirection(for: 0), // Simplification if wind deg missing
+            pop: 0, // Pop not always available in current current-weather call
+            generatedAt: Date(),
+            alertSeverity: alert?.severity.rawValue // NEW FIELD
+        )
+        
+        if let encoded = try? JSONEncoder().encode(summary) {
+            defaults?.set(encoded, forKey: "widget_weather_summary")
+            print("💾 Widget Data Saved. Alert: \(alert?.severity.rawValue ?? "None")")
+            WidgetCenter.shared.reloadAllTimelines()
         }
+    }
     
     func getWeatherData() -> WatchWeatherData? {
         guard let defaults = Self.sharedDefaults,
@@ -72,16 +72,16 @@ class WatchAppGroupManager {
     }
     
     func saveSteps(_ steps: Int) {
-            let defaults = UserDefaults(suiteName: suiteName)
-            defaults?.set(steps, forKey: "widget_today_steps")
-            WidgetCenter.shared.reloadAllTimelines()
-        }
-        
-        private func compassDirection(for degrees: Double) -> String {
-            let directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
-            let index = Int((degrees + 22.5) / 45.0) & 7
-            return directions[index]
-        }
+        let defaults = UserDefaults(suiteName: suiteName)
+        defaults?.set(steps, forKey: "widget_today_steps")
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+    
+    private func compassDirection(for degrees: Double) -> String {
+        let directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        let index = Int((degrees + 22.5) / 45.0) & 7
+        return directions[index]
+    }
     
     func getSteps() -> Int {
         guard let defaults = Self.sharedDefaults else { return 0 }

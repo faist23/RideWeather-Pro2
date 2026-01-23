@@ -76,18 +76,18 @@ struct StepsDetailView: View {
                 }
                 .padding(.top, 4)
                 
-/*                // --- PROGRESS BAR ---
-                // Visual goal (assuming 10k target for visualization)
-                Capsule()
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(height: 4)
-                    .overlay(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.green)
-                            .frame(width: min(1.0, CGFloat(todaySteps) / 10000.0) * 100 + 40) // Dynamic visual
-                    }
-                    .padding(.vertical, 4)
-*/
+                /*                // --- PROGRESS BAR ---
+                 // Visual goal (assuming 10k target for visualization)
+                 Capsule()
+                 .fill(Color.gray.opacity(0.3))
+                 .frame(height: 4)
+                 .overlay(alignment: .leading) {
+                 Capsule()
+                 .fill(Color.green)
+                 .frame(width: min(1.0, CGFloat(todaySteps) / 10000.0) * 100 + 40) // Dynamic visual
+                 }
+                 .padding(.vertical, 4)
+                 */
                 // --- ADVICE ---
                 VStack(spacing: 2) {
                     Text(activityTitle(steps: todaySteps).uppercased())

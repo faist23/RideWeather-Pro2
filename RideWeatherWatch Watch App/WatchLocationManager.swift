@@ -70,24 +70,24 @@ class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegat
     }
     
     private func fetchWeatherForCurrentLocation() async {
-            guard let location = location else { return }
+        guard let location = location else { return }
+        
+        do {
+            // 1. Fetch Data & Alert
+            let (weatherData, alert) = try await WatchWeatherService.shared.fetchWeather(for: location.coordinate)
             
-            do {
-                // 1. Fetch Data & Alert
-                let (weatherData, alert) = try await WatchWeatherService.shared.fetchWeather(for: location.coordinate)
-                
-                // 2. Save BOTH to App Group (This was the missing link!)
-                WatchAppGroupManager.shared.saveWeatherData(weatherData, alert: alert)
-                
-                // 3. Update Session (for App UI)
-                await MainActor.run {
-                    WatchSessionManager.shared.updateWeatherAlertIndependent(alert)
-                }
-                
-                print("✅ Watch Fetched Weather. Alert: \(alert?.severity.rawValue ?? "None")")
-                
-            } catch {
-                print("❌ Watch Weather Fetch Failed: \(error.localizedDescription)")
+            // 2. Save BOTH to App Group (This was the missing link!)
+            WatchAppGroupManager.shared.saveWeatherData(weatherData, alert: alert)
+            
+            // 3. Update Session (for App UI)
+            await MainActor.run {
+                WatchSessionManager.shared.updateWeatherAlertIndependent(alert)
             }
+            
+            print("✅ Watch Fetched Weather. Alert: \(alert?.severity.rawValue ?? "None")")
+            
+        } catch {
+            print("❌ Watch Weather Fetch Failed: \(error.localizedDescription)")
         }
+    }
 }

@@ -28,7 +28,7 @@ class WatchSessionManager: NSObject, ObservableObject {
     // Computed properties for watch views
     @Published var recoveryStatus: RecoveryStatus?
     @Published var weeklyProgress: WeeklyProgress?
-//    @Published var weeklyStats: WeeklyStats?
+    //    @Published var weeklyStats: WeeklyStats?
     
     // Load from UserDefaults on init
     @Published var lastPreciseRideDate: Date? = UserDefaults.standard.object(forKey: "watch_last_precise_date") as? Date
@@ -201,26 +201,26 @@ extension WatchSessionManager: WCSessionDelegate {
         
         // 7. Decode Weather Alert
         if let weatherData = context["weatherAlert"] as? Data {
-                do {
-                    let decoded = try JSONDecoder().decode(WeatherAlert.self, from: weatherData)
-                    self.weatherAlert = decoded
-                    
-                    // FIX: Immediately save this new alert to the Widget Key
-                    let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
-                    defaults?.set(decoded.severity.rawValue, forKey: "widget_active_alert")
-                    
-                    if decoded.severity == .severe {
-                        WKInterfaceDevice.current().play(.notification)
-                    }
-                } catch {
-                    print("❌ Failed to decode Weather Alert")
-                }
-            } else {
-                // If context has NO alert, we should clear it
-                self.weatherAlert = nil
+            do {
+                let decoded = try JSONDecoder().decode(WeatherAlert.self, from: weatherData)
+                self.weatherAlert = decoded
+                
+                // FIX: Immediately save this new alert to the Widget Key
                 let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
-                defaults?.removeObject(forKey: "widget_active_alert")
+                defaults?.set(decoded.severity.rawValue, forKey: "widget_active_alert")
+                
+                if decoded.severity == .severe {
+                    WKInterfaceDevice.current().play(.notification)
+                }
+            } catch {
+                print("❌ Failed to decode Weather Alert")
             }
+        } else {
+            // If context has NO alert, we should clear it
+            self.weatherAlert = nil
+            let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
+            defaults?.removeObject(forKey: "widget_active_alert")
+        }
         
         // 8. Save Weather Data for Widget
         // We don't need to decode it here; just pass the raw data to the Widget's storage
@@ -257,7 +257,7 @@ extension WatchSessionManager: WCSessionDelegate {
                 print("❌ Failed to decode Recovery Status: \(error)")
             }
         }
-
+        
         // Calculate derived data
         calculateDerivedData()
         
@@ -273,37 +273,37 @@ extension WatchSessionManager: WCSessionDelegate {
     }
     
     private func calculateDerivedData() {
-/*        // Calculate Recovery Status
-        if let wellness = currentWellness {
-            let lastRideDaily = trainingHistory
-                .filter { $0.rideCount > 0 }
-                .sorted { $0.date > $1.date }
-                .first?.date
-            
-            let bestWorkoutDate = self.lastPreciseRideDate ?? lastRideDaily
-            
-            // 🔎 SEARCHLIGHT 4: The Final Verdict
-            print("\n🔎 DEBUG (Watch Calculation):")
-            print("   - Stored Precise Date: \(self.lastPreciseRideDate?.formatted(date: .omitted, time: .standard) ?? "Nil")")
-            print("   - Backup Daily Date: \(lastRideDaily?.formatted(date: .omitted, time: .standard) ?? "Nil")")
-            print("   - DATE USED FOR CALC: \(bestWorkoutDate?.formatted(date: .omitted, time: .standard) ?? "Nil")")
-            
-            let currentHRV = readinessData?.latestHRV ?? Double(wellness.restingHeartRate ?? 60)
-            let baselineHRV = readinessData?.averageHRV ?? currentHRV
-            let currentRestingHR = readinessData?.latestRHR ?? Double(wellness.restingHeartRate ?? 60)
-            let baselineRestingHR = readinessData?.averageRHR ?? currentRestingHR
-            
-            self.recoveryStatus = RecoveryStatus.calculate(
-                lastWorkoutDate: bestWorkoutDate,
-                currentHRV: currentHRV,
-                baselineHRV: baselineHRV,
-                currentRestingHR: currentRestingHR,
-                baselineRestingHR: baselineRestingHR,
-                wellness: wellness,
-                weekHistory: wellnessHistory
-            )
-            print("✅ Calculated Recovery Status: \(recoveryStatus?.recoveryPercent ?? 0)%")
-        }*/
+        /*        // Calculate Recovery Status
+         if let wellness = currentWellness {
+         let lastRideDaily = trainingHistory
+         .filter { $0.rideCount > 0 }
+         .sorted { $0.date > $1.date }
+         .first?.date
+         
+         let bestWorkoutDate = self.lastPreciseRideDate ?? lastRideDaily
+         
+         // 🔎 SEARCHLIGHT 4: The Final Verdict
+         print("\n🔎 DEBUG (Watch Calculation):")
+         print("   - Stored Precise Date: \(self.lastPreciseRideDate?.formatted(date: .omitted, time: .standard) ?? "Nil")")
+         print("   - Backup Daily Date: \(lastRideDaily?.formatted(date: .omitted, time: .standard) ?? "Nil")")
+         print("   - DATE USED FOR CALC: \(bestWorkoutDate?.formatted(date: .omitted, time: .standard) ?? "Nil")")
+         
+         let currentHRV = readinessData?.latestHRV ?? Double(wellness.restingHeartRate ?? 60)
+         let baselineHRV = readinessData?.averageHRV ?? currentHRV
+         let currentRestingHR = readinessData?.latestRHR ?? Double(wellness.restingHeartRate ?? 60)
+         let baselineRestingHR = readinessData?.averageRHR ?? currentRestingHR
+         
+         self.recoveryStatus = RecoveryStatus.calculate(
+         lastWorkoutDate: bestWorkoutDate,
+         currentHRV: currentHRV,
+         baselineHRV: baselineHRV,
+         currentRestingHR: currentRestingHR,
+         baselineRestingHR: baselineRestingHR,
+         wellness: wellness,
+         weekHistory: wellnessHistory
+         )
+         print("✅ Calculated Recovery Status: \(recoveryStatus?.recoveryPercent ?? 0)%")
+         }*/
         
         // Calculate Weekly Progress
         if let load = loadSummary {
@@ -314,11 +314,11 @@ extension WatchSessionManager: WCSessionDelegate {
             print("✅ Calculated Weekly Progress")
         }
         
-/*        // Calculate Weekly Stats
-        if !trainingHistory.isEmpty {
-            self.weeklyStats = WeeklyStats.calculate(from: trainingHistory)
-            print("✅ Calculated Weekly Stats: \(weeklyStats?.rideCount ?? 0) rides")
-        }*/
+        /*        // Calculate Weekly Stats
+         if !trainingHistory.isEmpty {
+         self.weeklyStats = WeeklyStats.calculate(from: trainingHistory)
+         print("✅ Calculated Weekly Stats: \(weeklyStats?.rideCount ?? 0) rides")
+         }*/
     }
     
     // Save data to App Group
@@ -338,7 +338,7 @@ extension WatchSessionManager: WCSessionDelegate {
         if let wellness = self.currentWellness {
             defaults?.set(wellness.steps ?? 0, forKey: "widget_today_steps")
         }
-
+        
         // Save steps immediately
         if let steps = self.currentWellness?.steps {
             defaults?.set(steps, forKey: "widget_today_steps")

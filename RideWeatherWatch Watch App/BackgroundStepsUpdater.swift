@@ -43,7 +43,7 @@ class BackgroundStepsUpdater: NSObject, CLLocationManagerDelegate {
             print("🔄 Background steps updater started")
         }
     }
-
+    
     private func requestHealthKitAuthorization() async {
         guard HKHealthStore.isHealthDataAvailable() else {
             print("⚠️ HealthKit not available")

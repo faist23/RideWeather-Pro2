@@ -81,12 +81,12 @@ struct SmartRideStatsProvider: TimelineProvider {
             temp: 72, feelsLike: 70, windSpeed: 10, windDir: "NW", conditionIcon: "sun.max"
         )
     }
-
+    
     func getSnapshot(in context: Context, completion: @escaping (SmartRideStatsEntry) -> ()) {
         let entry = createEntry(for: Date())
         completion(entry)
     }
-
+    
     func getTimeline(in context: Context, completion: @escaping (Timeline<SmartRideStatsEntry>) -> ()) {
         Task {
             // Fetch fresh data every refresh
@@ -100,7 +100,7 @@ struct SmartRideStatsProvider: TimelineProvider {
                     entries.append(createEntry(for: entryDate))
                 }
             }
-
+            
             // Refresh every hour
             let nextUpdate = Calendar.current.date(byAdding: .hour, value: 1, to: currentDate)!
             let timeline = Timeline(entries: entries, policy: .after(nextUpdate))
@@ -158,25 +158,25 @@ struct SimpleComplicationProvider: TimelineProvider {
             todaySteps: 8543
         )
     }
-
+    
     func getSnapshot(in context: Context, completion: @escaping (SimpleComplicationEntry) -> ()) {
         completion(createEntry(for: Date()))
     }
-
+    
     func getTimeline(in context: Context, completion: @escaping (Timeline<SimpleComplicationEntry>) -> ()) {
-            Task {
-                // ✅ CRITICAL FIX: Actually fetch fresh data (including alerts)
-                await WidgetDataFetcher.shared.fetchAllData()
-                
-                let entry = createEntry(for: Date())
-                
-                // Refresh every 30 minutes
-                let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: Date())!
-                let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
-                
-                completion(timeline)
-            }
+        Task {
+            // ✅ CRITICAL FIX: Actually fetch fresh data (including alerts)
+            await WidgetDataFetcher.shared.fetchAllData()
+            
+            let entry = createEntry(for: Date())
+            
+            // Refresh every 30 minutes
+            let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: Date())!
+            let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
+            
+            completion(timeline)
         }
+    }
     
     private func createEntry(for date: Date) -> SimpleComplicationEntry {
         var temp = 0
@@ -247,7 +247,7 @@ struct SmartRideStatsEntryView: View {
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                 Text("FL \(entry.feelsLike)°")
                     .font(.system(size: 12, weight: .regular, design: .rounded))
-
+                
                 HStack(spacing: 1) {
                     Image(systemName: "wind")
                         .font(.system(size: 8))
@@ -409,66 +409,67 @@ struct RideWeatherComplicationEntryView: View {
     
     @ViewBuilder
     var circularView: some View {
-            VStack(spacing: 0) {
-                // 1. Temperature (Always Visible)
-                Text("\(entry.temp)°")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(0.8)
-                
-                // 2. Feels Like (Always Visible)
-                Text("FL \(entry.feelsLike)°")
-                    .font(.system(size: 8))
-                    .minimumScaleFactor(0.8)
-                    .foregroundStyle(.secondary)
-                
-                // 3. Icon Slot: Shows Alert Triangle OR Weather Icon
-                if entry.alertSeverity != nil {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(alertColor) // Red/Yellow
-                        .padding(.top, 1)
-                } else {
-                    Image(systemName: entry.conditionIcon)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.blue.opacity(0.8))
-                        .padding(.top, 1)
-                }
+        VStack(spacing: 0) {
+            // 1. Temperature (Always Visible)
+            Text("\(entry.temp)°")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .minimumScaleFactor(0.8)
+            
+            // 2. Feels Like (Always Visible)
+            Text("FL \(entry.feelsLike)°")
+                .font(.system(size: 8))
+                .minimumScaleFactor(0.8)
+                .foregroundStyle(.secondary)
+            
+            // 3. Icon Slot: Shows Alert Triangle OR Weather Icon
+            if entry.alertSeverity != nil {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(alertColor) // Red/Yellow
+                    .padding(.top, 1)
+            } else {
+                Image(systemName: entry.conditionIcon)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.blue.opacity(0.8))
+                    .padding(.top, 1)
             }
         }
+    }
     
     @ViewBuilder
     var cornerView: some View {
         HStack(spacing: 2) {
-            // 1. Icon (Only if Alert)
-            if entry.alertSeverity != nil {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(alertColor)
-                    .imageScale(.medium)
-            }
             
-            // 2. Temperature (Scales to fit)
             Text("\(entry.temp)°")
                 .font(.system(size: 30, weight: .bold, design: .rounded))
                 .minimumScaleFactor(0.3) // Crucial: Allows text to shrink instead of wrapping
                 .lineLimit(1)            // Crucial: Forces single line
         }
         .widgetLabel {
-            // 3. Label (ALWAYS Data, NEVER Alert Text)
-            Image(systemName: "wind")
-                        Text("\(entry.windSpeed) \(entry.windDir) • FL \(entry.feelsLike)°")
-                    }
+            if entry.alertSeverity != nil {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(alertColor)
+                    .imageScale(.medium)
+                    .widgetAccentable()
+                Image(systemName: "wind")
+                Text("\(entry.windSpeed) \(entry.windDir) • FL \(entry.feelsLike)°")
+            }
+            else {
+                Image(systemName: "wind")
+                Text("\(entry.windSpeed) \(entry.windDir) • FL \(entry.feelsLike)°")
+            } }
     }
     
     @ViewBuilder
     var inlineView: some View {
-            if let severity = entry.alertSeverity {
-                // "⚠️ 72° • Severe Warning"
-                Text("⚠️ \(entry.temp)° • \(severity.capitalized) Alert")
-                    .foregroundStyle(alertColor)
-            } else {
-                Text("Feels \(entry.feelsLike)° • Wind \(entry.windSpeed) \(entry.windDir)")
-            }
+        if let severity = entry.alertSeverity {
+            // "⚠️ 72° • Severe Warning"
+            Text("⚠️ \(entry.temp)° • \(severity.capitalized) Alert")
+                .foregroundStyle(alertColor)
+        } else {
+            Text("Feels \(entry.feelsLike)° • Wind \(entry.windSpeed) \(entry.windDir)")
         }
+    }
     
     var alertColor: Color {
         if entry.alertSeverity == "severe" { return .red }
@@ -551,7 +552,7 @@ struct RideWeatherComplicationsBundle: WidgetBundle {
 
 struct SmartRideStatsWidget: Widget {
     let kind: String = "SmartRideStatsWidget"
-
+    
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: SmartRideStatsProvider()) { entry in
             SmartRideStatsEntryView(entry: entry)
@@ -565,7 +566,7 @@ struct SmartRideStatsWidget: Widget {
 
 struct RideWeatherComplication: Widget {
     let kind: String = "RideWeatherComplication"
-
+    
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: SimpleComplicationProvider()) { entry in
             RideWeatherComplicationEntryView(entry: entry)
@@ -579,7 +580,7 @@ struct RideWeatherComplication: Widget {
 
 struct StepsComplication: Widget {
     let kind: String = "StepsComplication"
-
+    
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: SimpleComplicationProvider()) { entry in
             StepsComplicationEntryView(entry: entry)
