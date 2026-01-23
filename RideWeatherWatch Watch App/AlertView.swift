@@ -2,7 +2,7 @@
 //  AlertView.swift
 //  RideWeatherWatch Watch App
 //
-//  Fixed: Reverted to WHITE text for the main Alert Page.
+//  Fixed: Explicit colored background based on severity
 //
 
 import SwiftUI
@@ -10,46 +10,61 @@ import SwiftUI
 struct AlertView: View {
     let alert: WeatherAlert
     
-    // Dynamic Background Gradient
-    private var backgroundColor: Color {
+    // Compute background gradient based on severity - transitions to black quickly
+    private var backgroundGradient: LinearGradient {
+        let baseColor: Color
         switch alert.severity {
-        case .severe: return .red
-        case .warning: return .orange
-        default: return .yellow
+        case .severe:
+            baseColor = .red
+        case .warning:
+            baseColor = .orange
+        default:
+            baseColor = .yellow
         }
+        // Gradient that goes to black quickly for better readability
+        return LinearGradient(
+            colors: [baseColor, baseColor.opacity(0.4), .black],
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
     
     var body: some View {
-        VStack(spacing: 8) {
+        ZStack {
+            // Explicit background layer
+            backgroundGradient
+                .ignoresSafeArea()
             
-            // Header Group
-            VStack(spacing: 4) {
-                // Warning Icon
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 32))
-                    .foregroundStyle(.white) // Fixed: Back to White
-                    .symbolEffect(.pulse.byLayer, options: .repeating, isActive: true)
+            VStack(spacing: 8) {
                 
-                // Alert Title
-                Text(alert.message.uppercased())
-                    .font(.system(size: 13, weight: .black, design: .rounded))
-                    .foregroundStyle(.white) // Fixed: Back to White
-                    .multilineTextAlignment(.center)
-                    .layoutPriority(1)
+                // Header Group
+                VStack(spacing: 4) {
+                    // Warning Icon
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.white)
+                        .symbolEffect(.pulse.byLayer, options: .repeating, isActive: true)
+                    
+                    // Alert Title
+                    Text(alert.message.uppercased())
+                        .font(.system(size: 13, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .layoutPriority(1)
+                }
+                .padding(.top, 4)
+                
+                // Full Description
+                ScrollView {
+                    Text(alert.cleanDescription)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.95))
+                        .multilineTextAlignment(.leading)
+                        .padding(.horizontal, 2)
+                }
+                .frame(maxWidth: .infinity)
             }
-            .padding(.top, 4)
-            
-            // Full Description
-            ScrollView {
-                Text(alert.cleanDescription)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.95)) // Fixed: Back to White
-                    .multilineTextAlignment(.leading)
-                    .padding(.horizontal, 2)
-            }
-            .frame(maxWidth: .infinity)
+            .padding()
         }
-        .padding()
-        .containerBackground(backgroundColor.gradient, for: .tabView)
     }
 }

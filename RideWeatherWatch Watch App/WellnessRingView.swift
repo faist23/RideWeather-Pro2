@@ -1,3 +1,4 @@
+/*
 //
 //  WellnessRingView.swift
 //  RideWeatherWatch Watch App
@@ -81,3 +82,4 @@ struct WellnessRingView: View {
     }
 }
 
+*/

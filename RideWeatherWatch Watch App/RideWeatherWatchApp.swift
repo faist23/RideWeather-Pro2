@@ -2,7 +2,7 @@
 //  RideWeatherWatchApp.swift
 //  RideWeatherWatch Watch App
 //
-//  Updated: Adds Conditional Alert Tab at Index 0
+//  Fixed: Proper background colors for all tabs including placeholders
 //
 
 import SwiftUI
@@ -63,7 +63,7 @@ class NavigationManager: ObservableObject {
         switch url.host {
         case "weather": selectedTab = .weather
         case "steps": selectedTab = .steps
-        case "alert": selectedTab = .alert // Handle alert deep links
+        case "alert": selectedTab = .alert
         default: break
         }
     }
@@ -74,7 +74,6 @@ struct ContentView: View {
     @ObservedObject private var session = WatchSessionManager.shared
     
     var body: some View {
-        // We bind the selection to the navigation manager.
         TabView(selection: $navigationManager.selectedTab) {
             
             // PAGE 1: READINESS
@@ -84,7 +83,7 @@ struct ContentView: View {
                     ReadinessView(readiness: readiness, tsb: load.currentTSB)
                 } else {
                     ContentUnavailableView("No Data", systemImage: "figure.strengthtraining.traditional")
-                        .containerBackground(.gray.gradient, for: .tabView)
+                        .containerBackground(Color(red: 0.3, green: 0, blue: 0).gradient, for: .tabView)
                 }
             }
             .tag(WatchTab.readiness)
@@ -108,7 +107,7 @@ struct ContentView: View {
                     RecoveryView(recovery: recovery, wellness: wellness)
                 } else {
                     ContentUnavailableView("No Data", systemImage: "heart.slash")
-                        .containerBackground(.black.gradient, for: .tabView)
+                        .containerBackground(Color(red: 0, green: 0, blue: 0.3).gradient, for: .tabView)
                 }
             }
             .tag(WatchTab.recovery)
@@ -128,8 +127,6 @@ struct ContentView: View {
             }
         }
         .tabViewStyle(.page)
-        // Auto-switch to alert ONLY if it's a new, severe warning.
-        // Otherwise, let the user discover it via the banner.
         .onChange(of: session.weatherAlert?.message) { _, newValue in
             if let alert = session.weatherAlert, alert.severity == .severe {
                 withAnimation { navigationManager.selectedTab = .alert }
@@ -137,4 +134,3 @@ struct ContentView: View {
         }
     }
 }
-

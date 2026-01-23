@@ -2,7 +2,7 @@
 //  RecoveryView.swift
 //  RideWeatherWatch Watch App
 //
-//  Design: "Cockpit Density" - % Left, Biometrics Right.
+//  Fixed: Explicit dark blue background
 //
 
 import SwiftUI
@@ -12,80 +12,89 @@ struct RecoveryView: View {
     let wellness: DailyWellnessMetrics
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: 8) {
-                
-                // --- PRIMARY DASHBOARD ---
-                HStack(alignment: .center, spacing: 8) {
+        ZStack {
+            // Explicit background - blue gradient to black
+            LinearGradient(
+                colors: [Color(red: 0, green: 0.15, blue: 0.4), Color(red: 0, green: 0.08, blue: 0.25), .black],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            
+            ScrollView {
+                VStack(spacing: 8) {
                     
-                    // LEFT: Recovery Score
-                    VStack(spacing: -2) {
-                        Text("\(recovery.recoveryPercent)")
-                            .font(.system(size: 56, weight: .black, design: .rounded))
+                    // --- PRIMARY DASHBOARD ---
+                    HStack(alignment: .center, spacing: 8) {
+                        
+                        // LEFT: Recovery Score
+                        VStack(spacing: -2) {
+                            Text("\(recovery.recoveryPercent)")
+                                .font(.system(size: 56, weight: .black, design: .rounded))
+                                .foregroundStyle(recoveryColor)
+                                .shadow(color: recoveryColor.opacity(0.3), radius: 4, x: 0, y: 2)
+                            
+                            Text("%")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(.secondary)
+                                .offset(y: -4)
+                        }
+                        .frame(maxWidth: .infinity)
+                        
+                        // RIGHT: Biometrics
+                        VStack(alignment: .leading, spacing: 6) {
+                            // Sleep
+                            CompactMetricRow(
+                                icon: "moon.stars.fill",
+                                value: String(format: "%.1f", (wellness.totalSleep ?? 0) / 3600),
+                                unit: "hrs",
+                                color: .blue
+                            )
+                            
+                            // HRV
+                            CompactMetricRow(
+                                icon: "heart.fill",
+                                value: "\(recovery.currentHRV)",
+                                unit: "HRV",
+                                color: .purple
+                            )
+                            
+                            // RHR
+                            CompactMetricRow(
+                                icon: "waveform.path.ecg",
+                                value: "\(wellness.restingHeartRate ?? 0)",
+                                unit: "bpm",
+                                color: .red
+                            )
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .padding(.top, 4)
+                    
+                    // --- ACTION ---
+                    VStack(spacing: 2) {
+                        Text(recovery.hrvStatus.uppercased())
+                            .font(.system(size: 11, weight: .black))
                             .foregroundStyle(recoveryColor)
-                            .shadow(color: recoveryColor.opacity(0.3), radius: 4, x: 0, y: 2)
                         
-                        Text("%")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(.secondary)
-                            .offset(y: -4)
+                        Text(recovery.recommendation)
+                            .font(.caption2)
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+                    .padding(8)
                     .frame(maxWidth: .infinity)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                     
-                    // RIGHT: Biometrics
-                    VStack(alignment: .leading, spacing: 6) {
-                        // Sleep
-                        CompactMetricRow(
-                            icon: "moon.stars.fill",
-                            value: String(format: "%.1f", (wellness.totalSleep ?? 0) / 3600),
-                            unit: "hrs",
-                            color: .blue
-                        )
-                        
-                        // HRV
-                        CompactMetricRow(
-                            icon: "heart.fill",
-                            value: "\(recovery.currentHRV)",
-                            unit: "HRV",
-                            color: .purple
-                        )
-                        
-                        // RHR
-                        CompactMetricRow(
-                            icon: "waveform.path.ecg",
-                            value: "\(wellness.restingHeartRate ?? 0)",
-                            unit: "bpm",
-                            color: .red
-                        )
-                    }
-                    .frame(maxWidth: .infinity)
+                    WatchSyncIndicator()
+                        .scaleEffect(0.7)
+                        .opacity(0.5)
                 }
-                .padding(.top, 4)
-                
-                // --- ACTION ---
-                VStack(spacing: 2) {
-                    Text(recovery.hrvStatus.uppercased())
-                        .font(.system(size: 11, weight: .black))
-                        .foregroundStyle(recoveryColor)
-                    
-                    Text(recovery.recommendation)
-                        .font(.caption2)
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(8)
-                .frame(maxWidth: .infinity)
-                .background(Color.white.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                
-                WatchSyncIndicator()
-                    .scaleEffect(0.7)
-                    .opacity(0.5)
+                .padding(.horizontal)
             }
-            .padding(.horizontal)
         }
-        .containerBackground(Color(red: 0, green: 0, blue: 0.3).gradient, for: .tabView)
     }
     
     private var recoveryColor: Color {
@@ -124,7 +133,7 @@ struct RecoveryRing: View {
     }
 }
 
-// MARK: - Recovery Metric (Simplified - no trend icons)
+// MARK: - Recovery Metric
 
 struct RecoveryMetric: View {
     let icon: String
@@ -173,6 +182,3 @@ enum MetricStatus {
         }
     }
 }
-
-// REMOVED: RecoveryStatus struct - now using the shared Codable version from iPhone
-// The recovery parameter passed to this view comes from WatchSessionManager.shared.recoveryStatus

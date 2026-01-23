@@ -28,7 +28,7 @@ class WatchSessionManager: NSObject, ObservableObject {
     // Computed properties for watch views
     @Published var recoveryStatus: RecoveryStatus?
     @Published var weeklyProgress: WeeklyProgress?
-    @Published var weeklyStats: WeeklyStats?
+//    @Published var weeklyStats: WeeklyStats?
     
     // Load from UserDefaults on init
     @Published var lastPreciseRideDate: Date? = UserDefaults.standard.object(forKey: "watch_last_precise_date") as? Date
@@ -314,11 +314,11 @@ extension WatchSessionManager: WCSessionDelegate {
             print("✅ Calculated Weekly Progress")
         }
         
-        // Calculate Weekly Stats
+/*        // Calculate Weekly Stats
         if !trainingHistory.isEmpty {
             self.weeklyStats = WeeklyStats.calculate(from: trainingHistory)
             print("✅ Calculated Weekly Stats: \(weeklyStats?.rideCount ?? 0) rides")
-        }
+        }*/
     }
     
     // Save data to App Group
