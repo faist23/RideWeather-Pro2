@@ -46,26 +46,26 @@ struct StepsDetailView: View {
                     
                     // RIGHT: Apple Fitness-style Activity Rings
                     ZStack {
-                        // Move Ring (outermost - red)
+                        // Move (outer)
                         ActivityRingView(
                             progress: moveCalories / moveGoal,
-                            color: Color(red: 1.0, green: 0.1, blue: 0.4),
+                            ringType: .move,
                             lineWidth: 8
                         )
                         .frame(width: 70, height: 70)
-                        
-                        // Exercise Ring (middle - green)
+
+                        // Exercise (middle)
                         ActivityRingView(
                             progress: exerciseMinutes / exerciseGoal,
-                            color: Color(red: 0.5, green: 1.0, blue: 0.2),
+                            ringType: .exercise,
                             lineWidth: 8
                         )
                         .frame(width: 54, height: 54)
-                        
-                        // Stand Ring (innermost - blue)
+
+                        // Stand (inner)
                         ActivityRingView(
                             progress: Double(standHours) / Double(standGoal),
-                            color: Color(red: 0.0, green: 0.8, blue: 1.0),
+                            ringType: .stand,
                             lineWidth: 8
                         )
                         .frame(width: 38, height: 38)
@@ -352,41 +352,105 @@ struct StepsDetailView: View {
     }
 }
 
+enum RingType {
+    case move
+    case exercise
+    case stand
+
+    var baseColor: Color {
+        switch self {
+        case .move:
+            return Color(red: 1.0, green: 0.18, blue: 0.33)
+        case .exercise:
+            return Color(red: 0.55, green: 1.0, blue: 0.20)
+        case .stand:
+            return Color(red: 0.30, green: 0.90, blue: 1.0)
+        }
+    }
+
+    /// Narrow highlight sweep (this creates depth)
+    var highlightGradient: AngularGradient {
+        AngularGradient(
+            gradient: Gradient(stops: [
+                .init(color: .white.opacity(0.0), location: 0.00),
+                .init(color: .white.opacity(0.0), location: 0.70),
+                .init(color: .white.opacity(0.35), location: 0.82),
+                .init(color: .white.opacity(0.0), location: 0.95)
+            ]),
+            center: .center,
+            startAngle: .degrees(0),
+            endAngle: .degrees(360)
+        )
+    }
+
+    var backgroundOpacity: Double { 0.12 }
+}
+
 // MARK: - Activity Ring View
 
 struct ActivityRingView: View {
     let progress: Double
-    let color: Color
+    let ringType: RingType
     let lineWidth: CGFloat
-    
+
+    private var clampedProgress: Double {
+        min(max(progress, 0), 2)
+    }
+
     var body: some View {
         ZStack {
-            // Background ring (empty state)
+
+            // MARK: - Background ring
             Circle()
-                .stroke(color.opacity(0.15), lineWidth: lineWidth)
-            
-            if progress > 0 {
-                // Main progress ring (0% to 100%)
+                .stroke(
+                    Color.white.opacity(ringType.backgroundOpacity),
+                    lineWidth: lineWidth
+                )
+
+            // MARK: - Base solid ring (this is key)
+            Circle()
+                .trim(from: 0, to: min(clampedProgress, 1.0))
+                .stroke(
+                    ringType.baseColor,
+                    style: StrokeStyle(
+                        lineWidth: lineWidth,
+                        lineCap: .round
+                    )
+                )
+                .rotationEffect(.degrees(-90))
+
+            // MARK: - Directional highlight (Apple-style sheen)
+            Circle()
+                .trim(from: 0, to: min(clampedProgress, 1.0))
+                .stroke(
+                    ringType.highlightGradient,
+                    style: StrokeStyle(
+                        lineWidth: lineWidth,
+                        lineCap: .round
+                    )
+                )
+                .rotationEffect(.degrees(-90))
+                .opacity(0.85)
+
+            // MARK: - Overflow lap
+            if clampedProgress > 1.0 {
                 Circle()
-                    .trim(from: 0, to: min(progress, 1.0))
+                    .trim(from: 0, to: min(clampedProgress - 1.0, 1.0))
                     .stroke(
-                        color,
-                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                        ringType.baseColor,
+                        style: StrokeStyle(
+                            lineWidth: lineWidth,
+                            lineCap: .round
+                        )
                     )
                     .rotationEffect(.degrees(-90))
-                
-                // Overflow ring (beyond 100%) - creates double-thick appearance
-                if progress > 1.0 {
-                    Circle()
-                        .trim(from: 0, to: min(progress - 1.0, 1.0))
-                        .stroke(
-                            color,
-                            style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
-                        )
-                        .rotationEffect(.degrees(-90))
-                }
+                    .opacity(0.9)
             }
         }
-        .animation(.easeInOut(duration: 0.5), value: progress)
+        .animation(
+            .timingCurve(0.2, 0.8, 0.2, 1.0, duration: 0.45),
+            value: clampedProgress
+        )
     }
 }
+
