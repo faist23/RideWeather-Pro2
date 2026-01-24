@@ -45,30 +45,38 @@ struct StepsDetailView: View {
                     .frame(maxWidth: .infinity)
                     
                     // RIGHT: Apple Fitness-style Activity Rings
+                    // Black background required by Apple guidelines
                     ZStack {
-                        // Move (outer)
-                        ActivityRingView(
-                            progress: moveCalories / moveGoal,
-                            ringType: .move,
-                            lineWidth: 8
-                        )
-                        .frame(width: 70, height: 70)
+                        // Black circular background
+                        Circle()
+                            .fill(.black)
+                            .frame(width: 72, height: 72)
+                        
+                        ZStack {
+                            // Move (outer) - Tighter spacing
+                            ActivityRingView(
+                                progress: moveCalories / moveGoal,
+                                ringType: .move,
+                                lineWidth: 7
+                            )
+                            .frame(width: 64, height: 64)
 
-                        // Exercise (middle)
-                        ActivityRingView(
-                            progress: exerciseMinutes / exerciseGoal,
-                            ringType: .exercise,
-                            lineWidth: 8
-                        )
-                        .frame(width: 54, height: 54)
+                            // Exercise (middle)
+                            ActivityRingView(
+                                progress: exerciseMinutes / exerciseGoal,
+                                ringType: .exercise,
+                                lineWidth: 7
+                            )
+                            .frame(width: 48, height: 48)
 
-                        // Stand (inner)
-                        ActivityRingView(
-                            progress: Double(standHours) / Double(standGoal),
-                            ringType: .stand,
-                            lineWidth: 8
-                        )
-                        .frame(width: 38, height: 38)
+                            // Stand (inner)
+                            ActivityRingView(
+                                progress: Double(standHours) / Double(standGoal),
+                                ringType: .stand,
+                                lineWidth: 7
+                            )
+                            .frame(width: 32, height: 32)
+                        }
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -79,7 +87,7 @@ struct StepsDetailView: View {
                     // Move
                     HStack {
                         Circle()
-                            .fill(.red)
+                            .fill(Color(red: 250/255, green: 17/255, blue: 79/255))
                             .frame(width: 8, height: 8)
                         Text("Move")
                             .font(.system(size: 11, weight: .semibold))
@@ -93,7 +101,7 @@ struct StepsDetailView: View {
                     // Exercise
                     HStack {
                         Circle()
-                            .fill(.green)
+                            .fill(Color(red: 166/255, green: 255/255, blue: 0/255))
                             .frame(width: 8, height: 8)
                         Text("Exercise")
                             .font(.system(size: 11, weight: .semibold))
@@ -107,7 +115,7 @@ struct StepsDetailView: View {
                     // Stand
                     HStack {
                         Circle()
-                            .fill(.cyan)
+                            .fill(Color(red: 0/255, green: 255/255, blue: 249/255))
                             .frame(width: 8, height: 8)
                         Text("Stand")
                             .font(.system(size: 11, weight: .semibold))
@@ -175,7 +183,7 @@ struct StepsDetailView: View {
                 self.todaySteps = stepsValue
                 self.moveCalories = moveValue.current
                 self.moveGoal = moveValue.goal
-                self.exerciseMinutes = exerciseValue.current / 60 // Convert seconds to minutes
+                self.exerciseMinutes = exerciseValue.current / 60
                 self.exerciseGoal = exerciseValue.goal / 60
                 self.standHours = standValue
                 self.isLoading = false
@@ -187,7 +195,6 @@ struct StepsDetailView: View {
                 print("   Exercise: \(Int(exerciseValue.current/60))/\(Int(exerciseValue.goal/60)) min")
                 print("   Stand: \(standValue)/\(standGoal) hrs")
                 
-                // Save to widget storage
                 WatchAppGroupManager.shared.saveSteps(stepsValue)
             }
         }
@@ -352,38 +359,12 @@ struct StepsDetailView: View {
     }
 }
 
+// MARK: - Ring Type
+
 enum RingType {
     case move
     case exercise
     case stand
-
-    var baseColor: Color {
-        switch self {
-        case .move:
-            return Color(red: 1.0, green: 0.18, blue: 0.33)
-        case .exercise:
-            return Color(red: 0.55, green: 1.0, blue: 0.20)
-        case .stand:
-            return Color(red: 0.30, green: 0.90, blue: 1.0)
-        }
-    }
-
-    /// Narrow highlight sweep (this creates depth)
-    var highlightGradient: AngularGradient {
-        AngularGradient(
-            gradient: Gradient(stops: [
-                .init(color: .white.opacity(0.0), location: 0.00),
-                .init(color: .white.opacity(0.0), location: 0.70),
-                .init(color: .white.opacity(0.35), location: 0.82),
-                .init(color: .white.opacity(0.0), location: 0.95)
-            ]),
-            center: .center,
-            startAngle: .degrees(0),
-            endAngle: .degrees(360)
-        )
-    }
-
-    var backgroundOpacity: Double { 0.12 }
 }
 
 // MARK: - Activity Ring View
@@ -396,22 +377,33 @@ struct ActivityRingView: View {
     private var clampedProgress: Double {
         min(max(progress, 0), 2)
     }
+    
+    // Apple's exact colors from documentation
+    private var baseColor: Color {
+        switch ringType {
+        case .move:
+            return Color(red: 250/255, green: 17/255, blue: 79/255)
+        case .exercise:
+            return Color(red: 166/255, green: 255/255, blue: 0/255)
+        case .stand:
+            return Color(red: 0/255, green: 255/255, blue: 249/255)
+        }
+    }
 
     var body: some View {
         ZStack {
-
-            // MARK: - Background ring
+            // Background ring (empty state)
             Circle()
                 .stroke(
-                    Color.white.opacity(ringType.backgroundOpacity),
+                    baseColor.opacity(0.25),
                     lineWidth: lineWidth
                 )
 
-            // MARK: - Base solid ring (this is key)
+            // Main progress ring (0-100%)
             Circle()
                 .trim(from: 0, to: min(clampedProgress, 1.0))
                 .stroke(
-                    ringType.baseColor,
+                    baseColor,
                     style: StrokeStyle(
                         lineWidth: lineWidth,
                         lineCap: .round
@@ -419,32 +411,18 @@ struct ActivityRingView: View {
                 )
                 .rotationEffect(.degrees(-90))
 
-            // MARK: - Directional highlight (Apple-style sheen)
-            Circle()
-                .trim(from: 0, to: min(clampedProgress, 1.0))
-                .stroke(
-                    ringType.highlightGradient,
-                    style: StrokeStyle(
-                        lineWidth: lineWidth,
-                        lineCap: .round
-                    )
-                )
-                .rotationEffect(.degrees(-90))
-                .opacity(0.85)
-
-            // MARK: - Overflow lap
+            // Overflow ring (100%+) - FULL OPACITY for visibility
             if clampedProgress > 1.0 {
                 Circle()
                     .trim(from: 0, to: min(clampedProgress - 1.0, 1.0))
                     .stroke(
-                        ringType.baseColor,
+                        baseColor,  // Same full color, not dimmed
                         style: StrokeStyle(
                             lineWidth: lineWidth,
                             lineCap: .round
                         )
                     )
                     .rotationEffect(.degrees(-90))
-                    .opacity(0.9)
             }
         }
         .animation(
@@ -453,4 +431,3 @@ struct ActivityRingView: View {
         )
     }
 }
-

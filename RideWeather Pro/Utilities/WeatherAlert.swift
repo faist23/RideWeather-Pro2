@@ -29,7 +29,7 @@ struct WeatherAlert: Codable, Identifiable {
     
     var color: Color {
         switch severity {
-        case .severe: return .red
+        case .severe: return Color(red: 147/255, green: 11/255, blue: 0/255) // Darker red for better contrast
         case .warning: return .orange
         case .advisory: return .yellow
         }

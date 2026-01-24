@@ -22,7 +22,7 @@ struct SharedWeatherSummary: Codable {
     let windDirection: String
     let pop: Int
     let generatedAt: Date
-    let alertSeverity: String? // NEW
+    let alertSeverity: String?
 }
 
 enum ComplicationMode {
@@ -62,7 +62,7 @@ struct SimpleComplicationEntry: TimelineEntry {
     let conditionIcon: String
     
     // Alert Data
-    let alertSeverity: String? // NEW
+    let alertSeverity: String? // Holds "severe", "warning", or "advisory"
     
     // Steps Data
     let todaySteps: Int
@@ -194,6 +194,11 @@ struct SimpleComplicationProvider: TimelineProvider {
             dir = weather.windDirection
             icon = weather.conditionIcon
             alert = weather.alertSeverity // Load Alert
+        }
+        
+        // NEW: Override with the specific priority alert set by WatchSessionManager
+        if let activeAlert = defaults?.string(forKey: "widget_active_alert") {
+            alert = activeAlert
         }
         
         let todaySteps = defaults?.integer(forKey: "widget_today_steps") ?? 0
@@ -472,8 +477,12 @@ struct RideWeatherComplicationEntryView: View {
     }
     
     var alertColor: Color {
-        if entry.alertSeverity == "severe" { return .red }
-        return .yellow
+        switch entry.alertSeverity {
+        case "severe": return .red
+        case "warning": return .orange
+        case "watch", "advisory": return .yellow
+        default: return .yellow
+        }
     }
 }
 

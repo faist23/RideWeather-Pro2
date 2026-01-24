@@ -9,6 +9,13 @@ import SwiftUI
 import UserNotifications
 import Combine
 
+// Ensure WeatherAlert is Equatable for onChange to work
+extension WeatherAlert: Equatable {
+    static func == (lhs: WeatherAlert, rhs: WeatherAlert) -> Bool {
+        return lhs.message == rhs.message && lhs.description == rhs.description
+    }
+}
+
 // MARK: - Tab Definitions
 enum WatchTab: Hashable {
     case readiness
@@ -16,7 +23,7 @@ enum WatchTab: Hashable {
     case recovery
     case steps
     case weather
-    case alert
+    case alert(Int) // CHANGED: Now accepts an index (0, 1, 2...)
 }
 
 @main
@@ -63,7 +70,7 @@ class NavigationManager: ObservableObject {
         switch url.host {
         case "weather": selectedTab = .weather
         case "steps": selectedTab = .steps
-        case "alert": selectedTab = .alert
+        case "alert": selectedTab = .alert(0)
         default: break
         }
     }
@@ -120,16 +127,27 @@ struct ContentView: View {
             WeatherDetailView()
                 .tag(WatchTab.weather)
             
-            // PAGE 6: ALERT (Only if active)
-            if let alert = session.weatherAlert {
-                AlertView(alert: alert)
-                    .tag(WatchTab.alert)
+            // PAGE 6+: DYNAMIC ALERTS
+            // Check if array is empty
+            if !session.weatherAlerts.isEmpty {
+                // Enumerated loop to give each alert a unique index tag
+                ForEach(Array(session.weatherAlerts.enumerated()), id: \.offset) { index, alert in
+                    AlertView(alert: alert)
+                        .tag(WatchTab.alert(index))
+                }
             }
         }
         .tabViewStyle(.page)
-        .onChange(of: session.weatherAlert?.message) { _, newValue in
-            if let alert = session.weatherAlert, alert.severity == .severe {
-                withAnimation { navigationManager.selectedTab = .alert }
+        // FIX: Remove '$' from session.weatherAlerts
+        // FIX: Ensure WeatherAlert conforms to Equatable (added extension above)
+        .onChange(of: session.weatherAlerts) { oldValue, newValue in
+            // Logic: If we have alerts, and the first one is severe, auto-switch to it
+            if let firstAlert = newValue.first, firstAlert.severity == .severe {
+                withAnimation {
+                    // Only switch if we weren't already looking at an alert
+                    // (Optional check to prevent annoyance while scrolling)
+                    navigationManager.selectedTab = .alert(0)
+                }
             }
         }
     }

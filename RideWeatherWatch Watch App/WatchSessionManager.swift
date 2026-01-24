@@ -23,7 +23,7 @@ class WatchSessionManager: NSObject, ObservableObject {
     @Published var readinessData: PhysiologicalReadiness?
     @Published var trainingHistory: [DailyTrainingLoad] = []
     @Published var wellnessHistory: [DailyWellnessMetrics] = []
-    @Published var weatherAlert: WeatherAlert?
+    @Published var weatherAlerts: [WeatherAlert] = []
     
     // Computed properties for watch views
     @Published var recoveryStatus: RecoveryStatus?
@@ -53,13 +53,33 @@ class WatchSessionManager: NSObject, ObservableObject {
         print("⌚️ WCSession activation requested")
     }
     
-    func updateWeatherAlertIndependent(_ alert: WeatherAlert?) {
-        self.weatherAlert = alert
+    // MARK: - Weather Update Helper
+    
+    func updateWeatherAlerts(_ alerts: [WeatherAlert]) {
+        self.weatherAlerts = alerts
         
-        // Haptic for locally detected alerts
-        if let alert = alert, alert.severity == .severe {
-            WKInterfaceDevice.current().play(.notification)
+        // FIXED: Define 'defaults' here so it is available in the scope below
+        let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
+        
+        // Priority: Severe > Warning > Advisory
+        var mostSevereStatus: String? = nil
+        
+        if alerts.contains(where: { $0.severity == .severe }) {
+            mostSevereStatus = "severe"
+            WKInterfaceDevice.current().play(.notification) // Haptic
+        } else if alerts.contains(where: { $0.severity == .warning }) {
+            mostSevereStatus = "warning"
+        } else if !alerts.isEmpty {
+            mostSevereStatus = "advisory"
         }
+        
+        if let status = mostSevereStatus {
+            defaults?.set(status, forKey: "widget_active_alert")
+        } else {
+            defaults?.removeObject(forKey: "widget_active_alert")
+        }
+        
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
 
@@ -203,7 +223,7 @@ extension WatchSessionManager: WCSessionDelegate {
         if let weatherData = context["weatherAlert"] as? Data {
             do {
                 let decoded = try JSONDecoder().decode(WeatherAlert.self, from: weatherData)
-                self.weatherAlert = decoded
+                self.weatherAlerts = [decoded]
                 
                 // FIX: Immediately save this new alert to the Widget Key
                 let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
@@ -216,8 +236,12 @@ extension WatchSessionManager: WCSessionDelegate {
                 print("❌ Failed to decode Weather Alert")
             }
         } else {
-            // If context has NO alert, we should clear it
-            self.weatherAlert = nil
+            // If context has NO alert, we should clear it ONLY if we aren't fetching locally
+            // For safety in this transition, we won't forcibly clear 'weatherAlerts' here
+            // to avoid overwriting the local fetch.
+            
+            // self.weatherAlerts = [] // Commented out to prefer local OneCall data
+            
             let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
             defaults?.removeObject(forKey: "widget_active_alert")
         }
@@ -345,11 +369,10 @@ extension WatchSessionManager: WCSessionDelegate {
             print("⌚️ Saved steps to widget: \(steps)")
         }
         
-        // FIX: Ensure the current alert state is enforced
-        if let alert = self.weatherAlert {
-            defaults?.set(alert.severity.rawValue, forKey: "widget_active_alert")
+        // FIX: Ensure the current alert state is enforced (using the most severe alert)
+        if let mostSevere = self.weatherAlerts.sorted(by: { $0.severity.rawValue > $1.severity.rawValue }).first {
+            defaults?.set(mostSevere.severity.rawValue, forKey: "widget_active_alert")
         } else {
-            // Only remove if we are sure we want to clear it (optional, usually safer to let Fetchers handle this)
             defaults?.removeObject(forKey: "widget_active_alert")
         }
         

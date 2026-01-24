@@ -22,7 +22,7 @@ class WatchWeatherService {
     }
     
     // Updated return type to include optional Alert
-    func fetchWeather(for coordinate: CLLocationCoordinate2D) async throws -> (data: WatchWeatherData, alert: WeatherAlert?) {
+    func fetchWeather(for coordinate: CLLocationCoordinate2D) async throws -> (data: WatchWeatherData, alerts: [WeatherAlert]) {
         // Switch to One Call API (exclude minutely, hourly, daily to save data/battery)
         let urlString = "https://api.openweathermap.org/data/3.0/onecall?lat=\(coordinate.latitude)&lon=\(coordinate.longitude)&exclude=minutely,hourly,daily&appid=\(apiKey)&units=imperial"
         
@@ -47,17 +47,16 @@ class WatchWeatherService {
             lowTemp: 0
         )
         
-        // Map Alert (if exists)
-        var weatherAlert: WeatherAlert? = nil
-        if let firstAlert = response.alerts?.first {
-            weatherAlert = WeatherAlert(
-                message: firstAlert.event,
-                description: firstAlert.description,
-                severity: mapSeverity(firstAlert.event) // Heuristic mapping
+        // Map ALL alerts
+        let alerts = response.alerts?.map { alertRaw in
+            WeatherAlert(
+                message: alertRaw.event,
+                description: alertRaw.description,
+                severity: mapSeverity(alertRaw.event)
             )
-        }
+        } ?? [] // Default to empty array if nil
         
-        return (weatherData, weatherAlert)
+        return (weatherData, alerts)
     }
     
     // ... loadConfig and configValue remain the same ...

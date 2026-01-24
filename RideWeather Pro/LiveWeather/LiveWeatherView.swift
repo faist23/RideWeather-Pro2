@@ -348,20 +348,19 @@ struct WeatherAlertBanner: View {
                 HStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.title3)
-                    // ✅ FIX: Use alert.textColor (Black on Yellow)
                         .foregroundStyle(alert.textColor)
                         .symbolEffect(.pulse, options: .repeating, isActive: true)
                     
                     Text(alert.message.capitalized)
                         .font(.headline.bold())
-                        .foregroundStyle(alert.textColor) // ✅ FIX
+                        .foregroundStyle(alert.textColor)
                         .lineLimit(1)
                     
                     Spacer()
                     
                     Image(systemName: "chevron.down")
                         .rotationEffect(.degrees(isExpanded ? 180 : 0))
-                        .foregroundStyle(alert.textColor.opacity(0.8)) // ✅ FIX
+                        .foregroundStyle(alert.textColor.opacity(0.8)) 
                 }
                 .padding()
                 .background(alert.color.gradient) // Use alert.color (Yellow/Orange/Red)

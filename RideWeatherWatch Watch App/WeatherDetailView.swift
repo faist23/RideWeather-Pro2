@@ -18,11 +18,11 @@ struct WeatherDetailView: View {
                 
                 if let weather = loadWeatherData() {
                     
-                    // --- ACTIVE ALERT BANNER ---
-                    if let alert = session.weatherAlert {
+                    // Check the array for the first alert
+                    if let alert = session.weatherAlerts.first {
                         Button {
                             withAnimation {
-                                navigationManager.selectedTab = .alert
+                                navigationManager.selectedTab = .alert(0)
                             }
                         } label: {
                             HStack(spacing: 8) {
@@ -42,9 +42,21 @@ struct WeatherDetailView: View {
                                         .foregroundStyle(.black)
                                 }
                                 Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption2)
-                                    .foregroundStyle(.black.opacity(0.6))
+                                
+                                // MULTI-ALERT INDICATOR
+                                // If we have more than 1 alert, show a small badge
+                                if session.weatherAlerts.count > 1 {
+                                    Text("+\(session.weatherAlerts.count - 1)")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(.black)
+                                        .padding(4)
+                                        .background(Color.white.opacity(0.4))
+                                        .clipShape(Circle())
+                                } else {
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption2)
+                                        .foregroundStyle(.black.opacity(0.6))
+                                }
                             }
                             .padding(8)
                             .background(alert.severity == .severe ? Color.red : (alert.severity == .warning ? Color.orange : Color.yellow))
@@ -113,8 +125,7 @@ struct WeatherDetailView: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .padding(.top, session.weatherAlert == nil ? 4 : 0)
-                    
+                    .padding(.top, session.weatherAlerts.isEmpty ? 4 : 0)
                     // Footer
                     Text("Updated: \(weather.generatedAt.formatted(date: .omitted, time: .shortened))")
                         .font(.system(size: 10))
