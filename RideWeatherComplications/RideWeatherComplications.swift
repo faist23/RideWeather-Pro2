@@ -212,6 +212,46 @@ struct SimpleComplicationProvider: TimelineProvider {
     }
 }
 
+// MARK: - Steps Provider
+struct StepsComplicationProvider: TimelineProvider {
+    let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
+    
+    func placeholder(in context: Context) -> SimpleComplicationEntry {
+        SimpleComplicationEntry(
+            date: Date(),
+            temp: 0, feelsLike: 0, windSpeed: 0, windDir: "", conditionIcon: "",
+            alertSeverity: nil,
+            todaySteps: 8543
+        )
+    }
+    
+    func getSnapshot(in context: Context, completion: @escaping (SimpleComplicationEntry) -> ()) {
+        completion(createEntry(for: Date()))
+    }
+    
+    func getTimeline(in context: Context, completion: @escaping (Timeline<SimpleComplicationEntry>) -> ()) {
+        // Don't fetch weather - just read steps
+        let entry = createEntry(for: Date())
+        
+        // Refresh every 15 minutes to match BackgroundStepsUpdater
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
+        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
+        
+        completion(timeline)
+    }
+    
+    private func createEntry(for date: Date) -> SimpleComplicationEntry {
+        let todaySteps = defaults?.integer(forKey: "widget_today_steps") ?? 0
+        
+        return SimpleComplicationEntry(
+            date: date,
+            temp: 0, feelsLike: 0, windSpeed: 0, windDir: "", conditionIcon: "",
+            alertSeverity: nil,
+            todaySteps: todaySteps
+        )
+    }
+}
+
 // MARK: - Smart Ride Stats View (Original)
 
 struct SmartRideStatsEntryView: View {
@@ -591,7 +631,7 @@ struct StepsComplication: Widget {
     let kind: String = "StepsComplication"
     
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: SimpleComplicationProvider()) { entry in
+        StaticConfiguration(kind: kind, provider: StepsComplicationProvider()) { entry in
             StepsComplicationEntryView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
         }

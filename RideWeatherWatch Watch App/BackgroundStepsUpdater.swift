@@ -107,9 +107,10 @@ class BackgroundStepsUpdater: NSObject, CLLocationManagerDelegate {
         
         // Save to shared storage
         defaults?.set(steps, forKey: "widget_today_steps")
+        defaults?.synchronize() // Force sync
         
-        // Force widget refresh
-        WidgetCenter.shared.reloadAllTimelines()
+        // Force widget refresh with specific kind
+        WidgetCenter.shared.reloadTimelines(ofKind: "StepsComplication")
         
         print("📊 Background updated steps: \(steps)")
     }

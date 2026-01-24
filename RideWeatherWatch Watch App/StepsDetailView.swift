@@ -323,7 +323,8 @@ struct StepsDetailView: View {
     
     private func refreshWidgetData() {
         WatchAppGroupManager.shared.saveSteps(todaySteps)
-        WidgetCenter.shared.reloadAllTimelines()
+        // Reload only the steps widget, not all timelines
+        WidgetCenter.shared.reloadTimelines(ofKind: "StepsComplication")
     }
     
     private func activityTitle() -> String {

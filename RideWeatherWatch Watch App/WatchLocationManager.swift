@@ -17,10 +17,13 @@ class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegat
     @Published var currentLocation: CLLocation?
     @Published var locationStatus: CLAuthorizationStatus = .notDetermined
     
+    // NEW: Background task for periodic updates
+    private var updateTask: Task<Void, Never>?
+    
     override init() {
         super.init()
         locationManager.delegate = self
-        locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters // Good balance for battery
+        locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         locationManager.requestWhenInUseAuthorization()
     }
     
@@ -31,8 +34,31 @@ class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegat
             locationManager.requestWhenInUseAuthorization()
         }
         
-        // Request a one-time location update to refresh weather
+        // Request initial location update
         locationManager.requestLocation()
+        
+        // NEW: Start periodic background updates
+        startPeriodicUpdates()
+    }
+    
+    // NEW: Periodic refresh every 30 minutes
+    private func startPeriodicUpdates() {
+        // Cancel any existing task
+        updateTask?.cancel()
+        
+        updateTask = Task {
+            while !Task.isCancelled {
+                // Wait 30 minutes
+                try? await Task.sleep(nanoseconds: 30 * 60 * 1_000_000_000)
+                
+                guard !Task.isCancelled else { break }
+                
+                // Trigger location refresh
+                locationManager.requestLocation()
+                
+                print("🔄 Periodic weather update triggered")
+            }
+        }
     }
     
     // MARK: - Core Location Delegate
@@ -49,10 +75,9 @@ class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegat
         self.currentLocation = location
         
         // Save to Shared Defaults for Widgets/Complications
-        // (Assuming you use a shared group ID like "group.com.yourname.rideweather")
-        if let sharedDefaults = UserDefaults(suiteName: "group.com.faist.rideweather") {
-            sharedDefaults.set(location.coordinate.latitude, forKey: "lastLatitude")
-            sharedDefaults.set(location.coordinate.longitude, forKey: "lastLongitude")
+        if let sharedDefaults = UserDefaults(suiteName: "group.com.ridepro.rideweather") {
+            sharedDefaults.set(location.coordinate.latitude, forKey: "user_latitude")
+            sharedDefaults.set(location.coordinate.longitude, forKey: "user_longitude")
             sharedDefaults.set(Date(), forKey: "lastLocationUpdate")
         }
         
@@ -79,18 +104,22 @@ class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegat
             print("🔄 Fetching weather for: \(loc.coordinate.latitude), \(loc.coordinate.longitude)")
             
             // 1. Fetch Data (Tuple: Data + Array of Alerts)
-            let (_, alerts) = try await WatchWeatherService.shared.fetchWeather(for: loc.coordinate)
+            let (weatherData, alerts) = try await WatchWeatherService.shared.fetchWeather(for: loc.coordinate)
             
             // 2. Update Session (Main Actor is guaranteed by class annotation)
             WatchSessionManager.shared.updateWeatherAlerts(alerts)
             
-            // 3. Update Complications (Optional: Notify system that data changed)
-            // WatchAppGroupManager.shared.updateComplicationData(...)
+            // 3. Save weather data for widget
+            WatchAppGroupManager.shared.saveWeatherData(weatherData, alert: alerts.first)
             
             print("✅ Weather Updated. Alerts found: \(alerts.count)")
             
         } catch {
             print("❌ Error fetching weather: \(error)")
         }
+    }
+    
+    deinit {
+        updateTask?.cancel()
     }
 }

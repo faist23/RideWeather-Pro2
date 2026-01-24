@@ -41,9 +41,9 @@ struct LiveWeatherView: View {
                             .offset(y: scrollOffset > 0 ? -scrollOffset * 0.7 : 0)
                             .opacity(1 - (scrollOffset / 200).clamped(to: 0...1))
                         
-                        // Weather Alert
-                        if let alert = viewModel.activeAlert {
-                            WeatherAlertBanner(alert: alert)
+                        // Weather Alerts Carousel
+                        if !viewModel.weatherAlerts.isEmpty {
+                            WeatherAlertsCarousel(alerts: viewModel.weatherAlerts)
                                 .transition(.move(edge: .top).combined(with: .opacity))
                         }
                         
@@ -336,14 +336,123 @@ struct ModernAnalyticsStatCard: View {
     }
 }
 
+// MARK: - Weather Alerts Carousel
+
+struct WeatherAlertsCarousel: View {
+    let alerts: [WeatherAlert]
+    @State private var scrollPosition: UUID?
+    @State private var expandedAlertId: UUID?
+    
+    // Sort alerts by severity (severe > warning > advisory)
+    private var sortedAlerts: [WeatherAlert] {
+        alerts.sorted { alert1, alert2 in
+            let severityOrder: [WeatherAlert.Severity: Int] = [
+                .severe: 0,
+                .warning: 1,
+                .advisory: 2
+            ]
+            return (severityOrder[alert1.severity] ?? 3) < (severityOrder[alert2.severity] ?? 3)
+        }
+    }
+    
+    private var currentIndex: Int {
+        guard let scrollPosition = scrollPosition,
+              let index = sortedAlerts.firstIndex(where: { $0.id == scrollPosition }) else {
+            return 0
+        }
+        return index
+    }
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            // Horizontal ScrollView for all alerts
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(sortedAlerts) { alert in
+                        WeatherAlertBanner(
+                            alert: alert,
+                            isExpanded: expandedAlertId == alert.id,
+                            onToggle: {
+                                print("🔔 Alert tapped: \(alert.message)")
+                                withAnimation(.spring()) {
+                                    if expandedAlertId == alert.id {
+                                        print("🔔 Collapsing alert")
+                                        expandedAlertId = nil
+                                    } else {
+                                        print("🔔 Expanding alert")
+                                        expandedAlertId = alert.id
+                                    }
+                                }
+                            }
+                        )
+                        .containerRelativeFrame(.horizontal)
+                        .scrollTransition { content, phase in
+                            content
+                                .opacity(phase.isIdentity ? 1 : 0.8)
+                                .scaleEffect(phase.isIdentity ? 1 : 0.95)
+                        }
+                        .id(alert.id)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $scrollPosition)
+            .onChange(of: scrollPosition) { oldValue, newValue in
+                // Auto-expand the new alert if previous one was expanded
+                if oldValue != newValue, expandedAlertId != nil, let newValue = newValue {
+                    withAnimation(.spring()) {
+                        expandedAlertId = newValue
+                    }
+                }
+            }
+            .onAppear {
+                // Set initial position to first alert
+                if scrollPosition == nil {
+                    scrollPosition = sortedAlerts.first?.id
+                }
+            }
+            
+            // Page Indicators
+            if sortedAlerts.count > 1 {
+                HStack(spacing: 8) {
+                    // Dot indicators
+                    HStack(spacing: 6) {
+                        ForEach(0..<sortedAlerts.count, id: \.self) { index in
+                            Circle()
+                                .fill(index == currentIndex ? .white : .white.opacity(0.4))
+                                .frame(width: 6, height: 6)
+                                .scaleEffect(index == currentIndex ? 1.2 : 1.0)
+                                .animation(.spring(duration: 0.3), value: currentIndex)
+                        }
+                    }
+                    
+                    // Counter badge
+                    Text("\(currentIndex + 1) of \(sortedAlerts.count)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.white.opacity(0.15), in: Capsule())
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 4)
+            }
+        }
+    }
+}
+
+// MARK: - Weather Alert Banner (Updated)
+
 struct WeatherAlertBanner: View {
     let alert: WeatherAlert
-    @State private var isExpanded = false
+    let isExpanded: Bool
+    let onToggle: () -> Void
     
     var body: some View {
         VStack(spacing: 0) {
             Button {
-                withAnimation(.spring()) { isExpanded.toggle() }
+                onToggle()
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -360,16 +469,15 @@ struct WeatherAlertBanner: View {
                     
                     Image(systemName: "chevron.down")
                         .rotationEffect(.degrees(isExpanded ? 180 : 0))
-                        .foregroundStyle(alert.textColor.opacity(0.8)) 
+                        .foregroundStyle(alert.textColor.opacity(0.8))
                 }
                 .padding()
-                .background(alert.color.gradient) // Use alert.color (Yellow/Orange/Red)
+                .background(alert.color.gradient)
             }
             .buttonStyle(.plain)
             
             if isExpanded {
                 VStack(alignment: .leading, spacing: 8) {
-                    // SHOW DESCRIPTION
                     Text(alert.cleanDescription)
                         .font(.subheadline)
                         .foregroundStyle(alert.textColor)
@@ -382,14 +490,13 @@ struct WeatherAlertBanner: View {
                 }
                 .padding()
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(alert.color) // Match background
+                .background(alert.color)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(radius: 4)
     }
 }
-
 // MARK: - Extensions for WeatherViewModel
 
 extension WeatherViewModel {
@@ -407,3 +514,58 @@ extension WeatherViewModel {
     }
 }
 
+/*
+#Preview("Multiple Alerts") {
+    NavigationStack {
+        ScrollView {
+            VStack(spacing: 20) {
+                WeatherAlertsCarousel(alerts: [
+                    WeatherAlert(
+                        message: "Winter Storm Warning",
+                        description: "Heavy snow expected. Total snow accumulations of 8 to 12 inches possible. Winds gusting as high as 35 mph. Travel could be very difficult. The hazardous conditions could impact the morning or evening commute.",
+                        severity: .severe
+                    ),
+                    WeatherAlert(
+                        message: "Wind Advisory",
+                        description: "Sustained winds of 20 to 30 mph with gusts up to 50 mph expected.",
+                        severity: .warning
+                    ),
+                    WeatherAlert(
+                        message: "Frost Advisory",
+                        description: "Temperatures as low as 32 degrees will result in frost formation.",
+                        severity: .advisory
+                    )
+                ])
+                .padding()
+                
+                Text("Swipe to see all alerts →")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+        }
+        .background(.blue.gradient)
+    }
+}
+
+#Preview("Single Alert") {
+    NavigationStack {
+        ScrollView {
+            VStack(spacing: 20) {
+                WeatherAlertsCarousel(alerts: [
+                    WeatherAlert(
+                        message: "Winter Storm Warning",
+                        description: "Heavy snow expected. Total snow accumulations of 8 to 12 inches possible. Winds gusting as high as 35 mph. Travel could be very difficult. The hazardous conditions could impact the morning or evening commute.",
+                        severity: .severe
+                    )
+                ])
+                .padding()
+                
+                Text("Single alert - no carousel needed")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+        }
+        .background(.blue.gradient)
+    }
+}
+*/

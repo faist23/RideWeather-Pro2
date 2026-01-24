@@ -47,8 +47,9 @@ class WeatherViewModel: ObservableObject {
     @Published var uiState: UIState = .loading
     @Published var currentLocation: CLLocation?
     
-    @Published var activeAlert: WeatherAlert?
-
+    // Multiple weather alerts support
+    @Published var weatherAlerts: [WeatherAlert] = []
+    
     @Published var processingStatus: String = ""
     @Published var pacingGenerationStatus: String = ""
     
@@ -612,26 +613,32 @@ class WeatherViewModel: ObservableObject {
     private func processWeatherData(current: CurrentWeatherResponse, forecast: OneCallResponse) async {
         if !current.name.isEmpty { locationName = current.name }
 
-        // 1. PROCESS ALERTS
-        if let alerts = forecast.alerts, let first = alerts.first {
-            let severity: WeatherAlert.Severity
-            let eventLower = first.event.lowercased()
+        // 1. PROCESS ALERTS - Now handling multiple alerts
+        if let alerts = forecast.alerts, !alerts.isEmpty {
+            print("🌦️ Processing \(alerts.count) alerts")
+            self.weatherAlerts = alerts.map { alertData in
+                let severity: WeatherAlert.Severity
+                let eventLower = alertData.event.lowercased()
+                
+                if eventLower.contains("warning") { severity = .severe }
+                else if eventLower.contains("watch") { severity = .warning }
+                else { severity = .advisory }
+                
+                return WeatherAlert(
+                    message: alertData.event,
+                    description: alertData.description,
+                    severity: severity
+                )
+            }
+            print("🌦️ weatherAlerts array now has \(self.weatherAlerts.count) alerts")
             
-            if eventLower.contains("warning") { severity = .severe }
-            else if eventLower.contains("watch") { severity = .warning }
-            else { severity = .advisory }
-            
-            // Pass 'first.description' to capture the real API text
-            let alert = WeatherAlert(
-                message: first.event,
-                description: first.description,
-                severity: severity
-            )
-            
-            self.activeAlert = alert
-            PhoneSessionManager.shared.updateAlert(alert)
+            // Update phone session with most severe alert for watch
+            if let mostSevere = self.weatherAlerts.sorted(by: { $0.severity.rawValue < $1.severity.rawValue }).first {
+                PhoneSessionManager.shared.updateAlert(mostSevere)
+            }
         } else {
-            self.activeAlert = nil
+            print("🌦️ No alerts in forecast, clearing weatherAlerts array")
+            self.weatherAlerts = []
             PhoneSessionManager.shared.updateAlert(nil)
         }
 
