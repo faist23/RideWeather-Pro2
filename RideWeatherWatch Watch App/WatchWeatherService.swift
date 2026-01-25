@@ -59,7 +59,6 @@ class WatchWeatherService {
         return (weatherData, alerts)
     }
     
-    // ... loadConfig and configValue remain the same ...
     private func loadConfig() {
         guard let path = Bundle.main.path(forResource: "OpenWeather", ofType: "plist"),
               let dict = NSDictionary(contentsOfFile: path) as? [String: String] else {
@@ -72,7 +71,6 @@ class WatchWeatherService {
         return openWeather?[key]
     }
     
-    // ... mapConditionToIcon remains the same ...
     private func mapConditionToIcon(_ condition: String) -> String {
         switch condition.lowercased() {
         case "clear": return "sun.max.fill"

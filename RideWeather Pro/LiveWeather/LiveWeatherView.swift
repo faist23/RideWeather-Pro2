@@ -368,7 +368,7 @@ struct WeatherAlertsCarousel: View {
             // Horizontal ScrollView for all alerts
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ForEach(sortedAlerts) { alert in
+                    ForEach(Array(sortedAlerts.enumerated()), id: \.element.id) { index, alert in
                         WeatherAlertBanner(
                             alert: alert,
                             isExpanded: expandedAlertId == alert.id,
@@ -383,7 +383,9 @@ struct WeatherAlertsCarousel: View {
                                         expandedAlertId = alert.id
                                     }
                                 }
-                            }
+                            },
+                            totalAlerts: sortedAlerts.count,
+                            currentIndex: index
                         )
                         .containerRelativeFrame(.horizontal)
                         .scrollTransition { content, phase in
@@ -412,32 +414,6 @@ struct WeatherAlertsCarousel: View {
                     scrollPosition = sortedAlerts.first?.id
                 }
             }
-            
-            // Page Indicators
-            if sortedAlerts.count > 1 {
-                HStack(spacing: 8) {
-                    // Dot indicators
-                    HStack(spacing: 6) {
-                        ForEach(0..<sortedAlerts.count, id: \.self) { index in
-                            Circle()
-                                .fill(index == currentIndex ? .white : .white.opacity(0.4))
-                                .frame(width: 6, height: 6)
-                                .scaleEffect(index == currentIndex ? 1.2 : 1.0)
-                                .animation(.spring(duration: 0.3), value: currentIndex)
-                        }
-                    }
-                    
-                    // Counter badge
-                    Text("\(currentIndex + 1) of \(sortedAlerts.count)")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.9))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.white.opacity(0.15), in: Capsule())
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 4)
-            }
         }
     }
 }
@@ -448,6 +424,26 @@ struct WeatherAlertBanner: View {
     let alert: WeatherAlert
     let isExpanded: Bool
     let onToggle: () -> Void
+    let totalAlerts: Int
+    let currentIndex: Int
+    
+    // Convenience init for single alerts
+    init(alert: WeatherAlert, isExpanded: Bool, onToggle: @escaping () -> Void) {
+        self.alert = alert
+        self.isExpanded = isExpanded
+        self.onToggle = onToggle
+        self.totalAlerts = 1
+        self.currentIndex = 0
+    }
+    
+    // Full init for carousel
+    init(alert: WeatherAlert, isExpanded: Bool, onToggle: @escaping () -> Void, totalAlerts: Int, currentIndex: Int) {
+        self.alert = alert
+        self.isExpanded = isExpanded
+        self.onToggle = onToggle
+        self.totalAlerts = totalAlerts
+        self.currentIndex = currentIndex
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -466,6 +462,16 @@ struct WeatherAlertBanner: View {
                         .lineLimit(1)
                     
                     Spacer()
+                    
+                    // Show "+X" badge if there are more alerts
+                    if totalAlerts > 1 {
+                        Text("+\(totalAlerts - 1)")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(alert.textColor)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(alert.textColor.opacity(0.2), in: Capsule())
+                    }
                     
                     Image(systemName: "chevron.down")
                         .rotationEffect(.degrees(isExpanded ? 180 : 0))
@@ -497,6 +503,7 @@ struct WeatherAlertBanner: View {
         .shadow(radius: 4)
     }
 }
+
 // MARK: - Extensions for WeatherViewModel
 
 extension WeatherViewModel {
