@@ -74,10 +74,11 @@ class WatchAppGroupManager {
     func saveSteps(_ steps: Int) {
         let defaults = UserDefaults(suiteName: suiteName)
         defaults?.set(steps, forKey: "widget_today_steps")
-        defaults?.synchronize() // Force sync
-        // Reload only steps widget
-        WidgetCenter.shared.reloadTimelines(ofKind: "StepsComplication")
-        print("💾 Steps saved for widget: \(steps)")
+        
+        print("💾 Steps saved: \(steps)")
+        
+        // Force all timelines to reload
+        WidgetCenter.shared.reloadAllTimelines()
     }
     
     private func compassDirection(for degrees: Double) -> String {

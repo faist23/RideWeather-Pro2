@@ -90,11 +90,11 @@ struct StepsDetailView: View {
                             .fill(Color(red: 250/255, green: 17/255, blue: 79/255))
                             .frame(width: 8, height: 8)
                         Text("Move")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.secondary)
                         Spacer()
                         Text("\(Int(moveCalories)) / \(Int(moveGoal)) cal")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(.white)
                     }
                     
@@ -104,11 +104,11 @@ struct StepsDetailView: View {
                             .fill(Color(red: 166/255, green: 255/255, blue: 0/255))
                             .frame(width: 8, height: 8)
                         Text("Exercise")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.secondary)
                         Spacer()
                         Text("\(Int(exerciseMinutes)) / \(Int(exerciseGoal)) min")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(.white)
                     }
                     
@@ -118,11 +118,11 @@ struct StepsDetailView: View {
                             .fill(Color(red: 0/255, green: 255/255, blue: 249/255))
                             .frame(width: 8, height: 8)
                         Text("Stand")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.secondary)
                         Spacer()
                         Text("\(standHours) / \(standGoal) hrs")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(.white)
                     }
                 }
@@ -195,7 +195,19 @@ struct StepsDetailView: View {
                 print("   Exercise: \(Int(exerciseValue.current/60))/\(Int(exerciseValue.goal/60)) min")
                 print("   Stand: \(standValue)/\(standGoal) hrs")
                 
+                // DEBUG: Check what's in UserDefaults
+                if let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather") {
+                    let savedSteps = defaults.integer(forKey: "widget_today_steps")
+                    print("🔍 UserDefaults BEFORE save: \(savedSteps)")
+                }
+                
                 WatchAppGroupManager.shared.saveSteps(stepsValue)
+
+                // DEBUG: Verify it was saved
+                if let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather") {
+                    let verifySteps = defaults.integer(forKey: "widget_today_steps")
+                    print("🔍 UserDefaults AFTER save: \(verifySteps)")
+                }
             }
         }
     }

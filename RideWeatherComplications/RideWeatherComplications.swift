@@ -230,12 +230,41 @@ struct StepsComplicationProvider: TimelineProvider {
     }
     
     func getTimeline(in context: Context, completion: @escaping (Timeline<SimpleComplicationEntry>) -> ()) {
-        // Don't fetch weather - just read steps
-        let entry = createEntry(for: Date())
+        let currentDate = Date()
+        let todaySteps = defaults?.integer(forKey: "widget_today_steps") ?? 0
         
-        // Refresh every 15 minutes to match BackgroundStepsUpdater
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
-        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
+        print("🔍 StepsComplication getTimeline: \(todaySteps) steps")
+        
+        // Create multiple entries to force refresh
+        var entries: [SimpleComplicationEntry] = []
+        
+        // Current entry
+        entries.append(SimpleComplicationEntry(
+            date: currentDate,
+            temp: 0, feelsLike: 0, windSpeed: 0, windDir: "", conditionIcon: "",
+            alertSeverity: nil,
+            todaySteps: todaySteps
+        ))
+        
+        // Additional entries every 5 minutes for next 15 minutes
+        for minuteOffset in [5, 10, 15] {
+            if let futureDate = Calendar.current.date(byAdding: .minute, value: minuteOffset, to: currentDate) {
+                entries.append(SimpleComplicationEntry(
+                    date: futureDate,
+                    temp: 0, feelsLike: 0, windSpeed: 0, windDir: "", conditionIcon: "",
+                    alertSeverity: nil,
+                    todaySteps: todaySteps
+                ))
+            }
+        }
+        
+        // Set next refresh in 15 minutes
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: currentDate)!
+        
+        // Use .atEnd policy to ensure refresh happens
+        let timeline = Timeline(entries: entries, policy: .atEnd)
+        
+        print("🔍 StepsComplication timeline created with \(entries.count) entries, next refresh at \(nextUpdate.formatted(date: .omitted, time: .standard))")
         
         completion(timeline)
     }

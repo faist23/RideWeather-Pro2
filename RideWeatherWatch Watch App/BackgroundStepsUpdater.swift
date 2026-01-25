@@ -75,7 +75,6 @@ class BackgroundStepsUpdater: NSObject, CLLocationManagerDelegate {
         
         let stepsType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
         
-        // Query today's steps
         let calendar = Calendar.current
         let now = Date()
         let startOfDay = calendar.startOfDay(for: now)
@@ -105,12 +104,10 @@ class BackgroundStepsUpdater: NSObject, CLLocationManagerDelegate {
             healthStore.execute(query)
         }
         
-        // Save to shared storage
         defaults?.set(steps, forKey: "widget_today_steps")
-        defaults?.synchronize() // Force sync
         
-        // Force widget refresh with specific kind
-        WidgetCenter.shared.reloadTimelines(ofKind: "StepsComplication")
+        // Force widget refresh
+        WidgetCenter.shared.reloadAllTimelines()
         
         print("📊 Background updated steps: \(steps)")
     }
