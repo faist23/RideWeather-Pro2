@@ -22,31 +22,38 @@ struct WeatherAlert: Codable, Identifiable {
     var icon: String {
         switch severity {
         case .severe: return "exclamationmark.triangle.fill"
-        case .warning: return "cloud.rain.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .watch: return "eye.fill" // Distinct icon for "Watch"
         case .advisory: return "cloud.fill"
+        case .unknown: return "questionmark.circle"
         }
     }
     
     var color: Color {
         switch severity {
-        case .severe: return Color(red: 147/255, green: 11/255, blue: 0/255) // Darker red for better contrast
+        case .severe: return Color(red: 147/255, green: 11/255, blue: 0/255) // Dark Red
         case .warning: return .orange
-        case .advisory: return .yellow
+        case .watch: return .yellow
+        case .advisory: return .yellow.opacity(0.8)
+        case .unknown: return .gray
         }
     }
     
     // Smart Text Color (Black for Yellow/Orange, White for Red)
     var textColor: Color {
         switch severity {
-        case .advisory, .warning: return .black // Fixes readability on Yellow/Orange
-        case .severe: return .white             // White looks best on Red
+        case .advisory, .warning, .watch: return .black // Fixes readability on Yellow/Orange
+        case .severe, .unknown: return .white           // White looks best on Red/Gray
         }
     }
     
+    // Explicitly define all cases to match the rest of the app's logic
     enum Severity: String, Codable {
         case severe
         case warning
+        case watch
         case advisory
+        case unknown
     }
     
     var cleanDescription: String {

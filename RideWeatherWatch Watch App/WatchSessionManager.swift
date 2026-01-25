@@ -11,6 +11,19 @@ import WatchKit // Ensure WatchKit is imported for haptics
 import WidgetKit
 @preconcurrency import UserNotifications
 
+// Helper to rank alerts: Severe (5) -> Warning (4) -> Watch (3) -> Advisory (2)
+extension WeatherAlert.Severity {
+    var rank: Int {
+        switch self {
+        case .severe: return 5
+        case .warning: return 4
+        case .watch: return 3
+        case .advisory: return 2
+        case .unknown: return 0
+        }
+    }
+}
+
 @MainActor
 class WatchSessionManager: NSObject, ObservableObject {
     static let shared = WatchSessionManager()
@@ -56,26 +69,31 @@ class WatchSessionManager: NSObject, ObservableObject {
     // MARK: - Weather Update Helper
     
     func updateWeatherAlerts(_ alerts: [WeatherAlert]) {
-        self.weatherAlerts = alerts
+        // 1. SORT: Put the most severe alerts at the top of the list
+        let sortedAlerts = alerts.sorted { $0.severity.rank > $1.severity.rank }
         
-        // FIXED: Define 'defaults' here so it is available in the scope below
+        // 2. PUBLISH: Now index 0 is guaranteed to be the most severe
+        self.weatherAlerts = sortedAlerts
+        
+        // 3. WIDGET UPDATE: Use the top alert (now the most severe)
         let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
         
-        // Priority: Severe > Warning > Advisory
-        var mostSevereStatus: String? = nil
-        
-        if alerts.contains(where: { $0.severity == .severe }) {
-            mostSevereStatus = "severe"
-            WKInterfaceDevice.current().play(.notification) // Haptic
-        } else if alerts.contains(where: { $0.severity == .warning }) {
-            mostSevereStatus = "warning"
-        } else if !alerts.isEmpty {
-            mostSevereStatus = "advisory"
-        }
-        
-        if let status = mostSevereStatus {
+        if let mostSevere = sortedAlerts.first {
+            // Determine status string for the Widget
+            var status = "advisory"
+            if mostSevere.severity == .severe { status = "severe" }
+            else if mostSevere.severity == .warning { status = "warning" }
+            else if mostSevere.severity == .watch { status = "watch" }
+            
+            print("⌚️ Updating Widget Alert: \(status) (Rank: \(mostSevere.severity.rank))")
             defaults?.set(status, forKey: "widget_active_alert")
+            
+            // Haptic only for severe
+            if mostSevere.severity == .severe {
+                WKInterfaceDevice.current().play(.notification)
+            }
         } else {
+            print("⌚️ Clearing Widget Alert")
             defaults?.removeObject(forKey: "widget_active_alert")
         }
         
@@ -173,12 +191,12 @@ extension WatchSessionManager: WCSessionDelegate {
                 let decoded = try JSONDecoder().decode(DailyWellnessMetrics.self, from: currentWellnessData)
                 self.currentWellness = decoded
                 
-                // ✅ SAVE STEPS FOR WIDGET
-                if let steps = decoded.steps {
+                // ✅ SAVE STEPS FOR WIDGET----right now testing if this is the cause for the watch face steps to go down
+  /*              if let steps = decoded.steps {
                     let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
                     defaults?.set(steps, forKey: "widget_today_steps")
                     print("✅ Saved \(steps) steps for widget")
-                }
+                }*/
                 
                 print("✅ Decoded Current Wellness")
             } catch {
@@ -219,7 +237,7 @@ extension WatchSessionManager: WCSessionDelegate {
             }
         }
         
-        // 7. Decode Weather Alert
+/*        // 7. Decode Weather Alert----OLD LEGACY UPDATE CODE
         if let weatherData = context["weatherAlert"] as? Data {
             do {
                 let decoded = try JSONDecoder().decode(WeatherAlert.self, from: weatherData)
@@ -244,7 +262,7 @@ extension WatchSessionManager: WCSessionDelegate {
             
             let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
             defaults?.removeObject(forKey: "widget_active_alert")
-        }
+        } */
         
         // 8. Save Weather Data for Widget
         // We don't need to decode it here; just pass the raw data to the Widget's storage
@@ -359,7 +377,7 @@ extension WatchSessionManager: WCSessionDelegate {
             defaults?.set(readiness.readinessScore, forKey: "widget_readiness")
         }
         
-        if let wellness = self.currentWellness {
+/*        if let wellness = self.currentWellness {
             defaults?.set(wellness.steps ?? 0, forKey: "widget_today_steps")
         }
         
@@ -368,7 +386,7 @@ extension WatchSessionManager: WCSessionDelegate {
             defaults?.set(steps, forKey: "widget_today_steps")
             print("⌚️ Saved steps to widget: \(steps)")
         }
-        
+*/
         // FIX: Ensure the current alert state is enforced (using the most severe alert)
         if let mostSevere = self.weatherAlerts.sorted(by: { $0.severity.rawValue > $1.severity.rawValue }).first {
             defaults?.set(mostSevere.severity.rawValue, forKey: "widget_active_alert")

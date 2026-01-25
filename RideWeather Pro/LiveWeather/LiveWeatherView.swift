@@ -414,6 +414,20 @@ struct WeatherAlertsCarousel: View {
                     scrollPosition = sortedAlerts.first?.id
                 }
             }
+            
+            // Page Indicators - subtle dots only
+            if sortedAlerts.count > 1 {
+                HStack(spacing: 6) {
+                    ForEach(0..<sortedAlerts.count, id: \.self) { index in
+                        Circle()
+                            .fill(index == currentIndex ? .white : .white.opacity(0.4))
+                            .frame(width: 6, height: 6)
+                            .scaleEffect(index == currentIndex ? 1.2 : 1.0)
+                            .animation(.spring(duration: 0.3), value: currentIndex)
+                    }
+                }
+                .padding(.top, 6)
+            }
         }
     }
 }
