@@ -104,6 +104,7 @@ struct RecoveryView: View {
     }
 }
 
+/*
 // MARK: - Recovery Ring
 
 struct RecoveryRing: View {
@@ -169,7 +170,7 @@ struct RecoveryMetric: View {
                 .strokeBorder(status.color.opacity(0.3), lineWidth: 1)
         )
     }
-}
+} */
 
 enum MetricStatus {
     case good, warning, bad

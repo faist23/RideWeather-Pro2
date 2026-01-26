@@ -160,6 +160,11 @@ class AIInsightsManager: ObservableObject {
             return true
         }
         
+        // ADDED: Analyze if weekly TSS is very high
+        if let summary = summary, summary.weeklyTSS > 500 {
+            return true
+        }
+        
         return false
     }
     
@@ -536,7 +541,8 @@ extension AIInsightsManager {
         You are an expert cycling coach with expertise in sports science and recovery optimization.
         Analyze training data AND lifestyle/wellness data together for holistic insights.
         
-        CRITICAL: Your response must be a single JSON object with this exact structure:
+        CRITICAL INSTRUCTIONS:
+        1. Your response must be a single JSON object with this exact structure:
         {
           "priority": "critical" | "warning" | "info",
           "title": "Brief title (max 50 chars)",
@@ -545,6 +551,24 @@ extension AIInsightsManager {
           "recommendation": "Specific action to take (1-2 sentences, max 200 chars)",
           "confidence": "high" | "moderate" | "low"
         }
+        
+        2. PRIORITY HIERARCHY FOR ANALYSIS:
+           - FIRST: Training load metrics (TSB, ATL, CTL, ramp rate)
+           - SECOND: Physiological recovery (HRV, RHR, sleep quality)
+           - THIRD: Sleep patterns and efficiency
+           - LAST: Daily activity levels (steps are context only, not the focus)
+        
+        3. STEPS ARE CONTEXT ONLY:
+           - Steps show general activity on non-training days
+           - DO NOT recommend "increasing steps" as a primary action
+           - DO NOT treat low steps as a problem if training volume is appropriate
+           - On rest days, low steps may actually indicate good recovery
+        
+        4. FOCUS ON TRAINING-SPECIFIC INSIGHTS:
+           - Training stress and recovery balance
+           - Workout timing relative to recovery status
+           - Sleep quality impact on training adaptation
+           - When to push hard vs when to back off
         
         Current Training Load:
         """
@@ -589,11 +613,8 @@ extension AIInsightsManager {
             prompt += """
             
             
-            Lifestyle & Wellness (Last 7 Days):
+            Recovery Context (Last 7 Days):
             """
-            
-            let avgSteps = wellnessMetrics.compactMap { $0.steps }.reduce(0, +) / max(1, wellnessMetrics.compactMap { $0.steps }.count)
-            prompt += "\n- Average daily steps: \(avgSteps)"
             
             let avgSleepHours = wellnessMetrics.compactMap { $0.totalSleep }.reduce(0, +) / max(1, Double(wellnessMetrics.compactMap { $0.totalSleep }.count))
             prompt += "\n- Average sleep duration: \(String(format: "%.1f", avgSleepHours / 3600))h"
@@ -604,7 +625,10 @@ extension AIInsightsManager {
             let avgActiveCalories = wellnessMetrics.compactMap { $0.activeEnergyBurned }.reduce(0, +) / max(1, Double(wellnessMetrics.compactMap { $0.activeEnergyBurned }.count))
             prompt += "\n- Average active calories: \(Int(avgActiveCalories)) kcal/day"
             
-            // Add yesterday's specific data for context
+            // Include steps LAST and only as context
+            let avgSteps = wellnessMetrics.compactMap { $0.steps }.reduce(0, +) / max(1, wellnessMetrics.compactMap { $0.steps }.count)
+            prompt += "\n- Daily movement context: \(avgSteps) avg steps (context only)"
+            
             // Add yesterday's specific data for context
             let calendar = Calendar.current
             let yesterday = calendar.date(byAdding: .day, value: -1, to: Date())!
@@ -613,14 +637,11 @@ extension AIInsightsManager {
                 .first
             
             if let yesterdayData = yesterdayData {
-                prompt += "\n\nYesterday's Activity:"
-                if let steps = yesterdayData.steps {
-                    prompt += "\n- Steps: \(steps)"
-                }
+                prompt += "\n\nYesterday's Recovery:"
                 if let sleep = yesterdayData.totalSleep {
                     prompt += "\n- Sleep: \(String(format: "%.1f", sleep / 3600))h"
                 }
-                // Only include sleep stages if available (not all devices track this)
+                // Only include sleep stages if available
                 let hasStageData = yesterdayData.sleepDeep != nil || yesterdayData.sleepREM != nil || yesterdayData.sleepCore != nil
                 if hasStageData {
                     var stages: [String] = []
@@ -646,10 +667,10 @@ extension AIInsightsManager {
         let recent = recentLoads.prefix(7)
         if !recent.isEmpty {
             prompt += """
-                        
-                        
-                        Last 7 Days Training:
-                        """
+            
+            
+            Last 7 Days Training:
+            """
             for load in recent {
                 let dateStr = load.date.formatted(date: .abbreviated, time: .omitted)
                 prompt += "\n- \(dateStr): \(String(format: "%.0f", load.tss)) TSS"
@@ -657,20 +678,25 @@ extension AIInsightsManager {
         }
         
         prompt += """
-                    
-                    
-                    IMPORTANT: If sleep stages are marked "Not available", DO NOT mention deep sleep, REM, or sleep stages in your analysis. Focus only on total sleep duration and sleep efficiency.
-                    
-                    Analyze ALL the data together - training load, physiological signals, AND lifestyle factors.
-                    Look for:
-                    1. Conflicts between training math and real-world recovery (e.g., positive TSB but poor sleep/low activity)
-                    2. Lifestyle factors undermining training (e.g., high TSS but inadequate daily movement)
-                    3. Recovery opportunities (e.g., good sleep + low activity = ready for hard session)
-                    4. Warning signs (e.g., low steps on rest days = not truly recovering)
-                    
-                    Be specific and actionable. Connect the dots between training load and lifestyle.
-                    Respond ONLY with the JSON object, no other text.
-                    """
+        
+        
+        IMPORTANT: 
+        - If sleep stages are marked "Not available", DO NOT mention deep sleep, REM, or sleep stages in your analysis.
+        - Focus only on total sleep duration and sleep efficiency.
+        - DO NOT recommend "increasing daily steps" as a primary action.
+        - Steps are passive recovery context, not a training prescription.
+        - Prioritize training load balance, sleep quality, and physiological readiness.
+        
+        Analyze ALL the data together - training load, physiological signals, AND lifestyle factors.
+        Look for:
+        1. Training stress vs recovery capacity (TSB vs sleep/HRV)
+        2. Workout timing opportunities (good recovery = time to push)
+        3. Overtraining warning signs (high fatigue + poor sleep/HRV)
+        4. Recovery adequacy (is sleep supporting the training load?)
+        
+        Be specific and actionable. Connect training metrics to recovery status.
+        Respond ONLY with the JSON object, no other text.
+        """
         
         return prompt
     }

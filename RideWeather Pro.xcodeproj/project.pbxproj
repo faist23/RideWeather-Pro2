@@ -75,52 +75,9 @@
 		7E87E9662F15F29F0050060A /* RideWeatherComplicationsExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RideWeatherComplicationsExtension.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		7E5B80E12E4C3F24005D114F /* Exceptions for "RideWeather Pro" folder in "RideWeather Pro" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 7E5B80AA2E4C3B2D005D114F /* RideWeather Pro */;
-		};
-		7E6593D82F1DC33500552215 /* Exceptions for "RideWeather Pro" folder in "RideWeatherComplicationsExtension" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				OpenWeatherAPIModels.swift,
-				WeatherService.swift,
-				WeatherView/WeatherMapper.swift,
-			);
-			target = 7E87E94D2F15F2840050060A /* RideWeatherComplicationsExtension */;
-		};
-		7E87E92C2F12F0160050060A /* Exceptions for "RideWeather Pro" folder in "RideWeatherWatch Watch App" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				OpenWeather.plist,
-				TrainingLoad/PhysiologicalReadiness.swift,
-				TrainingLoad/RecoveryStatus.swift,
-				TrainingLoad/TrainingLoadModels.swift,
-				Utilities/WeatherAlert.swift,
-				Wellness/DailyWellnessMetrics.swift,
-			);
-			target = 7E87E91B2F12EDBF0050060A /* RideWeatherWatch Watch App */;
-		};
-		7E87E9642F15F2850050060A /* Exceptions for "RideWeatherComplications" folder in "RideWeatherComplicationsExtension" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 7E87E94D2F15F2840050060A /* RideWeatherComplicationsExtension */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		7E5B80AD2E4C3B2D005D114F /* RideWeather Pro */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				7E5B80E12E4C3F24005D114F /* Exceptions for "RideWeather Pro" folder in "RideWeather Pro" target */,
-				7E87E92C2F12F0160050060A /* Exceptions for "RideWeather Pro" folder in "RideWeatherWatch Watch App" target */,
-				7E6593D82F1DC33500552215 /* Exceptions for "RideWeather Pro" folder in "RideWeatherComplicationsExtension" target */,
-			);
 			path = "RideWeather Pro";
 			sourceTree = "<group>";
 		};
@@ -131,9 +88,6 @@
 		};
 		7E87E9542F15F2840050060A /* RideWeatherComplications */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				7E87E9642F15F2850050060A /* Exceptions for "RideWeatherComplications" folder in "RideWeatherComplicationsExtension" target */,
-			);
 			path = RideWeatherComplications;
 			sourceTree = "<group>";
 		};
