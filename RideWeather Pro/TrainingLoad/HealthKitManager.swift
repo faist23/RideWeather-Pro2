@@ -29,7 +29,7 @@ class HealthKitManager: ObservableObject {
             
             // WORKOUT ESSENTIALS
             HKObjectType.workoutType(),
-            HKObjectType.quantityType(forIdentifier: .heartRate)!, 
+            HKObjectType.quantityType(forIdentifier: .heartRate)!,
             HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
             HKObjectType.quantityType(forIdentifier: .cyclingPower)!,
             HKObjectType.quantityType(forIdentifier: .distanceCycling)!
@@ -239,8 +239,8 @@ class HealthKitManager: ObservableObject {
         
         let (stepsVal, activeEnergyVal, basalEnergyVal, standHoursVal, exerciseMinutesVal,
              sleepStagesVal, bodyMassVal, bodyFatVal, leanMassVal, respRateVal, o2SatVal) =
-            await (steps, activeEnergy, basalEnergy, standHours, exerciseMinutes,
-                   sleepStages, bodyMass, bodyFat, leanMass, respRate, o2Sat)
+        await (steps, activeEnergy, basalEnergy, standHours, exerciseMinutes,
+               sleepStages, bodyMass, bodyFat, leanMass, respRate, o2Sat)
         
         return DailyWellnessMetrics(
             date: Calendar.current.startOfDay(for: date),
@@ -708,130 +708,130 @@ class HealthKitManager: ObservableObject {
     }
     
     // MARK: - Smart Sleep Filtering
+    
+    /// Filters sources to prevent double-counting, but falls back to Apple Watch if AutoSleep is empty
+    private func calculateEffectiveSleepDuration(samples: [HKCategorySample]) -> TimeInterval {
+        // 1. Identify AutoSleep Data
+        let autoSleepSamples = samples.filter { $0.sourceRevision.source.bundleIdentifier.lowercased().contains("autosleep") }
+        let hasAutoSleep = !autoSleepSamples.isEmpty
         
-        /// Filters sources to prevent double-counting, but falls back to Apple Watch if AutoSleep is empty
-        private func calculateEffectiveSleepDuration(samples: [HKCategorySample]) -> TimeInterval {
-            // 1. Identify AutoSleep Data
-            let autoSleepSamples = samples.filter { $0.sourceRevision.source.bundleIdentifier.lowercased().contains("autosleep") }
-            let hasAutoSleep = !autoSleepSamples.isEmpty
-            
-            var targetSamples: [HKCategorySample] = []
-            
-            if hasAutoSleep {
-                // CHECK: Does AutoSleep actually have "Asleep" data? (Value 1, 3, 4, or 5)
-                // If it only has "InBed" (Value 0), this will be false.
-                let hasValidSleepData = autoSleepSamples.contains { sample in
-                    let val = sample.value
-                    return val == HKCategoryValueSleepAnalysis.asleepCore.rawValue ||
-                           val == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
-                           val == HKCategoryValueSleepAnalysis.asleepREM.rawValue ||
-                           val == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
-                }
-                
-                if hasValidSleepData {
-                    // Case A: AutoSleep is good. Use it (and ignore Apple Watch to prevent duplicates).
-                    targetSamples = autoSleepSamples
-                } else {
-                    // Case B (Your 12/27 Issue): AutoSleep exists but has 0 sleep.
-                    // FALLBACK: Use everything ELSE (Apple Watch).
- //                   print("   ⚠️ AutoSleep detected but empty. Falling back to Apple Watch.")
-                    targetSamples = samples.filter { !$0.sourceRevision.source.bundleIdentifier.lowercased().contains("autosleep") }
-                }
-            } else {
-                // Case C: No AutoSleep at all. Use standard Apple Watch data.
-                targetSamples = samples
-            }
-            
-            // 2. Filter for Sleep Stages (exclude InBed/Awake)
-            let validSamples = targetSamples.filter { sample in
+        var targetSamples: [HKCategorySample] = []
+        
+        if hasAutoSleep {
+            // CHECK: Does AutoSleep actually have "Asleep" data? (Value 1, 3, 4, or 5)
+            // If it only has "InBed" (Value 0), this will be false.
+            let hasValidSleepData = autoSleepSamples.contains { sample in
                 let val = sample.value
                 return val == HKCategoryValueSleepAnalysis.asleepCore.rawValue ||
-                       val == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
-                       val == HKCategoryValueSleepAnalysis.asleepREM.rawValue ||
-                       val == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+                val == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
+                val == HKCategoryValueSleepAnalysis.asleepREM.rawValue ||
+                val == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
             }
             
-            return calculateUniqueDuration(validSamples)
+            if hasValidSleepData {
+                // Case A: AutoSleep is good. Use it (and ignore Apple Watch to prevent duplicates).
+                targetSamples = autoSleepSamples
+            } else {
+                // Case B (Your 12/27 Issue): AutoSleep exists but has 0 sleep.
+                // FALLBACK: Use everything ELSE (Apple Watch).
+                //                   print("   ⚠️ AutoSleep detected but empty. Falling back to Apple Watch.")
+                targetSamples = samples.filter { !$0.sourceRevision.source.bundleIdentifier.lowercased().contains("autosleep") }
+            }
+        } else {
+            // Case C: No AutoSleep at all. Use standard Apple Watch data.
+            targetSamples = samples
         }
-
-        /// Updates stage fetching to use the same fallback logic
+        
+        // 2. Filter for Sleep Stages (exclude InBed/Awake)
+        let validSamples = targetSamples.filter { sample in
+            let val = sample.value
+            return val == HKCategoryValueSleepAnalysis.asleepCore.rawValue ||
+            val == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
+            val == HKCategoryValueSleepAnalysis.asleepREM.rawValue ||
+            val == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+        }
+        
+        return calculateUniqueDuration(validSamples)
+    }
+    
+    /// Updates stage fetching to use the same fallback logic
     private func fetchSleepStages(for date: Date) async -> (deep: TimeInterval?, rem: TimeInterval?, core: TimeInterval?, awake: TimeInterval?, unspecified: TimeInterval?) {
-            guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return (nil, nil, nil, nil, nil) }
-            
-            let calendar = Calendar.current
-            let todayNoon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: date)!
-            let yesterdayNoon = calendar.date(byAdding: .day, value: -1, to: todayNoon)!
-            
-            let predicate = HKQuery.predicateForSamples(withStart: yesterdayNoon, end: todayNoon, options: .strictStartDate)
-            
-            return await withCheckedContinuation { continuation in
-                let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
-                    
-                    guard let samples = samples as? [HKCategorySample], error == nil else {
-                        continuation.resume(returning: (nil, nil, nil, nil, nil))
-                        return
-                    }
-                    
-                    // --- STRATEGY: CALCULATE BOTH, PICK WINNER ---
-                    
-                    // 1. Calculate AutoSleep Totals
-                    let autoSleepSamples = samples.filter { $0.sourceRevision.source.bundleIdentifier.lowercased().contains("autosleep") }
-                    let autoSleepMetrics = self.calculateMetrics(for: autoSleepSamples)
-                    let autoSleepTotal = (autoSleepMetrics.deep ?? 0) + (autoSleepMetrics.rem ?? 0) + (autoSleepMetrics.core ?? 0) + (autoSleepMetrics.unspecified ?? 0)
-                    
-                    // 2. Calculate Apple Watch (Other) Totals
-                    let otherSamples = samples.filter { !$0.sourceRevision.source.bundleIdentifier.lowercased().contains("autosleep") }
-                    let otherMetrics = self.calculateMetrics(for: otherSamples)
-                    let otherTotal = (otherMetrics.deep ?? 0) + (otherMetrics.rem ?? 0) + (otherMetrics.core ?? 0) + (otherMetrics.unspecified ?? 0)
-                    
-                    // 3. Decision Logic
-                    print("💤 Sleep Check for \(date.formatted(date: .numeric, time: .omitted)):")
-                    print("   🔹 AutoSleep Found: \(autoSleepTotal/3600.0)h")
-                    print("   🔹 AppleWatch Found: \(otherTotal/3600.0)h")
-                    
-                    if autoSleepTotal > 0 {
-                        print("   ✅ DECISION: Using AutoSleep")
-                        continuation.resume(returning: autoSleepMetrics)
-                    } else if otherTotal > 0 {
-                        print("   ⚠️ DECISION: AutoSleep was 0h. Falling back to Apple Watch.")
-                        continuation.resume(returning: otherMetrics)
-                    } else {
-                        print("   ❌ DECISION: No sleep data found from any source.")
-                        continuation.resume(returning: (nil, nil, nil, nil, nil))
-                    }
+        guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return (nil, nil, nil, nil, nil) }
+        
+        let calendar = Calendar.current
+        let todayNoon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: date)!
+        let yesterdayNoon = calendar.date(byAdding: .day, value: -1, to: todayNoon)!
+        
+        let predicate = HKQuery.predicateForSamples(withStart: yesterdayNoon, end: todayNoon, options: .strictStartDate)
+        
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+                
+                guard let samples = samples as? [HKCategorySample], error == nil else {
+                    continuation.resume(returning: (nil, nil, nil, nil, nil))
+                    return
                 }
-                healthStore.execute(query)
+                
+                // --- STRATEGY: CALCULATE BOTH, PICK WINNER ---
+                
+                // 1. Calculate AutoSleep Totals
+                let autoSleepSamples = samples.filter { $0.sourceRevision.source.bundleIdentifier.lowercased().contains("autosleep") }
+                let autoSleepMetrics = self.calculateMetrics(for: autoSleepSamples)
+                let autoSleepTotal = (autoSleepMetrics.deep ?? 0) + (autoSleepMetrics.rem ?? 0) + (autoSleepMetrics.core ?? 0) + (autoSleepMetrics.unspecified ?? 0)
+                
+                // 2. Calculate Apple Watch (Other) Totals
+                let otherSamples = samples.filter { !$0.sourceRevision.source.bundleIdentifier.lowercased().contains("autosleep") }
+                let otherMetrics = self.calculateMetrics(for: otherSamples)
+                let otherTotal = (otherMetrics.deep ?? 0) + (otherMetrics.rem ?? 0) + (otherMetrics.core ?? 0) + (otherMetrics.unspecified ?? 0)
+                
+                // 3. Decision Logic
+                print("💤 Sleep Check for \(date.formatted(date: .numeric, time: .omitted)):")
+                print("   🔹 AutoSleep Found: \(autoSleepTotal/3600.0)h")
+                print("   🔹 AppleWatch Found: \(otherTotal/3600.0)h")
+                
+                if autoSleepTotal > 0 {
+                    print("   ✅ DECISION: Using AutoSleep")
+                    continuation.resume(returning: autoSleepMetrics)
+                } else if otherTotal > 0 {
+                    print("   ⚠️ DECISION: AutoSleep was 0h. Falling back to Apple Watch.")
+                    continuation.resume(returning: otherMetrics)
+                } else {
+                    print("   ❌ DECISION: No sleep data found from any source.")
+                    continuation.resume(returning: (nil, nil, nil, nil, nil))
+                }
+            }
+            healthStore.execute(query)
+        }
+    }
+    
+    /// Helper to sum up stages for a set of samples
+    private func calculateMetrics(for samples: [HKCategorySample]) -> (deep: TimeInterval?, rem: TimeInterval?, core: TimeInterval?, awake: TimeInterval?, unspecified: TimeInterval?) {
+        var deep: TimeInterval = 0
+        var rem: TimeInterval = 0
+        var core: TimeInterval = 0
+        var awake: TimeInterval = 0
+        var unspecified: TimeInterval = 0
+        
+        for sample in samples {
+            let duration = sample.endDate.timeIntervalSince(sample.startDate)
+            switch sample.value {
+            case HKCategoryValueSleepAnalysis.asleepDeep.rawValue: deep += duration
+            case HKCategoryValueSleepAnalysis.asleepREM.rawValue: rem += duration
+            case HKCategoryValueSleepAnalysis.asleepCore.rawValue: core += duration
+            case HKCategoryValueSleepAnalysis.awake.rawValue: awake += duration
+            case HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue: unspecified += duration
+            default: break
             }
         }
         
-        /// Helper to sum up stages for a set of samples
-        private func calculateMetrics(for samples: [HKCategorySample]) -> (deep: TimeInterval?, rem: TimeInterval?, core: TimeInterval?, awake: TimeInterval?, unspecified: TimeInterval?) {
-            var deep: TimeInterval = 0
-            var rem: TimeInterval = 0
-            var core: TimeInterval = 0
-            var awake: TimeInterval = 0
-            var unspecified: TimeInterval = 0
-            
-            for sample in samples {
-                let duration = sample.endDate.timeIntervalSince(sample.startDate)
-                switch sample.value {
-                case HKCategoryValueSleepAnalysis.asleepDeep.rawValue: deep += duration
-                case HKCategoryValueSleepAnalysis.asleepREM.rawValue: rem += duration
-                case HKCategoryValueSleepAnalysis.asleepCore.rawValue: core += duration
-                case HKCategoryValueSleepAnalysis.awake.rawValue: awake += duration
-                case HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue: unspecified += duration
-                default: break
-                }
-            }
-            
-            return (
-                deep > 0 ? deep : nil,
-                rem > 0 ? rem : nil,
-                core > 0 ? core : nil,
-                awake > 0 ? awake : nil,
-                unspecified > 0 ? unspecified : nil
-            )
-        }
+        return (
+            deep > 0 ? deep : nil,
+            rem > 0 ? rem : nil,
+            core > 0 ? core : nil,
+            awake > 0 ? awake : nil,
+            unspecified > 0 ? unspecified : nil
+        )
+    }
     
     /// Merges overlapping intervals
     private func calculateUniqueDuration(_ samples: [HKCategorySample]) -> TimeInterval {
@@ -857,5 +857,5 @@ class HealthKitManager: ObservableObject {
         totalDuration += currentEnd.timeIntervalSince(currentStart)
         return totalDuration
     }
-
+    
 }
