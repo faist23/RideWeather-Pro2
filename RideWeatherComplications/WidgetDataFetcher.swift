@@ -96,7 +96,7 @@ class WidgetDataFetcher {
             if let weatherData = parseWeatherResponse(data) {
                 let encoded = try? JSONEncoder().encode(weatherData)
                 defaults?.set(encoded, forKey: "widget_weather_summary")
-                defaults?.synchronize()
+ //               defaults?.synchronize()
                 print("✅ Widget: Weather updated - \(weatherData.temperature)°F, Alert: \(weatherData.alertSeverity ?? "None")")
                 return encoded
             }

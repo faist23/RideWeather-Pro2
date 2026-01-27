@@ -75,9 +75,42 @@
 		7E87E9662F15F29F0050060A /* RideWeatherComplicationsExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RideWeatherComplicationsExtension.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		7E4D995C2F2929B800034822 /* Exceptions for "RideWeather Pro" folder in "RideWeatherComplicationsExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				OpenWeather.plist,
+			);
+			target = 7E87E94D2F15F2840050060A /* RideWeatherComplicationsExtension */;
+		};
+		7EDF47E52F290A200058A8FA /* Exceptions for "RideWeatherComplications" folder in "RideWeatherComplicationsExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 7E87E94D2F15F2840050060A /* RideWeatherComplicationsExtension */;
+		};
+		7EDF47E72F290B3A0058A8FA /* Exceptions for "RideWeather Pro" folder in "RideWeatherWatch Watch App" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				OpenWeather.plist,
+				TrainingLoad/PhysiologicalReadiness.swift,
+				TrainingLoad/RecoveryStatus.swift,
+				TrainingLoad/TrainingLoadModels.swift,
+				Utilities/WeatherAlert.swift,
+				Wellness/DailyWellnessMetrics.swift,
+			);
+			target = 7E87E91B2F12EDBF0050060A /* RideWeatherWatch Watch App */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		7E5B80AD2E4C3B2D005D114F /* RideWeather Pro */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7EDF47E72F290B3A0058A8FA /* Exceptions for "RideWeather Pro" folder in "RideWeatherWatch Watch App" target */,
+				7E4D995C2F2929B800034822 /* Exceptions for "RideWeather Pro" folder in "RideWeatherComplicationsExtension" target */,
+			);
 			path = "RideWeather Pro";
 			sourceTree = "<group>";
 		};
@@ -88,6 +121,9 @@
 		};
 		7E87E9542F15F2840050060A /* RideWeatherComplications */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7EDF47E52F290A200058A8FA /* Exceptions for "RideWeatherComplications" folder in "RideWeatherComplicationsExtension" target */,
+			);
 			path = RideWeatherComplications;
 			sourceTree = "<group>";
 		};
@@ -559,7 +595,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "RideWeatherWatch Watch App/RideWeatherWatch Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 1.1;
 				DEVELOPMENT_TEAM = DT58WA8N32;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -597,7 +633,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "RideWeatherWatch Watch App/RideWeatherWatch Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 1.1;
 				DEVELOPMENT_TEAM = DT58WA8N32;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -635,12 +671,13 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = RideWeatherComplicationsExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 1.1;
 				DEVELOPMENT_TEAM = DT58WA8N32;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RideWeatherComplications/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RideWeatherComplications;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "-.RideWeather-Pro.watchkitapp";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -658,7 +695,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 26.2;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Debug;
 		};
@@ -669,12 +706,13 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = RideWeatherComplicationsExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 1.1;
 				DEVELOPMENT_TEAM = DT58WA8N32;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RideWeatherComplications/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RideWeatherComplications;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "-.RideWeather-Pro.watchkitapp";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -692,7 +730,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 26.2;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Release;
 		};
