@@ -15,6 +15,9 @@ import UIKit
 class UnifiedWellnessSync: ObservableObject {
     private let healthStore = HKHealthStore()
     private let wellnessService = WellnessDataService()
+
+    // Define the central variable here
+    let initialWellnessDays = 30
     
     // Published properties for UI binding
     @Published var isSyncing = false
@@ -69,7 +72,7 @@ class UnifiedWellnessSync: ObservableObject {
     func syncFromConfiguredSource(
         healthManager: HealthKitManager,
         garminService: GarminService,
-        days: Int = 7
+        days: Int = 30
     ) async {
         print("\n" + String(repeating: "=", count: 60))
         print("🔄 WELLNESS SYNC STARTED")
@@ -113,6 +116,14 @@ class UnifiedWellnessSync: ObservableObject {
                 return
             }
             
+            // UPDATE SUMMARY HERE
+            await MainActor.run {
+                WellnessManager.shared.updateSummary(days: initialWellnessDays)
+                
+                // Existing logic to notify UI
+                NotificationCenter.default.post(name: .wellnessDataUpdated, object: nil)
+            }
+            
             syncStatus = "Wellness sync complete!"
             print("\n✅ Sync completed successfully")
             print("   Source: \(config.wellnessSource.rawValue)")
@@ -131,7 +142,7 @@ class UnifiedWellnessSync: ObservableObject {
         }
     }
     
-    // ✅ ADD NEW METHOD to update app weight from synced metrics
+    // METHOD to update app weight from synced metrics
     private func updateWeightFromLatestMetrics() async {
         await MainActor.run {
             // Get the most recent weight from wellness metrics
@@ -181,9 +192,9 @@ class UnifiedWellnessSync: ObservableObject {
          
          do {
              // Pass the garminUserId to the fetch methods
-             async let dailies = wellnessService.fetchDailySummaries(forUser: userId, garminUserId: garminUserId, days: 7)
-             async let sleep = wellnessService.fetchSleepData(forUser: userId, garminUserId: garminUserId, days: 7)
-             async let bodyComps = wellnessService.fetchBodyComposition(forUser: userId, garminUserId: garminUserId, days: 30) // Fetch more days for weight
+             async let dailies = wellnessService.fetchDailySummaries(forUser: userId, garminUserId: garminUserId, days: initialWellnessDays)
+             async let sleep = wellnessService.fetchSleepData(forUser: userId, garminUserId: garminUserId, days: initialWellnessDays)
+             async let bodyComps = wellnessService.fetchBodyComposition(forUser: userId, garminUserId: garminUserId, days: initialWellnessDays) 
 
              let (dailyData, sleepData, bodyCompData) = try await (dailies, sleep, bodyComps)
 
@@ -391,7 +402,7 @@ class UnifiedWellnessSync: ObservableObject {
         let calendar = Calendar.current
         let endDate = Date()
         let startOfToday = calendar.startOfDay(for: endDate)
-        let startDate = calendar.date(byAdding: .day, value: -7, to: startOfToday)!
+        let startDate = calendar.date(byAdding: .day, value: -initialWellnessDays, to: startOfToday)!
         
         // Fetch data
         async let hrv = fetchHRVData(start: startDate, end: endDate)
