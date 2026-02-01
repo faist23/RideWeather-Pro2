@@ -22,9 +22,9 @@ class WatchWeatherService {
     }
     
     // Updated return type to include optional Alert
-    func fetchWeather(for coordinate: CLLocationCoordinate2D) async throws -> (data: WatchWeatherData, alerts: [WeatherAlert]) {
-        // Switch to One Call API (exclude minutely, hourly, daily to save data/battery)
-        let urlString = "https://api.openweathermap.org/data/3.0/onecall?lat=\(coordinate.latitude)&lon=\(coordinate.longitude)&exclude=minutely,hourly,daily&appid=\(apiKey)&units=imperial"
+    func fetchWeather(for coordinate: CLLocationCoordinate2D) async throws -> (data: WatchWeatherData, alerts: [WeatherAlert], hourly: [ForecastHour]) {
+        // Switch to One Call API (exclude minutely, daily to save data/battery)
+        let urlString = "https://api.openweathermap.org/data/3.0/onecall?lat=\(coordinate.latitude)&lon=\(coordinate.longitude)&exclude=minutely,daily&appid=\(apiKey)&units=imperial"
         
         guard let url = URL(string: urlString) else {
             throw WatchWeatherError.invalidURL
@@ -33,6 +33,17 @@ class WatchWeatherService {
         let (data, _) = try await URLSession.shared.data(from: url)
         let response = try JSONDecoder().decode(WatchOneCallResponse.self, from: data)
         
+        let hourly = response.hourly?.prefix(6).map { hour in
+            ForecastHour(
+                time: Date(timeIntervalSince1970: hour.dt),
+                temp: Int(hour.temp),
+                feelsLike: Int(hour.feels_like),
+                windSpeed: Int(hour.wind_speed),
+                icon: mapConditionToIcon(hour.weather.first?.main ?? "Clear")
+            )
+        } ?? []
+        
+            
         // Map Basic Data
         let weatherData = WatchWeatherData(
             temperature: response.current.temp,
@@ -56,7 +67,7 @@ class WatchWeatherService {
             )
         } ?? [] // Default to empty array if nil
         
-        return (weatherData, alerts)
+        return (weatherData, alerts, hourly)
     }
     
     private func loadConfig() {
@@ -105,6 +116,7 @@ enum WatchWeatherError: Error {
 
 struct WatchOneCallResponse: Codable {
     let current: WatchCurrentWeather
+    let hourly: [WatchHourlyWeather]?
     let alerts: [WatchOpenWeatherAlert]?
 }
 
@@ -112,6 +124,14 @@ struct WatchCurrentWeather: Codable {
     let temp: Double
     let feels_like: Double
     let humidity: Int
+    let wind_speed: Double
+    let weather: [WatchWeatherCondition]
+}
+
+struct WatchHourlyWeather: Codable {
+    let dt: TimeInterval
+    let temp: Double
+    let feels_like: Double
     let wind_speed: Double
     let weather: [WatchWeatherCondition]
 }

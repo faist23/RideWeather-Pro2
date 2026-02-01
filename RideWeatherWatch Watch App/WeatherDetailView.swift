@@ -126,6 +126,54 @@ struct WeatherDetailView: View {
                         .frame(maxWidth: .infinity)
                     }
                     .padding(.top, session.weatherAlerts.isEmpty ? 4 : 0)
+ 
+                    if let forecasts = weather.hourlyForecast?.prefix(6), !forecasts.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("NEXT 6 HOURS")
+                                .font(.system(size: 10, weight: .black))
+                                .foregroundStyle(.secondary)
+                                .padding(.leading, 4)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(forecasts) { hour in
+                                        VStack(spacing: 4) {
+                                            Text(hour.time.formatted(.dateTime.hour()))
+                                                .font(.system(size: 10, weight: .medium))
+                                                .foregroundStyle(.secondary)
+                                            
+                                            Image(systemName: hour.icon)
+                                                .font(.system(size: 14))
+                                                .foregroundStyle(.blue)
+                                            
+                                            VStack(spacing: 0) {
+                                                Text("\(hour.temp)°")
+                                                    .font(.system(size: 16, weight: .bold))
+                                                
+                                                Text("(\(hour.feelsLike)°)")
+                                                    .font(.system(size: 10))
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            
+                                            HStack(spacing: 2) {
+                                                Image(systemName: "wind")
+                                                    .font(.system(size: 8))
+                                                Text("\(hour.windSpeed)")
+                                                    .font(.system(size: 10, weight: .bold))
+                                            }
+                                            .foregroundStyle(windColor(hour.windSpeed))
+                                        }
+                                        .frame(width: 45)
+                                        .padding(.vertical, 6)
+                                        .background(Color.white.opacity(0.1))
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.top, 8)
+                    }
+                    
                     // Footer
                     Text("Updated: \(weather.generatedAt.formatted(date: .omitted, time: .shortened))")
                         .font(.system(size: 10))
@@ -170,4 +218,14 @@ struct WeatherSummaryData: Codable {
     let windDirection: String
     let pop: Int
     let generatedAt: Date
+    let hourlyForecast: [ForecastHour]?
+}
+
+struct ForecastHour: Codable, Identifiable {
+    var id: Date { time }
+    let time: Date
+    let temp: Int
+    let feelsLike: Int
+    let windSpeed: Int
+    let icon: String
 }

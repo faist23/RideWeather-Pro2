@@ -14,6 +14,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     
     @StateObject private var dataSourceManager = DataSourceManager.shared
+    @ObservedObject var wellnessManager = WellnessManager.shared
     @State private var lastRefresh = Date() // Forces UI update
 
     @State private var showWeightSourcePicker = false
@@ -189,6 +190,11 @@ struct SettingsView: View {
                 Label("Reset All Data", systemImage: "trash")
                     .foregroundStyle(.red)
             }
+            
+            ShareLink(item: generateWellnessCSVURL()) {
+                Label("Export Sleep History (CSV)", systemImage: "square.and.arrow.up")
+            }
+
         }
         .id(lastRefresh)
     }
@@ -646,6 +652,16 @@ struct SettingsView: View {
         NotificationCenter.default.post(name: .dataSourceChanged, object: nil)
         
         print("📊 Data Sources: First launch configuration applied")
+    }
+    
+    // Helper to generate the temporary file for sharing
+    private func generateWellnessCSVURL() -> URL {
+        let csvString = wellnessManager.exportWellnessToCSV()
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RideWeather_Wellness_Export.csv")
+        
+        try? csvString.write(to: tempURL, atomically: true, encoding: .utf8)
+        return tempURL
     }
 }
 

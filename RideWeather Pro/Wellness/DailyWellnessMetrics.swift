@@ -187,13 +187,18 @@ struct  WellnessSummary: Codable {
         return recentAvg - previousAvg
     }
     
-    /// Sleep debt in hours (negative = sleep deficit)
+    /// Sleep debt in hours for the specific period (negative = sleep deficit)
     var sleepDebt: Double? {
-        let values = metrics.compactMap { $0.totalSleep }
+        // 1. We limit the calculation to the last 7 entries in the provided metrics
+        let recentMetrics = metrics.suffix(7)
+        let values = recentMetrics.compactMap { $0.totalSleep }
+        
         guard !values.isEmpty else { return nil }
         
         let targetSleep: TimeInterval = 8 * 3600 // 8 hours target
         let totalActual = values.reduce(0, +)
+        
+        // 2. We multiply the target by the number of days actually present in the last 7
         let totalTarget = targetSleep * Double(values.count)
         
         return (totalActual - totalTarget) / 3600 // Convert to hours

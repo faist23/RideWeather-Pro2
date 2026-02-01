@@ -267,9 +267,40 @@ extension WatchSessionManager: WCSessionDelegate {
         // 8. Save Weather Data for Widget
         // We don't need to decode it here; just pass the raw data to the Widget's storage
         if let weatherData = context["weatherSummary"] as? Data {
+            let decoder = JSONDecoder()
             let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
+            
+            // 1. Decode the new data from the iPhone
+            if let newSummary = try? decoder.decode(SharedWeatherSummary.self, from: weatherData) {
+                
+                // 2. If the new summary has NO forecast, try to preserve the old one
+                if newSummary.hourlyForecast == nil || newSummary.hourlyForecast?.isEmpty == true {
+                    if let oldData = defaults?.data(forKey: "widget_weather_summary"),
+                       let oldSummary = try? decoder.decode(SharedWeatherSummary.self, from: oldData) {
+                        
+                        // Merge the iPhone's current weather with the Watch's existing forecast
+                        let mergedSummary = SharedWeatherSummary(
+                            temperature: newSummary.temperature,
+                            feelsLike: newSummary.feelsLike,
+                            conditionIcon: newSummary.conditionIcon,
+                            windSpeed: newSummary.windSpeed,
+                            windDirection: newSummary.windDirection,
+                            pop: newSummary.pop,
+                            generatedAt: newSummary.generatedAt,
+                            alertSeverity: newSummary.alertSeverity,
+                            hourlyForecast: oldSummary.hourlyForecast // Keep the old forecast
+                        )
+                        
+                        if let encoded = try? JSONEncoder().encode(mergedSummary) {
+                            defaults?.set(encoded, forKey: "widget_weather_summary")
+                        }
+                        return
+                    }
+                }
+            }
+            
+            // Fallback: save as usual if merging isn't needed
             defaults?.set(weatherData, forKey: "widget_weather_summary")
-            print("⌚️ Received & Saved Weather Summary for Widget")
         }
         
         // 9. Decode AND Save Precise Timestamp (Fix for "19h")

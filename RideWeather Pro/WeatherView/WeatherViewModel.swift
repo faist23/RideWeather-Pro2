@@ -664,6 +664,17 @@ class WeatherViewModel: ObservableObject {
             }
         }
         
+        // Map your existing hourlyForecast to the new ForecastHour format
+        let summaryHourly = self.hourlyForecast.prefix(6).map { forecast in
+            ForecastHour(
+                time: forecast.date,
+                temp: Int(forecast.temp),
+                feelsLike: Int(forecast.feelsLike),
+                windSpeed: Int(forecast.windSpeed),
+                icon: forecast.iconName
+            )
+        }
+
         // Save Summary for Widget
         // This takes the current weather and saves it to the App Group
         let summary = SharedWeatherSummary(
@@ -673,7 +684,9 @@ class WeatherViewModel: ObservableObject {
             windSpeed: Int(current.wind.speed),
             windDirection: getCardinalDirection(Double(current.wind.deg)), 
             pop: Int((forecast.hourly.first?.pop ?? 0) * 100),
-            generatedAt: Date()
+            generatedAt: Date(),
+            alertSeverity: self.weatherAlerts.first?.severity.rawValue,
+            hourlyForecast: summaryHourly
         )
         
         UserDefaultsManager.shared.saveWeatherSummary(summary)

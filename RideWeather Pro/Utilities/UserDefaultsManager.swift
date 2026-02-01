@@ -235,6 +235,17 @@ struct SharedWeatherSummary: Codable {
     let windDirection: String
     let pop: Int // Probability of Precipitation %
     let generatedAt: Date
+    let alertSeverity: String?
+    let hourlyForecast: [ForecastHour]?
+}
+
+struct ForecastHour: Codable, Identifiable {
+    var id: Date { time }
+    let time: Date
+    let temp: Int
+    let feelsLike: Int
+    let windSpeed: Int
+    let icon: String
 }
 
 class UserDefaultsManager {

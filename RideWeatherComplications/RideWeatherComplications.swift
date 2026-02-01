@@ -23,6 +23,17 @@ struct SharedWeatherSummary: Codable {
     let pop: Int
     let generatedAt: Date
     let alertSeverity: String?
+    let hourlyForecast: [ForecastHour]?
+}
+
+// Ensure ForecastHour is also defined in this file/target
+struct ForecastHour: Codable, Identifiable {
+    var id: Date { time }
+    let time: Date
+    let temp: Int
+    let feelsLike: Int
+    let windSpeed: Int
+    let icon: String
 }
 
 enum ComplicationMode {
