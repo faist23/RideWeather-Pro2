@@ -33,7 +33,7 @@ class WatchWeatherService {
         let (data, _) = try await URLSession.shared.data(from: url)
         let response = try JSONDecoder().decode(WatchOneCallResponse.self, from: data)
         
-        let hourly = response.hourly?.prefix(6).map { hour in
+        let hourly = response.hourly?.prefix(8).map { hour in
             ForecastHour(
                 time: Date(timeIntervalSince1970: hour.dt),
                 temp: Int(hour.temp),

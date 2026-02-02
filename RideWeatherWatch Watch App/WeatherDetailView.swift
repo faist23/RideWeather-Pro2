@@ -12,132 +12,138 @@ struct WeatherDetailView: View {
     @ObservedObject private var session = WatchSessionManager.shared
     @EnvironmentObject var navigationManager: NavigationManager
     
+    private let topScrollID = "SCROLL_TOP"
+    
     var body: some View {
-        ScrollView {
-            VStack(spacing: 8) {
-                
-                if let weather = loadWeatherData() {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 8) {
                     
-                    // Check the array for the first alert
-                    if let alert = session.weatherAlerts.first {
-                        Button {
-                            withAnimation {
-                                navigationManager.selectedTab = .alert(0)
-                            }
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.headline)
-                                    .symbolEffect(.pulse, isActive: true)
-                                    .foregroundStyle(.black)
-                                
-                                VStack(alignment: .leading, spacing: 0) {
-                                    Text("ACTIVE ALERT")
-                                        .font(.system(size: 9, weight: .black))
+                    Color.clear
+                        .frame(height: 1)
+                        .id(topScrollID)
+                    
+                    if let weather = loadWeatherData() {
+                        
+                        // Check the array for the first alert
+                        if let alert = session.weatherAlerts.first {
+                            Button {
+                                withAnimation {
+                                    navigationManager.selectedTab = .alert(0)
+                                }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.headline)
+                                        .symbolEffect(.pulse, isActive: true)
                                         .foregroundStyle(.black)
                                     
-                                    Text(alert.message.prefix(20))
-                                        .font(.caption2)
-                                        .lineLimit(1)
-                                        .foregroundStyle(.black)
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        Text("ACTIVE ALERT")
+                                            .font(.system(size: 9, weight: .black))
+                                            .foregroundStyle(.black)
+                                        
+                                        Text(alert.message.prefix(20))
+                                            .font(.caption2)
+                                            .lineLimit(1)
+                                            .foregroundStyle(.black)
+                                    }
+                                    Spacer()
+                                    
+                                    // MULTI-ALERT INDICATOR
+                                    // If we have more than 1 alert, show a small badge
+                                    if session.weatherAlerts.count > 1 {
+                                        Text("+\(session.weatherAlerts.count - 1)")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundStyle(.black)
+                                            .padding(4)
+                                            .background(Color.white.opacity(0.4))
+                                            .clipShape(Circle())
+                                    } else {
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption2)
+                                            .foregroundStyle(.black.opacity(0.6))
+                                    }
                                 }
-                                Spacer()
-                                
-                                // MULTI-ALERT INDICATOR
-                                // If we have more than 1 alert, show a small badge
-                                if session.weatherAlerts.count > 1 {
-                                    Text("+\(session.weatherAlerts.count - 1)")
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(.black)
-                                        .padding(4)
-                                        .background(Color.white.opacity(0.4))
-                                        .clipShape(Circle())
-                                } else {
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption2)
-                                        .foregroundStyle(.black.opacity(0.6))
-                                }
+                                .padding(8)
+                                .background(alert.severity == .severe ? Color.red : (alert.severity == .warning ? Color.orange : Color.yellow))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
-                            .padding(8)
-                            .background(alert.severity == .severe ? Color.red : (alert.severity == .warning ? Color.orange : Color.yellow))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .buttonStyle(.plain)
+                            .padding(.top, 4)
                         }
-                        .buttonStyle(.plain)
-                        .padding(.top, 4)
-                    }
-                    
-                    // --- PRIMARY DASHBOARD ---
-                    HStack(alignment: .center, spacing: 8) {
                         
-                        // LEFT: Temperature
-                        VStack(spacing: 2) {
-                            HStack(alignment: .top, spacing: 2) {
-                                Text("\(weather.temperature)")
-                                    .font(.system(size: 56, weight: .black, design: .rounded))
-                                    .foregroundStyle(.white)
-                                
-                                Text("°")
-                                    .font(.system(size: 24, weight: .bold))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 8)
-                            }
+                        // --- PRIMARY DASHBOARD ---
+                        HStack(alignment: .center, spacing: 8) {
                             
-                            // Updated Feels Like - more prominent
-                            HStack(spacing: 4) {
-                                Image(systemName: weather.conditionIcon)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
+                            // LEFT: Temperature
+                            VStack(spacing: 2) {
+                                HStack(alignment: .top, spacing: 2) {
+                                    Text("\(weather.temperature)")
+                                        .font(.system(size: 56, weight: .black, design: .rounded))
+                                        .foregroundStyle(.white)
+                                    
+                                    Text("°")
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundStyle(.secondary)
+                                        .padding(.top, 8)
+                                }
                                 
-                                VStack(spacing: 0) {
-                                    Text("Feels")
-                                        .font(.system(size: 13, weight: .medium))
+                                // Updated Feels Like - more prominent
+                                HStack(spacing: 4) {
+                                    Image(systemName: weather.conditionIcon)
+                                        .font(.system(size: 12))
                                         .foregroundStyle(.secondary)
                                     
-                                    Text("\(weather.feelsLike)°")
-                                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.white.opacity(0.9))
+                                    VStack(spacing: 0) {
+                                        Text("Feels")
+                                            .font(.system(size: 13, weight: .medium))
+                                            .foregroundStyle(.secondary)
+                                        
+                                        Text("\(weather.feelsLike)°")
+                                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                                            .foregroundStyle(.white.opacity(0.9))
+                                    }
                                 }
                             }
+                            .frame(maxWidth: .infinity)
+                            
+                            // RIGHT: Wind & Conditions
+                            VStack(alignment: .leading, spacing: 6) {
+                                // Wind
+                                CompactMetricRow(
+                                    icon: "wind",
+                                    value: "\(weather.windSpeed)",
+                                    unit: "mph",
+                                    color: windColor(weather.windSpeed)
+                                )
+                                
+                                // Rain
+                                CompactMetricRow(
+                                    icon: "drop.fill",
+                                    value: "\(weather.pop)",
+                                    unit: "%",
+                                    color: .cyan
+                                )
+                                
+                                Text(weather.conditionIcon.contains("sun") ? "Clear" : "Cloudy")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
                         }
-                        .frame(maxWidth: .infinity)
+                        .padding(.top, session.weatherAlerts.isEmpty ? 4 : 0)
                         
-                        // RIGHT: Wind & Conditions
-                        VStack(alignment: .leading, spacing: 6) {
-                            // Wind
-                            CompactMetricRow(
-                                icon: "wind",
-                                value: "\(weather.windSpeed)",
-                                unit: "mph",
-                                color: windColor(weather.windSpeed)
-                            )
-                            
-                            // Rain
-                            CompactMetricRow(
-                                icon: "drop.fill",
-                                value: "\(weather.pop)",
-                                unit: "%",
-                                color: .cyan
-                            )
-                            
-                            Text(weather.conditionIcon.contains("sun") ? "Clear" : "Cloudy")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .padding(.top, session.weatherAlerts.isEmpty ? 4 : 0)
- 
-                    if let forecasts = weather.hourlyForecast?.prefix(6), !forecasts.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("NEXT 6 HOURS")
-                                .font(.system(size: 10, weight: .black))
-                                .foregroundStyle(.secondary)
-                                .padding(.leading, 4)
-                            
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
-                                    ForEach(forecasts) { hour in
-                                        VStack(spacing: 4) {
+                        if let forecasts = weather.hourlyForecast?.prefix(8), !forecasts.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("NEXT 8 HOURS")
+                                    .font(.system(size: 10, weight: .black))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.leading, 4)
+                                
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 12) {
+                                        ForEach(Array(forecasts.enumerated()), id: \.element.id) { index, hour in                                            VStack(spacing: 4) {
                                             Text(hour.time.formatted(.dateTime.hour()))
                                                 .font(.system(size: 10, weight: .medium))
                                                 .foregroundStyle(.secondary)
@@ -167,27 +173,52 @@ struct WeatherDetailView: View {
                                         .padding(.vertical, 6)
                                         .background(Color.white.opacity(0.1))
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        .id(index == 0 ? "FORECAST_START" : hour.id.description)
+                                        }
                                     }
                                 }
                             }
+                            .padding(.top, 8)
                         }
-                        .padding(.top, 8)
+                        
+                        // Footer
+                        Text("Updated: \(weather.generatedAt.formatted(date: .omitted, time: .shortened))")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
+                        
+                    } else {
+                        ContentUnavailableView("No Data", systemImage: "cloud.slash")
                     }
-                    
-                    // Footer
-                    Text("Updated: \(weather.generatedAt.formatted(date: .omitted, time: .shortened))")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 4)
-                    
-                } else {
-                    ContentUnavailableView("No Data", systemImage: "cloud.slash")
+                }
+                .padding(.horizontal)
+            }
+            // Trigger 1: Handles manual swipes
+            .onChange(of: navigationManager.selectedTab) { oldValue, newValue in
+                if newValue == .weather {
+                    scrollToTop(proxy)
                 }
             }
-            .padding(.horizontal)
+            // Trigger 2: Handles complication taps even if already on weather tab
+            .onChange(of: navigationManager.weatherResetTrigger) {
+                scrollToTop(proxy)
+            }
         }
         .containerBackground(.blue.gradient, for: .tabView)
         .containerBackground(.blue.gradient, for: .navigation)
+    }
+    
+    private func scrollToTop(_ proxy: ScrollViewProxy) {
+        // Small delay ensures the view has finished its transition or deep link processing
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            withAnimation(.spring()) {
+                // 1. Reset the main vertical page to the top
+                proxy.scrollTo(topScrollID, anchor: .top)
+                
+                // 2. Reset the horizontal forecast to the first hour
+                proxy.scrollTo("FORECAST_START", anchor: .leading)
+            }
+        }
     }
     
     // MARK: - Logic

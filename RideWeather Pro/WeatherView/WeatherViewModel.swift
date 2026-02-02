@@ -649,7 +649,7 @@ class WeatherViewModel: ObservableObject {
         if abs(rideTimestamp - nowTimestamp) < 600 {
             displayWeather = WeatherMapper.mapCurrentToDisplayModel(current)
             if let startIndex = allData.firstIndex(where: { $0.dt > nowTimestamp }) {
-                let upcomingHours = allData.dropFirst(startIndex).prefix(6)
+                let upcomingHours = allData.dropFirst(startIndex).prefix(8)
                 hourlyForecast = upcomingHours.map { WeatherMapper.mapForecastItemToUIModel($0) }
             }
         } else {
@@ -660,12 +660,12 @@ class WeatherViewModel: ObservableObject {
             }
             displayWeather = WeatherMapper.mapForecastItemToDisplayModel(targetHour)
             if let startIndex = allData.firstIndex(where: { $0.dt == targetHour.dt }) {
-                hourlyForecast = allData.dropFirst(startIndex+1).prefix(6).map { WeatherMapper.mapForecastItemToUIModel($0) }
+                hourlyForecast = allData.dropFirst(startIndex+1).prefix(8).map { WeatherMapper.mapForecastItemToUIModel($0) }
             }
         }
         
         // Map your existing hourlyForecast to the new ForecastHour format
-        let summaryHourly = self.hourlyForecast.prefix(6).map { forecast in
+        let summaryHourly = self.hourlyForecast.prefix(8).map { forecast in
             ForecastHour(
                 time: forecast.date,
                 temp: Int(forecast.temp),

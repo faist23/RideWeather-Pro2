@@ -149,8 +149,8 @@ class WidgetDataFetcher {
             let windDirection = degreesToCardinal(response.current.wind_deg)
             let pop = Int((response.hourly.first?.pop ?? 0) * 100)
             
-            // Map the next 6 hours of forecast data
-            let hourlyForecast = response.hourly.prefix(6).map { hour in
+            // Map the next 8 hours of forecast data
+            let hourlyForecast = response.hourly.prefix(8).map { hour in
                 ForecastHour(
                     time: Date(timeIntervalSince1970: hour.dt),
                     temp: Int(hour.temp.rounded()),
