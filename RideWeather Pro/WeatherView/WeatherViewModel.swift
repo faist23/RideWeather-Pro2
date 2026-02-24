@@ -289,6 +289,7 @@ class WeatherViewModel: ObservableObject {
                 self.importedRouteDisplayName = ""
                 processingStatus = ""
                 uiState = .error("Failed to parse route file: \(error.localizedDescription)")
+                hapticsManager.triggerError()
             }
         }
     }
@@ -321,6 +322,7 @@ class WeatherViewModel: ObservableObject {
             uiState = .loaded
         } catch {
             uiState = .error("Failed to fetch weather: \(error.localizedDescription)")
+            hapticsManager.triggerError()
         }
     }
     
@@ -364,6 +366,7 @@ class WeatherViewModel: ObservableObject {
             }
         } catch {
             uiState = .error("Failed to fetch weather: \(error.localizedDescription)")
+            hapticsManager.triggerError()
         }
     }
     
@@ -632,8 +635,11 @@ class WeatherViewModel: ObservableObject {
             }
             print("🌦️ weatherAlerts array now has \(self.weatherAlerts.count) alerts")
             
-            // Update phone session with most severe alert for watch
+            // Trigger haptic feedback for severe alerts
             if let mostSevere = self.weatherAlerts.sorted(by: { $0.severity.rawValue < $1.severity.rawValue }).first {
+                if mostSevere.severity == .severe {
+                    hapticsManager.triggerWarning()
+                }
                 PhoneSessionManager.shared.updateAlert(mostSevere)
             }
         } else {
