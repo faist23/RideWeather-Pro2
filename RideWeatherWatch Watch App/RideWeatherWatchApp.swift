@@ -44,7 +44,7 @@ struct RideWeatherWatch_App: App {
                 UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
                 
                 Task { @MainActor in
-                    BackgroundStepsUpdater.shared.startBackgroundUpdates()
+                    BackgroundWatchUpdater.shared.startBackgroundUpdates()
                 }
                 
                 Task {
@@ -61,6 +61,7 @@ struct RideWeatherWatch_App: App {
 class NavigationManager: ObservableObject {
     @Published var path = NavigationPath()
     @Published var selectedTab: WatchTab = .readiness
+    @Published var weatherResetTrigger = false
     
     func handleURL(_ url: URL) {
         // Reset stack
@@ -68,7 +69,9 @@ class NavigationManager: ObservableObject {
         
         // Deep Link Handling
         switch url.host {
-        case "weather": selectedTab = .weather
+        case "weather":
+            selectedTab = .weather
+            weatherResetTrigger.toggle()
         case "steps": selectedTab = .steps
         case "alert": selectedTab = .alert(0)
         default: break

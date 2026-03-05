@@ -7,11 +7,13 @@
 
 import Foundation
 import CoreLocation
+import WeatherKit
 
 class WatchWeatherService {
     static let shared = WatchWeatherService()
     
     private var openWeather: [String: String]?
+    private let appleWeather = WeatherKit.WeatherService.shared
     
     private var apiKey: String {
         return configValue(forKey: "OpenWeatherApiKey") ?? "INVALID_API"
@@ -21,10 +23,72 @@ class WatchWeatherService {
         loadConfig()
     }
     
-    // Updated return type to include optional Alert
-    func fetchWeather(for coordinate: CLLocationCoordinate2D) async throws -> (data: WatchWeatherData, alerts: [WeatherAlert]) {
-        // Switch to One Call API (exclude minutely, hourly, daily to save data/battery)
-        let urlString = "https://api.openweathermap.org/data/3.0/onecall?lat=\(coordinate.latitude)&lon=\(coordinate.longitude)&exclude=minutely,hourly,daily&appid=\(apiKey)&units=imperial"
+    func fetchWeather(for coordinate: CLLocationCoordinate2D) async throws -> (data: WatchWeatherData, alerts: [WeatherAlert], hourly: [ForecastHour], nextHourSummary: String?) {
+        let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
+        let providerString = defaults?.string(forKey: "appSettings.weatherProvider") ?? "apple"
+        
+        if providerString == "apple" {
+            return try await fetchAppleWeather(for: coordinate)
+        } else {
+            return try await fetchOpenWeather(for: coordinate)
+        }
+    }
+
+    private func fetchAppleWeather(for coordinate: CLLocationCoordinate2D) async throws -> (data: WatchWeatherData, alerts: [WeatherAlert], hourly: [ForecastHour], nextHourSummary: String?) {
+        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        
+        // Fetch Apple Weather and OpenWeather alerts in parallel
+        async let apple = appleWeather.weather(for: location)
+        async let owAlerts = fetchOpenWeatherAlerts(for: coordinate)
+        
+        let (weather, alerts) = try await (apple, owAlerts)
+        
+        let weatherData = WatchWeatherData(
+            temperature: weather.currentWeather.temperature.converted(to: .fahrenheit).value,
+            feelsLike: weather.currentWeather.apparentTemperature.converted(to: .fahrenheit).value,
+            condition: mapAppleConditionToIcon(weather.currentWeather.condition),
+            description: weather.currentWeather.condition.description,
+            location: "Current Location",
+            humidity: Int(weather.currentWeather.humidity * 100),
+            windSpeed: weather.currentWeather.wind.speed.converted(to: .milesPerHour).value,
+            timestamp: Date(),
+            highTemp: weather.dailyForecast.first?.highTemperature.converted(to: .fahrenheit).value,
+            lowTemp: weather.dailyForecast.first?.lowTemperature.converted(to: .fahrenheit).value
+        )
+        
+        let hourly = weather.hourlyForecast.prefix(8).map { hour in
+            ForecastHour(
+                time: hour.date,
+                temp: Int(hour.temperature.converted(to: .fahrenheit).value),
+                feelsLike: Int(hour.apparentTemperature.converted(to: .fahrenheit).value),
+                windSpeed: Int(hour.wind.speed.converted(to: .milesPerHour).value),
+                icon: mapAppleConditionToIcon(hour.condition)
+            )
+        }
+        
+        return (weatherData, alerts, Array(hourly), weather.minuteForecast?.summary)
+    }
+
+    private func fetchOpenWeatherAlerts(for coordinate: CLLocationCoordinate2D) async throws -> [WeatherAlert] {
+        let urlString = "https://api.openweathermap.org/data/3.0/onecall?lat=\(coordinate.latitude)&lon=\(coordinate.longitude)&exclude=minutely,hourly,current,daily&appid=\(apiKey)&units=imperial"
+        
+        guard let url = URL(string: urlString) else { return [] }
+        
+        let (data, _) = try await URLSession.shared.data(from: url)
+        let response = try JSONDecoder().decode(WatchOneCallResponse.self, from: data)
+        
+        return response.alerts?.map { alertRaw in
+            WeatherAlert(
+                message: alertRaw.event,
+                description: alertRaw.description,
+                severity: mapSeverity(alertRaw.event)
+            )
+        } ?? []
+    }
+
+    private func fetchOpenWeather(for coordinate: CLLocationCoordinate2D) async throws -> (data: WatchWeatherData, alerts: [WeatherAlert], hourly: [ForecastHour], nextHourSummary: String?) {
+        // Switch to One Call API (exclude minutely, daily to save data/battery)
+        let urlString = "https://api.openweathermap.org/data/3.0/onecall?lat=\(coordinate.latitude)&lon=\(coordinate.longitude)&exclude=minutely,daily&appid=\(apiKey)&units=imperial"
         
         guard let url = URL(string: urlString) else {
             throw WatchWeatherError.invalidURL
@@ -33,6 +97,17 @@ class WatchWeatherService {
         let (data, _) = try await URLSession.shared.data(from: url)
         let response = try JSONDecoder().decode(WatchOneCallResponse.self, from: data)
         
+        let hourly = response.hourly?.prefix(8).map { hour in
+            ForecastHour(
+                time: Date(timeIntervalSince1970: hour.dt),
+                temp: Int(hour.temp),
+                feelsLike: Int(hour.feels_like),
+                windSpeed: Int(hour.wind_speed),
+                icon: mapConditionToIcon(hour.weather.first?.main ?? "Clear")
+            )
+        } ?? []
+        
+            
         // Map Basic Data
         let weatherData = WatchWeatherData(
             temperature: response.current.temp,
@@ -56,7 +131,21 @@ class WatchWeatherService {
             )
         } ?? [] // Default to empty array if nil
         
-        return (weatherData, alerts)
+        return (weatherData, alerts, hourly, nil)
+    }
+
+    private func mapAppleConditionToIcon(_ condition: WeatherCondition) -> String {
+        switch condition {
+        case .clear, .mostlyClear: return "sun.max.fill"
+        case .partlyCloudy: return "cloud.sun.fill"
+        case .mostlyCloudy, .cloudy: return "cloud.fill"
+        case .haze, .foggy, .blowingDust: return "cloud.fog.fill"
+        case .windy: return "wind"
+        case .drizzle, .heavyRain, .rain, .sunShowers: return "cloud.rain.fill"
+        case .flurries, .snow, .heavySnow, .sunFlurries: return "cloud.snow.fill"
+        case .thunderstorms: return "cloud.bolt.fill"
+        default: return "cloud.fill"
+        }
     }
     
     private func loadConfig() {
@@ -105,6 +194,7 @@ enum WatchWeatherError: Error {
 
 struct WatchOneCallResponse: Codable {
     let current: WatchCurrentWeather
+    let hourly: [WatchHourlyWeather]?
     let alerts: [WatchOpenWeatherAlert]?
 }
 
@@ -112,6 +202,14 @@ struct WatchCurrentWeather: Codable {
     let temp: Double
     let feels_like: Double
     let humidity: Int
+    let wind_speed: Double
+    let weather: [WatchWeatherCondition]
+}
+
+struct WatchHourlyWeather: Codable {
+    let dt: TimeInterval
+    let temp: Double
+    let feels_like: Double
     let wind_speed: Double
     let weather: [WatchWeatherCondition]
 }

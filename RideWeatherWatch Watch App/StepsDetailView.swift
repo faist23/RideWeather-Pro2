@@ -202,7 +202,8 @@ struct StepsDetailView: View {
                 }
                 
                 WatchAppGroupManager.shared.saveSteps(stepsValue)
-
+                WidgetCenter.shared.reloadAllTimelines()
+                
                 // DEBUG: Verify it was saved
                 if let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather") {
                     let verifySteps = defaults.integer(forKey: "widget_today_steps")

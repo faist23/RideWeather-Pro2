@@ -29,13 +29,12 @@ class WidgetDataFetcher {
         if let defaults = defaults {
             print("🔍 Widget UserDefaults Debug:")
             print("   Suite: group.com.ridepro.rideweather")
-            if let dict = defaults.dictionaryRepresentation() as? [String: Any] {
-                print("   Total keys: \(dict.keys.count)")
-                for key in dict.keys.sorted() {
-                    if key.contains("widget") || key.contains("user_") {
-                        let value = dict[key]
-                        print("   - \(key): \(value ?? "nil")")
-                    }
+            let dict = defaults.dictionaryRepresentation()
+            print("   Total keys: \(dict.keys.count)")
+            for key in dict.keys.sorted() {
+                if key.contains("widget") || key.contains("user_") {
+                    let value = dict[key]
+                    print("   - \(key): \(value ?? "nil")")
                 }
             }
         } else {
@@ -77,7 +76,6 @@ class WidgetDataFetcher {
             return nil
         }
         
-        // UPDATED: Removed 'alerts' from exclude list
         let urlString = "https://api.openweathermap.org/data/3.0/onecall?lat=\(latitude)&lon=\(longitude)&exclude=minutely,daily&appid=\(apiKey)&units=imperial"
         
         guard let url = URL(string: urlString) else {
@@ -114,7 +112,7 @@ class WidgetDataFetcher {
         struct OneCallResponse: Codable {
             let current: Current
             let hourly: [Hourly]
-            let alerts: [Alert]? // NEW: Capture alerts
+            let alerts: [Alert]? // Capture alerts
             
             struct Current: Codable {
                 let temp: Double
@@ -125,10 +123,16 @@ class WidgetDataFetcher {
             }
             
             struct Hourly: Codable {
-                let pop: Double
-            }
+                    let dt: TimeInterval
+                    let temp: Double
+                    let feels_like: Double
+                    let wind_speed: Double
+                    let weather: [Weather]
+                    let pop: Double
+                }
             
             struct Weather: Codable {
+                let main: String
                 let icon: String
             }
             
@@ -144,6 +148,17 @@ class WidgetDataFetcher {
             let windDirection = degreesToCardinal(response.current.wind_deg)
             let pop = Int((response.hourly.first?.pop ?? 0) * 100)
             
+            // Map the next 8 hours of forecast data
+            let hourlyForecast = response.hourly.prefix(8).map { hour in
+                ForecastHour(
+                    time: Date(timeIntervalSince1970: hour.dt),
+                    temp: Int(hour.temp.rounded()),
+                    feelsLike: Int(hour.feels_like.rounded()),
+                    windSpeed: Int(hour.wind_speed.rounded()),
+                    icon: mapWeatherIcon(hour.weather.first?.icon ?? "01d")
+                )
+            }
+            
             // Map Alert Severity
             var alertSeverity: String? = nil
             if let firstAlert = response.alerts?.first {
@@ -158,7 +173,9 @@ class WidgetDataFetcher {
                 windDirection: windDirection,
                 pop: pop,
                 generatedAt: Date(),
-                alertSeverity: alertSeverity // NEW: Pass the mapped severity
+                alertSeverity: alertSeverity,
+                hourlyForecast: Array(hourlyForecast),
+                nextHourSummary: nil // OpenWeather fetch doesn't provide this summary
             )
         } catch {
             print("❌ Widget: Parse failed - \(error.localizedDescription)")

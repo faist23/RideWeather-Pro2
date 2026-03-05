@@ -26,8 +26,8 @@ class WatchAppGroupManager {
     
     private init() {}
     
-    // Updated: Accepts optional Alert
-    func saveWeatherData(_ data: WatchWeatherData, alert: WeatherAlert? = nil) {
+    // Updated: Accepts optional Alert and nextHourSummary
+    func saveWeatherData(_ data: WatchWeatherData, alert: WeatherAlert? = nil, hourly: [ForecastHour] = [], nextHourSummary: String? = nil) {
         let defaults = UserDefaults(suiteName: suiteName)
         
         // Map to Shared Summary (matches Widget definition)
@@ -39,12 +39,15 @@ class WatchAppGroupManager {
             windDirection: compassDirection(for: 0), // Simplification if wind deg missing
             pop: 0, // Pop not always available in current current-weather call
             generatedAt: Date(),
-            alertSeverity: alert?.severity.rawValue // NEW FIELD
+            alertSeverity: alert?.severity.rawValue,
+            hourlyForecast: hourly,
+            nextHourSummary: nextHourSummary
         )
         
         if let encoded = try? JSONEncoder().encode(summary) {
             defaults?.set(encoded, forKey: "widget_weather_summary")
             print("💾 Widget Data Saved. Alert: \(alert?.severity.rawValue ?? "None")")
+            print("💾 Widget Data Saved with \(hourly.count) forecast hours.")
             WidgetCenter.shared.reloadAllTimelines()
         }
     }
@@ -114,5 +117,8 @@ struct SharedWeatherSummary: Codable {
     let windDirection: String
     let pop: Int
     let generatedAt: Date
-    let alertSeverity: String? // NEW
+    let alertSeverity: String?
+    let hourlyForecast: [ForecastHour]?
+    let nextHourSummary: String? // Added for Apple WeatherKit
 }
+

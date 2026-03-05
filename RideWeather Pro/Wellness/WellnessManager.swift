@@ -178,6 +178,25 @@ class WellnessManager: ObservableObject {
         let size = storage.getStorageSizeFormatted()
         return "\(count) days (\(size))"
     }
+    
+    func exportWellnessToCSV() -> String {
+        var csv = "Date,Total Sleep (Hrs),Deep (Min),REM (Min),Core (Min),Awake (Min)\n"
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        
+        // Sort by date to see the trend clearly
+        for metric in dailyMetrics.sorted(by: { $0.date < $1.date }) {
+            let dateStr = dateFormatter.string(from: metric.date)
+            let total = (metric.totalSleep ?? 0) / 3600
+            let deep = (metric.sleepDeep ?? 0) / 60
+            let rem = (metric.sleepREM ?? 0) / 60
+            let core = (metric.sleepCore ?? 0) / 60
+            let awake = (metric.sleepAwake ?? 0) / 60
+            
+            csv += "\(dateStr),\(String(format: "%.2f", total)),\(Int(deep)),\(Int(rem)),\(Int(core)),\(Int(awake))\n"
+        }
+        return csv
+    }
 }
 
 // MARK: - Combined Insight Model

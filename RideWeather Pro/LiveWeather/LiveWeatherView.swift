@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreLocation
+import Charts
 
 struct LiveWeatherView: View {
     @EnvironmentObject var viewModel: WeatherViewModel
@@ -43,8 +44,58 @@ struct LiveWeatherView: View {
                         
                         // Weather Alerts Carousel
                         if !viewModel.weatherAlerts.isEmpty {
-                            WeatherAlertsCarousel(alerts: viewModel.weatherAlerts)
-                                .transition(.move(edge: .top).combined(with: .opacity))
+                            VStack(spacing: 8) {
+                                WeatherAlertsCarousel(alerts: viewModel.weatherAlerts)
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                                
+                                // Apple Weather Next Hour Summary
+                                if let displayWeather = viewModel.displayWeather,
+                                   let nextHour = displayWeather.nextHourSummary, !nextHour.isEmpty {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            Image(systemName: "clock.badge.exclamationmark")
+                                                .foregroundStyle(.white)
+                                            Text(nextHour)
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(.white)
+                                            Spacer()
+                                        }
+                                        
+                                        if let precipData = displayWeather.precipitationData, !precipData.isEmpty {
+                                            PrecipitationChartView(data: precipData)
+                                                .frame(height: 60)
+                                                .padding(.top, 4)
+                                        }
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .background(.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                                }
+                            }
+                        } else if let displayWeather = viewModel.displayWeather,
+                                  let nextHour = displayWeather.nextHourSummary, !nextHour.isEmpty {
+                            // Show next hour summary even if no alerts
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Image(systemName: "clock.badge.exclamationmark")
+                                        .foregroundStyle(.white)
+                                    Text(nextHour)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.white)
+                                    Spacer()
+                                }
+                                
+                                if let precipData = displayWeather.precipitationData, !precipData.isEmpty {
+                                    PrecipitationChartView(data: precipData)
+                                        .frame(height: 60)
+                                        .padding(.top, 4)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                         
                         if viewModel.isLoading && viewModel.displayWeather == nil {
@@ -77,6 +128,9 @@ struct LiveWeatherView: View {
                                 WeatherInsightsCard(weather: weatherData, insights: viewModel.enhancedInsights)
                                     .environmentObject(viewModel)
                                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                                
+                                attributionView
+                                    .padding(.top, 8)
                             }
                             
                         } else if let errorMessage = viewModel.errorMessage {
@@ -163,6 +217,38 @@ struct LiveWeatherView: View {
                 .background(.white.opacity(0.15), in: Capsule())
         }
         .padding(.top)
+    }
+    
+    @ViewBuilder
+    private var attributionView: some View {
+        Group {
+            if viewModel.settings.weatherProvider == .apple {
+                VStack(spacing: 4) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "apple.logo")
+                        Text("Weather")
+                    }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.7))
+                    
+                    Link("Legal Attribution", destination: URL(string: "https://weatherkit.apple.com/legal-attribution.html")!)
+                        .font(.caption2)
+                        .foregroundStyle(.blue)
+                }
+            } else {
+                VStack(spacing: 4) {
+                    Text("Powered by OpenWeather")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                    
+                    Link("openweathermap.org", destination: URL(string: "https://openweathermap.org")!)
+                        .font(.caption2)
+                        .foregroundStyle(.blue)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
     }
 }
 
@@ -535,6 +621,36 @@ extension WeatherViewModel {
     }
 }
 
+// MARK: - Precipitation Chart View
+
+struct PrecipitationChartView: View {
+    let data: [PrecipitationPoint]
+    
+    var body: some View {
+        Chart {
+            ForEach(data) { point in
+                BarMark(
+                    x: .value("Time", point.date),
+                    y: .value("Intensity", point.intensity)
+                )
+                .foregroundStyle(.white.opacity(0.7))
+            }
+        }
+        .chartYAxis(.hidden)
+        .chartXAxis {
+            AxisMarks(values: .stride(by: .minute, count: 15)) { value in
+                if let date = value.as(Date.self) {
+                    AxisValueLabel {
+                        Text(date.formatted(.dateTime.minute()))
+                            .font(.system(size: 8))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                }
+            }
+        }
+    }
+}
+
 /*
 #Preview("Multiple Alerts") {
     NavigationStack {
@@ -587,6 +703,36 @@ extension WeatherViewModel {
             }
         }
         .background(.blue.gradient)
+    }
+}
+
+// MARK: - Precipitation Chart View
+
+struct PrecipitationChartView: View {
+    let data: [PrecipitationPoint]
+    
+    var body: some View {
+        Chart {
+            ForEach(data) { point in
+                BarMark(
+                    x: .value("Time", point.date),
+                    y: .value("Intensity", point.intensity)
+                )
+                .foregroundStyle(.white.opacity(0.7))
+            }
+        }
+        .chartYAxis(.hidden)
+        .chartXAxis {
+            AxisMarks(values: .stride(by: .minute, count: 15)) { value in
+                if let date = value.as(Date.self) {
+                    AxisValueLabel {
+                        Text(date.formatted(.dateTime.minute()))
+                            .font(.system(size: 8))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                }
+            }
+        }
     }
 }
 */

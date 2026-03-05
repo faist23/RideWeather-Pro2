@@ -10,6 +10,12 @@ import CoreLocation
 import SwiftUI
 
 // MARK: - UI-Facing Models
+struct PrecipitationPoint: Codable, Identifiable {
+    var id: Date { date }
+    let date: Date
+    let intensity: Double // mm/h
+}
+
 struct DisplayWeatherModel {
     let temp: Double
     let feelsLike: Double
@@ -22,6 +28,8 @@ struct DisplayWeatherModel {
     let pop: Double
     let visibility: Int? // Add visibility
     let uvIndex: Double? // Add UV index
+    let nextHourSummary: String? // Added for Apple WeatherKit
+    var precipitationData: [PrecipitationPoint]? // For minutely graph
 }
 
 struct HourlyForecast: Identifiable, Equatable {
@@ -85,7 +93,7 @@ struct HourlyForecast: Identifiable, Equatable {
         }
     }
 
-    // Initializer for the 6-hour forecast data (HourlyItem)
+    // Initializer for the 8-hour forecast data (HourlyItem)
     init(from item: HourlyItem) {
         let itemDate = Date(timeIntervalSince1970: item.dt)
         let formatter = DateFormatter()
@@ -177,6 +185,8 @@ struct CurrentWeatherResponse: Codable {
     let wind: Wind
     let visibility: Int? // visibility in meters
     let name: String
+    let nextHourSummary: String? // Added for Apple WeatherKit support
+    var precipitationData: [PrecipitationPoint]? // Added for Apple WeatherKit support
 }
 
 struct OneCallResponse: Codable {
@@ -215,6 +225,19 @@ struct HourlyItem: Codable {
         case feelsLike = "feels_like"
         case windSpeed = "wind_speed"
         case windDeg = "wind_deg"
+    }
+    
+    // Member-wise initializer for manual creation (e.g. from Apple WeatherKit)
+    init(dt: TimeInterval, temp: Double, feelsLike: Double, pop: Double, humidity: Int, weather: [Weather], windSpeed: Double, windDeg: Int, uvi: Double) {
+        self.dt = dt
+        self.temp = temp
+        self.feelsLike = feelsLike
+        self.pop = pop
+        self.humidity = humidity
+        self.weather = weather
+        self.windSpeed = windSpeed
+        self.windDeg = windDeg
+        self.uvi = uvi
     }
     
     // Custom initializer to handle missing uvi
@@ -347,7 +370,7 @@ extension RouteWeatherPoint: Codable {
         case weather_temp, weather_feelsLike, weather_humidity
         case weather_windSpeed, weather_windDirection, weather_windDeg
         case weather_description, weather_iconName, weather_pop
-        case weather_visibility, weather_uvIndex
+        case weather_visibility, weather_uvIndex, weather_nextHourSummary
     }
     
     func encode(to encoder: Encoder) throws {
@@ -367,6 +390,7 @@ extension RouteWeatherPoint: Codable {
         try container.encode(weather.pop, forKey: .weather_pop)
         try container.encodeIfPresent(weather.visibility, forKey: .weather_visibility)
         try container.encodeIfPresent(weather.uvIndex, forKey: .weather_uvIndex)
+        try container.encodeIfPresent(weather.nextHourSummary, forKey: .weather_nextHourSummary)
     }
     
     init(from decoder: Decoder) throws {
@@ -388,7 +412,8 @@ extension RouteWeatherPoint: Codable {
             iconName: try container.decode(String.self, forKey: .weather_iconName),
             pop: try container.decode(Double.self, forKey: .weather_pop),
             visibility: try container.decodeIfPresent(Int.self, forKey: .weather_visibility),
-            uvIndex: try container.decodeIfPresent(Double.self, forKey: .weather_uvIndex)
+            uvIndex: try container.decodeIfPresent(Double.self, forKey: .weather_uvIndex),
+            nextHourSummary: try container.decodeIfPresent(String.self, forKey: .weather_nextHourSummary)
         )
     }
 }

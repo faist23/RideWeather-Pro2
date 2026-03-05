@@ -103,14 +103,14 @@ class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegat
         do {
             print("🔄 Fetching weather for: \(loc.coordinate.latitude), \(loc.coordinate.longitude)")
             
-            // 1. Fetch Data (Tuple: Data + Array of Alerts)
-            let (weatherData, alerts) = try await WatchWeatherService.shared.fetchWeather(for: loc.coordinate)
+            // 1. Fetch Data (Tuple: Data + Array of Alerts + Hourly + Summary)
+            let (weatherData, alerts, hourly, nextHourSummary) = try await WatchWeatherService.shared.fetchWeather(for: loc.coordinate)
             
             // 2. Update Session (Main Actor is guaranteed by class annotation)
             WatchSessionManager.shared.updateWeatherAlerts(alerts)
             
             // 3. Save weather data for widget
-            WatchAppGroupManager.shared.saveWeatherData(weatherData, alert: alerts.first)
+            WatchAppGroupManager.shared.saveWeatherData(weatherData, alert: alerts.first, hourly: hourly, nextHourSummary: nextHourSummary)
             
             print("✅ Weather Updated. Alerts found: \(alerts.count)")
             
@@ -122,4 +122,5 @@ class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegat
     deinit {
         updateTask?.cancel()
     }
+    
 }

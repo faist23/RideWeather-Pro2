@@ -5,8 +5,16 @@
 import Foundation
 import WidgetKit
 
+enum WeatherProvider: String, CaseIterable, Identifiable, Codable {
+    case apple = "Apple Weather"
+    case openWeather = "OpenWeather"
+    
+    var id: String { self.rawValue }
+}
+
 struct AppSettings: Codable, Equatable {
     var units: UnitSystem = .imperial
+    var weatherProvider: WeatherProvider = .apple
     var idealTemperature: Double = 70.0
     
     // MARK: - NEW Safety Warning Settings
@@ -235,6 +243,18 @@ struct SharedWeatherSummary: Codable {
     let windDirection: String
     let pop: Int // Probability of Precipitation %
     let generatedAt: Date
+    let alertSeverity: String?
+    let hourlyForecast: [ForecastHour]?
+    let nextHourSummary: String? // Added for Apple WeatherKit
+}
+
+struct ForecastHour: Codable, Identifiable {
+    var id: Date { time }
+    let time: Date
+    let temp: Int
+    let feelsLike: Int
+    let windSpeed: Int
+    let icon: String
 }
 
 class UserDefaultsManager {
@@ -252,6 +272,10 @@ class UserDefaultsManager {
     func saveSettings(_ settings: AppSettings) {
         if let encoded = try? JSONEncoder().encode(settings) {
             defaults.set(encoded, forKey: settingsKey)
+            
+            // Also save the weather provider string separately to App Group for easy Watch access
+            sharedDefaults?.set(settings.weatherProvider.rawValue.lowercased(), forKey: "appSettings.weatherProvider")
+            sharedDefaults?.synchronize()
         }
     }
 

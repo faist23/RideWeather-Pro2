@@ -491,7 +491,7 @@ extension AIInsightsManager {
             print("🤖 AI Insights: Too soon since last analysis")
             return
         }
-        
+ 
         await generateWellnessEnhancedInsight(
             summary: summary,
             readiness: readiness,
@@ -529,6 +529,7 @@ extension AIInsightsManager {
         } catch {
             print("🤖 AI Insights Error: \(error.localizedDescription)")
         }
+        print("DEBUG: Current Insight is \(currentInsight == nil ? "NIL" : "SET")")
     }
     
     private func buildWellnessEnhancedPrompt(

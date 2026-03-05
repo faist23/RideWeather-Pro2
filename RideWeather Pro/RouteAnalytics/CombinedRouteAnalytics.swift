@@ -698,7 +698,8 @@ struct UnifiedRouteAnalyticsEngine {
                     iconName: forecastForTime.iconName,
                     pop: forecastForTime.pop,
                     visibility: nil,
-                    uvIndex: forecastForTime.uvIndex
+                    uvIndex: forecastForTime.uvIndex,
+                    nextHourSummary: nil
                 )
             }
             

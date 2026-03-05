@@ -289,6 +289,7 @@ class WeatherViewModel: ObservableObject {
                 self.importedRouteDisplayName = ""
                 processingStatus = ""
                 uiState = .error("Failed to parse route file: \(error.localizedDescription)")
+                hapticsManager.triggerError()
             }
         }
     }
@@ -311,7 +312,8 @@ class WeatherViewModel: ObservableObject {
             // Fetch daily separately (Option B)
             do {
                 let dailyItems = try await weatherRepo.fetchDailyForecast(for: location, units: settings.units.rawValue)
-                self.dailyForecast = dailyItems.prefix(7).map { WeatherMapper.mapDailyItem($0) }
+                let limit = settings.weatherProvider == .apple ? 10 : 8
+                self.dailyForecast = dailyItems.prefix(limit).map { WeatherMapper.mapDailyItem($0) }
             } catch {
                 // Non-fatal - log and continue
                 print("⚠️ Failed to fetch daily forecast: \(error.localizedDescription)")
@@ -321,6 +323,7 @@ class WeatherViewModel: ObservableObject {
             uiState = .loaded
         } catch {
             uiState = .error("Failed to fetch weather: \(error.localizedDescription)")
+            hapticsManager.triggerError()
         }
     }
     
@@ -349,7 +352,8 @@ class WeatherViewModel: ObservableObject {
             // Fetch daily separately
             do {
                 let dailyItems = try await weatherRepo.fetchDailyForecast(for: location, units: settings.units.rawValue)
-                self.dailyForecast = dailyItems.prefix(7).map { WeatherMapper.mapDailyItem($0) }
+                let limit = settings.weatherProvider == .apple ? 10 : 8
+                self.dailyForecast = dailyItems.prefix(limit).map { WeatherMapper.mapDailyItem($0) }
             } catch {
                 print("⚠️ Failed loading daily forecast: \(error.localizedDescription)")
                 self.dailyForecast = []
@@ -364,6 +368,7 @@ class WeatherViewModel: ObservableObject {
             }
         } catch {
             uiState = .error("Failed to fetch weather: \(error.localizedDescription)")
+            hapticsManager.triggerError()
         }
     }
     
@@ -611,7 +616,11 @@ class WeatherViewModel: ObservableObject {
     }
     
     private func processWeatherData(current: CurrentWeatherResponse, forecast: OneCallResponse) async {
-        if !current.name.isEmpty { locationName = current.name }
+        // Only update locationName if current response has a valid name (e.g. from OpenWeather)
+        // If empty (e.g. from Apple), we rely on CityNameResolver which is already running
+        if !current.name.isEmpty && current.name != "Unknown Location" { 
+            locationName = current.name 
+        }
 
         // 1. PROCESS ALERTS - Now handling multiple alerts
         if let alerts = forecast.alerts, !alerts.isEmpty {
@@ -632,8 +641,11 @@ class WeatherViewModel: ObservableObject {
             }
             print("🌦️ weatherAlerts array now has \(self.weatherAlerts.count) alerts")
             
-            // Update phone session with most severe alert for watch
+            // Trigger haptic feedback for severe alerts
             if let mostSevere = self.weatherAlerts.sorted(by: { $0.severity.rawValue < $1.severity.rawValue }).first {
+                if mostSevere.severity == .severe {
+                    hapticsManager.triggerWarning()
+                }
                 PhoneSessionManager.shared.updateAlert(mostSevere)
             }
         } else {
@@ -649,7 +661,7 @@ class WeatherViewModel: ObservableObject {
         if abs(rideTimestamp - nowTimestamp) < 600 {
             displayWeather = WeatherMapper.mapCurrentToDisplayModel(current)
             if let startIndex = allData.firstIndex(where: { $0.dt > nowTimestamp }) {
-                let upcomingHours = allData.dropFirst(startIndex).prefix(6)
+                let upcomingHours = allData.dropFirst(startIndex).prefix(8)
                 hourlyForecast = upcomingHours.map { WeatherMapper.mapForecastItemToUIModel($0) }
             }
         } else {
@@ -660,10 +672,21 @@ class WeatherViewModel: ObservableObject {
             }
             displayWeather = WeatherMapper.mapForecastItemToDisplayModel(targetHour)
             if let startIndex = allData.firstIndex(where: { $0.dt == targetHour.dt }) {
-                hourlyForecast = allData.dropFirst(startIndex+1).prefix(6).map { WeatherMapper.mapForecastItemToUIModel($0) }
+                hourlyForecast = allData.dropFirst(startIndex+1).prefix(8).map { WeatherMapper.mapForecastItemToUIModel($0) }
             }
         }
         
+        // Map your existing hourlyForecast to the new ForecastHour format
+        let summaryHourly = self.hourlyForecast.prefix(8).map { forecast in
+            ForecastHour(
+                time: forecast.date,
+                temp: Int(forecast.temp),
+                feelsLike: Int(forecast.feelsLike),
+                windSpeed: Int(forecast.windSpeed),
+                icon: forecast.iconName
+            )
+        }
+
         // Save Summary for Widget
         // This takes the current weather and saves it to the App Group
         let summary = SharedWeatherSummary(
@@ -673,7 +696,10 @@ class WeatherViewModel: ObservableObject {
             windSpeed: Int(current.wind.speed),
             windDirection: getCardinalDirection(Double(current.wind.deg)), 
             pop: Int((forecast.hourly.first?.pop ?? 0) * 100),
-            generatedAt: Date()
+            generatedAt: Date(),
+            alertSeverity: self.weatherAlerts.first?.severity.rawValue,
+            hourlyForecast: summaryHourly,
+            nextHourSummary: displayWeather?.nextHourSummary
         )
         
         UserDefaultsManager.shared.saveWeatherSummary(summary)

@@ -6,18 +6,118 @@
 //
 
 import Foundation
+import WeatherKit
+import CoreLocation
 
 struct WeatherMapper {
-    // In WeatherMapper.swift, replace your existing mapping functions with these
+    // MARK: - Apple WeatherKit Mappings
     
+    @available(iOS 16.0, *)
+    static func mapAppleCurrentToOpenWeather(_ current: WeatherKit.CurrentWeather, location: CLLocation, units: String, nextHourSummary: String?, minuteForecast: Forecast<MinuteWeather>?) -> CurrentWeatherResponse {
+        let isImperial = units == "imperial"
+        
+        let temp = isImperial ? current.temperature.converted(to: .fahrenheit).value : current.temperature.converted(to: .celsius).value
+        let feelsLike = isImperial ? current.apparentTemperature.converted(to: .fahrenheit).value : current.apparentTemperature.converted(to: .celsius).value
+        let windSpeed = isImperial ? current.wind.speed.converted(to: .milesPerHour).value : current.wind.speed.converted(to: .kilometersPerHour).value
+        
+        let precipitationData = minuteForecast?.map { minute in
+            PrecipitationPoint(date: minute.date, intensity: minute.precipitationIntensity.value)
+        }
+        
+        return CurrentWeatherResponse(
+            coord: Coordinates(lon: location.coordinate.longitude, lat: location.coordinate.latitude),
+            weather: [Weather(main: current.condition.description, description: current.condition.description, icon: mapAppleConditionToIcon(current.condition))],
+            main: MainDetails(temp: temp, feelsLike: feelsLike, humidity: Int(current.humidity * 100)),
+            wind: Wind(speed: windSpeed, deg: Int(current.wind.direction.value)),
+            visibility: Int(current.visibility.converted(to: .meters).value),
+            name: "", // Keep empty, WeatherViewModel handles name via CityNameResolver
+            nextHourSummary: nextHourSummary,
+            precipitationData: precipitationData
+        )
+    }
+    
+    @available(iOS 16.0, *)
+    static func mapAppleHourlyToOpenWeather(_ hour: WeatherKit.HourWeather) -> HourlyItem {
+        return HourlyItem(
+            dt: hour.date.timeIntervalSince1970,
+            temp: hour.temperature.converted(to: .fahrenheit).value, 
+            feelsLike: hour.apparentTemperature.converted(to: .fahrenheit).value,
+            pop: hour.precipitationChance,
+            humidity: Int(hour.humidity * 100),
+            weather: [Weather(main: hour.condition.description, description: hour.condition.description, icon: mapAppleConditionToIcon(hour.condition))],
+            windSpeed: hour.wind.speed.converted(to: .milesPerHour).value,
+            windDeg: Int(hour.wind.direction.value),
+            uvi: Double(hour.uvIndex.value)
+        )
+    }
+
+    @available(iOS 16.0, *)
+    static func mapAppleDailyToOpenWeather(_ day: WeatherKit.DayWeather) -> DailyItem {
+        let condition = day.condition.description
+        let precip = Int(day.precipitationChance * 100)
+        let high = Int(day.highTemperature.converted(to: .fahrenheit).value)
+        let low = Int(day.lowTemperature.converted(to: .fahrenheit).value)
+        
+        // Synthesize a more descriptive summary like OpenWeather's OneCall
+        let detailSummary = "\(condition). High \(high)°, low \(low)°. \(precip)% chance of precipitation."
+        
+        return DailyItem(
+            dt: day.date.timeIntervalSince1970,
+            temp: DailyTemp(
+                min: day.lowTemperature.converted(to: .fahrenheit).value,
+                max: day.highTemperature.converted(to: .fahrenheit).value
+            ),
+            pop: day.precipitationChance,
+            weather: [Weather(main: day.condition.description, description: day.condition.description, icon: mapAppleConditionToIcon(day.condition))],
+            windSpeed: day.wind.speed.converted(to: .milesPerHour).value,
+            windDeg: Int(hourToDeg(day.wind.direction)),
+            summary: detailSummary
+        )
+    }
+
+    @available(iOS 16.0, *)
+    static func mapAppleHourlyToUIModel(_ hour: WeatherKit.HourWeather) -> HourlyForecast {
+        return HourlyForecast(
+            id: UUID(),
+            time: hour.date.formatted(.dateTime.hour()),
+            date: hour.date,
+            iconName: mapAppleConditionToIcon(hour.condition),
+            temp: hour.temperature.converted(to: .fahrenheit).value,
+            feelsLike: hour.apparentTemperature.converted(to: .fahrenheit).value,
+            pop: hour.precipitationChance,
+            windSpeed: hour.wind.speed.converted(to: .milesPerHour).value,
+            windDeg: Int(hourToDeg(hour.wind.direction)),
+            humidity: Int(hour.humidity * 100),
+            uvIndex: Double(hour.uvIndex.value),
+            aqi: nil
+        )
+    }
+
+    @available(iOS 16.0, *)
+    private static func hourToDeg(_ direction: Measurement<UnitAngle>) -> Double {
+        return direction.converted(to: .degrees).value
+    }
+
+    @available(iOS 16.0, *)
+    static func mapAppleConditionToIcon(_ condition: WeatherKit.WeatherCondition) -> String {
+        switch condition {
+        case .clear, .mostlyClear: return "01d"
+        case .partlyCloudy: return "02d"
+        case .mostlyCloudy, .cloudy: return "03d"
+        case .haze, .foggy, .blowingDust: return "50d"
+        case .windy: return "03d" // No direct OWM wind icon
+        case .drizzle, .heavyRain, .rain, .sunShowers: return "10d"
+        case .flurries, .snow, .heavySnow, .sunFlurries: return "13d"
+        case .thunderstorms: return "11d"
+        default: return "03d"
+        }
+    }
+
+    // Existing methods (rest unchanged)
     static func mapCurrentToDisplayModel(_ current: CurrentWeatherResponse) -> DisplayWeatherModel {
-        let temp = current.main.temp
-        let humidity = Double(current.main.humidity)
-        var finalFeelsLike = current.main.feelsLike
-                
         return DisplayWeatherModel(
-            temp: temp,
-            feelsLike: finalFeelsLike,
+            temp: current.main.temp,
+            feelsLike: current.main.feelsLike,
             humidity: current.main.humidity,
             windSpeed: current.wind.speed,
             windDirection: current.wind.direction,
@@ -26,18 +126,16 @@ struct WeatherMapper {
             iconName: current.weather.first?.iconName ?? "sun.max.fill",
             pop: 0.0,
             visibility: current.visibility,
-            uvIndex: nil
+            uvIndex: nil,
+            nextHourSummary: current.nextHourSummary,
+            precipitationData: current.precipitationData
         )
     }
     
     static func mapForecastItemToDisplayModel(_ forecastItem: HourlyItem) -> DisplayWeatherModel {
-        let temp = forecastItem.temp
-        let humidity = Double(forecastItem.humidity)
-        var finalFeelsLike = forecastItem.feelsLike
-               
         return DisplayWeatherModel(
-            temp: temp,
-            feelsLike: finalFeelsLike,
+            temp: forecastItem.temp,
+            feelsLike: forecastItem.feelsLike,
             humidity: forecastItem.humidity,
             windSpeed: forecastItem.windSpeed,
             windDirection: mapWindDirection(degrees: Double(forecastItem.windDeg)),
@@ -46,7 +144,9 @@ struct WeatherMapper {
             iconName: forecastItem.weather.first?.iconName ?? "sun.max.fill",
             pop: forecastItem.pop,
             visibility: nil,
-            uvIndex: forecastItem.uvi
+            uvIndex: forecastItem.uvi,
+            nextHourSummary: nil,
+            precipitationData: nil
         )
     }
     
@@ -63,7 +163,9 @@ struct WeatherMapper {
             iconName: current.weather.first?.iconName ?? "sun.max.fill",
             pop: 0.50,
             visibility: insights.visibility,
-            uvIndex: insights.uvIndex
+            uvIndex: insights.uvIndex,
+            nextHourSummary: current.nextHourSummary,
+            precipitationData: current.precipitationData
         )
     }
     

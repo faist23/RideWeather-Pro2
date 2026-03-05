@@ -9,8 +9,8 @@ import WidgetKit
 import CoreLocation
 
 @MainActor
-class BackgroundStepsUpdater: NSObject, CLLocationManagerDelegate {
-    static let shared = BackgroundStepsUpdater()
+class BackgroundWatchUpdater: NSObject, CLLocationManagerDelegate {
+    static let shared = BackgroundWatchUpdater()
     private let healthStore = HKHealthStore()
     private let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
     private var backgroundTask: Task<Void, Never>?
@@ -33,14 +33,61 @@ class BackgroundStepsUpdater: NSObject, CLLocationManagerDelegate {
             // Start periodic updates every 15 minutes
             backgroundTask = Task {
                 while !Task.isCancelled {
+                    // Update steps
                     await updateSteps()
+                    
+                    // Update weather
+                    await updateWeather()
                     
                     // Wait 15 minutes before next update
                     try? await Task.sleep(nanoseconds: 15 * 60 * 1_000_000_000)
                 }
             }
             
-            print("🔄 Background steps updater started")
+            print("🔄 Background watch updater started (Steps + Weather)")
+        }
+    }
+
+    private func updateWeather() async {
+        // Use the watch's own location or the last saved location
+        let lat = defaults?.double(forKey: "user_latitude") ?? 0
+        let lon = defaults?.double(forKey: "user_longitude") ?? 0
+        
+        guard lat != 0 && lon != 0 else {
+            print("⚠️ Skipping weather update: No location available")
+            return
+        }
+        
+        let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        
+        do {
+            let result = try await WatchWeatherService.shared.fetchWeather(for: coordinate)
+            
+            // Map to SharedWeatherSummary (matching Phone's structure for widget/detail view)
+            let summary = SharedWeatherSummary(
+                temperature: Int(result.data.temperature),
+                feelsLike: Int(result.data.feelsLike),
+                conditionIcon: result.data.condition,
+                windSpeed: Int(result.data.windSpeed),
+                windDirection: "N", // Direction mapping not available here, but icon/speed are
+                pop: 0, // Fallback
+                generatedAt: Date(),
+                alertSeverity: result.alerts.first?.severity.rawValue,
+                hourlyForecast: result.hourly,
+                nextHourSummary: result.nextHourSummary
+            )
+            
+            if let data = try? JSONEncoder().encode(summary) {
+                defaults?.set(data, forKey: "widget_weather_summary")
+                print("✅ Background weather updated successfully")
+            }
+            
+            // Update UI
+            WatchSessionManager.shared.updateWeatherAlerts(result.alerts)
+            
+            WidgetCenter.shared.reloadAllTimelines()
+        } catch {
+            print("❌ Background weather update failed: \(error)")
         }
     }
     

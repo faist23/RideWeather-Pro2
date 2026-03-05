@@ -72,7 +72,7 @@ class UnifiedWellnessSync: ObservableObject {
     func syncFromConfiguredSource(
         healthManager: HealthKitManager,
         garminService: GarminService,
-        days: Int = 30
+        days: Int = 7
     ) async {
         print("\n" + String(repeating: "=", count: 60))
         print("🔄 WELLNESS SYNC STARTED")

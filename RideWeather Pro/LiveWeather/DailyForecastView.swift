@@ -15,7 +15,7 @@ struct DailyForecastView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("7-Day Forecast")
+            Text("\(daily.count)-Day Forecast")
                 .font(.title3.weight(.semibold))
                 .padding(.horizontal)
 
@@ -57,10 +57,15 @@ struct DailyForecastRow: View {
         VStack(alignment: .leading, spacing: 0) {
             // MARK: - Header (Always Visible)
             HStack(spacing: 8) {
-                // Day label
-                Text(day.dayName)
-                    .font(.body.weight(.medium))
-                    .frame(width: 42, alignment: .leading)
+                // Day label and Date
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(day.dayName)
+                        .font(.body.weight(.medium))
+                    Text(day.date.formatted(.dateTime.month().day()))
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .frame(width: 55, alignment: .leading)
 
                 // Weather icon
                 Image(systemName: day.iconName)

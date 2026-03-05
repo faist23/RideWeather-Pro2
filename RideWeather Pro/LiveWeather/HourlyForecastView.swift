@@ -14,7 +14,7 @@ struct ModernHourlyForecastView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("6-Hour Forecast", systemImage: "clock.fill")
+            Label("8-Hour Forecast", systemImage: "clock.fill")
                 .font(.title3.weight(.bold))
                 .foregroundStyle(.white)
             

@@ -14,6 +14,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     
     @StateObject private var dataSourceManager = DataSourceManager.shared
+    @ObservedObject var wellnessManager = WellnessManager.shared
     @State private var lastRefresh = Date() // Forces UI update
 
     @State private var showWeightSourcePicker = false
@@ -105,6 +106,13 @@ struct SettingsView: View {
             .onChange(of: viewModel.settings.units) { _, newUnits in
                 viewModel.settings.timeCheckpointIntervalKm = newUnits == .metric ? 10.0 : 8.05
             }
+            
+            Picker("Weather Provider", selection: $viewModel.settings.weatherProvider) {
+                ForEach(WeatherProvider.allCases) { provider in
+                    Text(provider.rawValue).tag(provider)
+                }
+            }
+            
             Picker("Analysis Method", selection: $viewModel.settings.speedCalculationMethod) {
                 ForEach(AppSettings.SpeedCalculationMethod.allCases) { method in
                     Text(method.description).tag(method)
@@ -113,10 +121,21 @@ struct SettingsView: View {
         } header: {
             Text("Configuration")
         } footer: {
-            if viewModel.settings.speedCalculationMethod == .powerBased {
-                Text("Power-based analysis accounts for terrain, wind, and weight.")
-            } else {
-                Text("Average speed provides a simple duration estimate.")
+            VStack(alignment: .leading, spacing: 4) {
+                if viewModel.settings.weatherProvider == .apple {
+                    Text("• Apple Weather provides high-resolution 'Next Hour' summaries.")
+                        .font(.caption)
+                }
+                Text("• Alerts always use OpenWeather for maximum safety.")
+                    .font(.caption)
+                
+                if viewModel.settings.speedCalculationMethod == .powerBased {
+                    Text("• Power-based analysis accounts for terrain, wind, and weight.")
+                        .font(.caption)
+                } else {
+                    Text("• Average speed provides a simple duration estimate.")
+                        .font(.caption)
+                }
             }
         }
     }
@@ -189,6 +208,11 @@ struct SettingsView: View {
                 Label("Reset All Data", systemImage: "trash")
                     .foregroundStyle(.red)
             }
+            
+            ShareLink(item: generateWellnessCSVURL()) {
+                Label("Export Sleep History (CSV)", systemImage: "square.and.arrow.up")
+            }
+
         }
         .id(lastRefresh)
     }
@@ -646,6 +670,16 @@ struct SettingsView: View {
         NotificationCenter.default.post(name: .dataSourceChanged, object: nil)
         
         print("📊 Data Sources: First launch configuration applied")
+    }
+    
+    // Helper to generate the temporary file for sharing
+    private func generateWellnessCSVURL() -> URL {
+        let csvString = wellnessManager.exportWellnessToCSV()
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RideWeather_Wellness_Export.csv")
+        
+        try? csvString.write(to: tempURL, atomically: true, encoding: .utf8)
+        return tempURL
     }
 }
 
