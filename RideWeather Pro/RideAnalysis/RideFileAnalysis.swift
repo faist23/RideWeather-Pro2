@@ -5,6 +5,7 @@
 
 import Foundation
 import CoreLocation
+import WeatherKit
 import FitFileParser
 
 // MARK: - Ride Analysis Models
@@ -80,8 +81,14 @@ struct RideAnalysis: Codable, Identifiable {
     let averageHeartRate: Double?
     let powerGraphData: [GraphableDataPoint]?
     let heartRateGraphData: [GraphableDataPoint]?
-
-    let elevationGraphData: [GraphableDataPoint]? // <-- ADD THIS
+    let elevationGraphData: [GraphableDataPoint]?
+    
+    // Historical Weather Analysis
+    var averageCdA: Double?
+    var windImpactSeconds: TimeInterval?
+    var averageAirDensity: Double?
+    var heatPenaltyPercentage: Double?
+    var historicalWeatherPoints: [HistoricalWeatherPoint]?
     
     init(id: UUID = UUID(), date: Date, rideName: String, duration: TimeInterval,
          distance: Double, metadata: RideMetadata?, averagePower: Double, normalizedPower: Double,
@@ -95,7 +102,12 @@ struct RideAnalysis: Codable, Identifiable {
          performanceScore: Double, insights: [RideInsight], powerZoneDistribution: PowerZoneDistribution, averageHeartRate: Double?,
          powerGraphData: [GraphableDataPoint]?,
          heartRateGraphData: [GraphableDataPoint]?,
-         elevationGraphData: [GraphableDataPoint]?
+         elevationGraphData: [GraphableDataPoint]?,
+         averageCdA: Double? = nil,
+         windImpactSeconds: TimeInterval? = nil,
+         averageAirDensity: Double? = nil,
+         heatPenaltyPercentage: Double? = nil,
+         historicalWeatherPoints: [HistoricalWeatherPoint]? = nil
     ) {
         self.id = id
         self.date = date
@@ -131,7 +143,12 @@ struct RideAnalysis: Codable, Identifiable {
         self.averageHeartRate = averageHeartRate
         self.powerGraphData = powerGraphData
         self.heartRateGraphData = heartRateGraphData
-        self.elevationGraphData = elevationGraphData // <-- ADD THIS
+        self.elevationGraphData = elevationGraphData
+        self.averageCdA = averageCdA
+        self.windImpactSeconds = windImpactSeconds
+        self.averageAirDensity = averageAirDensity
+        self.heatPenaltyPercentage = heatPenaltyPercentage
+        self.historicalWeatherPoints = historicalWeatherPoints
     }
 }
 
@@ -140,6 +157,61 @@ extension TerrainSegment: Codable {}
 extension TerrainSegment.TerrainType: Codable {}
 extension PowerAllocationAnalysis: Codable {}
 extension PowerAllocationRecommendation: Codable {}
+
+struct HistoricalWeatherPoint: Codable, Identifiable {
+    let id: UUID
+    let timestamp: Date
+    let coordinate: CLLocationCoordinate2D
+    let temperature: Double
+    let windSpeed: Double
+    let windDeg: Int
+    let pressure: Double
+    let humidity: Double
+    
+    enum CodingKeys: String, CodingKey {
+        case id, timestamp, temperature, windSpeed, windDeg, pressure, humidity
+        case lat = "latitude"
+        case lon = "longitude"
+    }
+    
+    init(id: UUID = UUID(), timestamp: Date, coordinate: CLLocationCoordinate2D, temperature: Double, windSpeed: Double, windDeg: Int, pressure: Double, humidity: Double) {
+        self.id = id
+        self.timestamp = timestamp
+        self.coordinate = coordinate
+        self.temperature = temperature
+        self.windSpeed = windSpeed
+        self.windDeg = windDeg
+        self.pressure = pressure
+        self.humidity = humidity
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(timestamp, forKey: .timestamp)
+        try container.encode(temperature, forKey: .temperature)
+        try container.encode(windSpeed, forKey: .windSpeed)
+        try container.encode(windDeg, forKey: .windDeg)
+        try container.encode(pressure, forKey: .pressure)
+        try container.encode(humidity, forKey: .humidity)
+        try container.encode(coordinate.latitude, forKey: .lat)
+        try container.encode(coordinate.longitude, forKey: .lon)
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+        temperature = try container.decode(Double.self, forKey: .temperature)
+        windSpeed = try container.decode(Double.self, forKey: .windSpeed)
+        windDeg = try container.decode(Int.self, forKey: .windDeg)
+        pressure = try container.decode(Double.self, forKey: .pressure)
+        humidity = try container.decode(Double.self, forKey: .humidity)
+        let lat = try container.decode(Double.self, forKey: .lat)
+        let lon = try container.decode(Double.self, forKey: .lon)
+        coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+    }
+}
 
 enum PacingRating: String, Codable {
     case excellent = "Excellent"
@@ -276,11 +348,11 @@ class RideFileAnalyzer {
         isPreFiltered: Bool = false,
         elapsedTimeOverride: TimeInterval? = nil,
         movingTimeOverride: TimeInterval? = nil,
-        averageHeartRate: Double?,
-        powerGraphData: [GraphableDataPoint]?,
-        heartRateGraphData: [GraphableDataPoint]?,
-        elevationGraphData: [GraphableDataPoint]?
-    ) -> RideAnalysis {
+        averageHeartRate: Double? = nil,
+        powerGraphData: [GraphableDataPoint]? = nil,
+        heartRateGraphData: [GraphableDataPoint]? = nil,
+        elevationGraphData: [GraphableDataPoint]? = nil
+    ) async -> RideAnalysis {
         
         // Filter valid power data
         let validPoints = dataPoints.filter {
@@ -320,6 +392,53 @@ class RideFileAnalyzer {
         let stoppedTime = elapsedTime - movingTime
         let powers = movingPoints.compactMap { $0.power }
         
+        // ---------------------------------------------------------
+        // NEW: Weather Integration Phase (BBS-style)
+        // ---------------------------------------------------------
+        var historicalPoints: [HistoricalWeatherPoint] = []
+        var weatherImpact: (cda: Double, windImpact: TimeInterval, airDensity: Double, heatPenalty: Double)?
+        
+        // Only attempt if we have GPS data
+        let pointsWithPos = movingPoints.filter { $0.position != nil }
+        if !pointsWithPos.isEmpty && pointsWithPos.count > 10 {
+            // Sample 8 points across the ride for correlation
+            let count = pointsWithPos.count
+            let sampleIndices = [0, count/7, (count*2)/7, (count*3)/7, (count*4)/7, (count*5)/7, (count*6)/7, count-1]
+            
+            for idx in sampleIndices {
+                let pt = pointsWithPos[idx]
+                if let pos = pt.position {
+                    do {
+                        let location = CLLocation(latitude: pos.latitude, longitude: pos.longitude)
+                        let weatherResult = try await AppleWeatherService.shared.fetchHistoricalWeather(for: location, at: pt.timestamp)
+                        
+                        let hw = HistoricalWeatherPoint(
+                            timestamp: pt.timestamp,
+                            coordinate: pos,
+                            temperature: weatherResult.current.temperature.converted(to: .celsius).value,
+                            windSpeed: weatherResult.current.wind.speed.converted(to: .metersPerSecond).value,
+                            windDeg: Int(weatherResult.current.wind.direction.converted(to: .degrees).value),
+                            pressure: weatherResult.current.pressure.converted(to: .hectopascals).value,
+                            humidity: weatherResult.current.humidity
+                        )
+                        historicalPoints.append(hw)
+                    } catch {
+                        print("⚠️ Historical weather fetch failed for sample \(idx): \(error)")
+                    }
+                }
+            }
+            
+            // Run the BBS impact math
+            if !historicalPoints.isEmpty {
+                weatherImpact = analyzeWeatherImpact(
+                    ride: createTemporaryAnalysis(powers: powers, movingTime: movingTime, distance: totalDistanceMeters),
+                    dataPoints: movingPoints,
+                    weatherPoints: historicalPoints
+                )
+            }
+        }
+        // ---------------------------------------------------------
+
         // Build metadata FIRST (without elevation display values)
         let metadataRaw = buildRideMetadata(
             dataPoints: validPoints,
@@ -440,7 +559,8 @@ class RideFileAnalyzer {
             ftp: ftp,
             avgPower: avgPower,
             normalizedPower: normalizedPower,
-            totalDistance: totalDistance
+            totalDistance: totalDistance,
+            weatherImpact: weatherImpact
         )
         
         return RideAnalysis(
@@ -477,7 +597,12 @@ class RideFileAnalyzer {
             averageHeartRate: averageHeartRate,
             powerGraphData: powerGraphData,
             heartRateGraphData: hrGraphData,
-            elevationGraphData: elevationGraphData
+            elevationGraphData: elevationGraphData,
+            averageCdA: weatherImpact?.cda,
+            windImpactSeconds: weatherImpact?.windImpact,
+            averageAirDensity: weatherImpact?.airDensity,
+            heatPenaltyPercentage: weatherImpact?.heatPenalty,
+            historicalWeatherPoints: historicalPoints
         )
     }
     
@@ -807,7 +932,8 @@ class RideFileAnalyzer {
         ftp: Double,
         avgPower: Double,
         normalizedPower: Double,
-        totalDistance: Double
+        totalDistance: Double,
+        weatherImpact: (cda: Double, windImpact: TimeInterval, airDensity: Double, heatPenalty: Double)?
     ) -> [RideInsight] {
         
         var insights: [RideInsight] = []
@@ -841,6 +967,33 @@ class RideFileAnalyzer {
             "Consider routes with fewer stops for better training continuity." :
                 "Good route flow with minimal stops."
         ))
+        
+        // NEW: Weather & Aero Impact Insight (BBS-style)
+        if let impact = weatherImpact {
+            let windMins = abs(Int(impact.windImpact / 60))
+            let windSecs = abs(Int(impact.windImpact.truncatingRemainder(dividingBy: 60)))
+            let direction = impact.windImpact > 0 ? "lost" : "gained"
+            let sign = impact.windImpact > 0 ? "fighting" : "aided by"
+            
+            var heatNote = ""
+            if impact.heatPenalty > 0.02 {
+                heatNote = "\n🌡️ Heat reduced your performance capacity by \(Int(impact.heatPenalty * 100))%."
+            }
+            
+            insights.append(RideInsight(
+                id: UUID(),
+                priority: .high,
+                category: .efficiency,
+                title: "💨 Aero & Weather Review",
+                description: """
+                Estimated CdA: \(String(format: "%.3f", impact.cda))
+                Wind Impact: You \(direction) \(windMins):\(String(format: "%02d", windSecs)) \(sign) the wind.\(heatNote)
+                """,
+                recommendation: impact.cda > 0.35 ? 
+                    "Your aero efficiency (CdA) was high. Focus on a lower torso position or narrower elbows on fast sections." :
+                    "Great aero position! You minimized drag effectively for your power output."
+            ))
+        }
         
         // 2. POWER ANALYSIS (using moving time)
         let avgWattsPerKg = avgPower / ftp * 100
@@ -1358,8 +1511,6 @@ class RideFileAnalyzer {
         
         for i in 0..<dataPoints.count {
             let point = dataPoints[i]
-            let power = point.power ?? 0
-            let speed = point.speed ?? 0
             
             // Check if this is part of a stopped segment
             let isStopped = isPointInStoppedSegment(
@@ -1420,6 +1571,193 @@ class RideFileAnalyzer {
         let littleDistance = totalDistanceChange < 5.0
         
         return mostlyZeroPower && mostlyNotMoving && littleDistance
+    }
+    
+    // MARK: - Historical Weather Analysis (BBS-style Review)
+    
+    func analyzeWeatherImpact(
+        ride: RideAnalysis,
+        dataPoints: [FITDataPoint],
+        weatherPoints: [HistoricalWeatherPoint]
+    ) -> (cda: Double, windImpact: TimeInterval, airDensity: Double, heatPenalty: Double) {
+        
+        guard !weatherPoints.isEmpty && !dataPoints.isEmpty else {
+            return (0.32, 0, 1.225, 0) // Baseline fallbacks
+        }
+        
+        let physics = PowerPhysicsEngine(settings: self.settings)
+        let totalWeight = settings.totalWeightKg
+        let g = 9.81
+        
+        var cdaSamples: [Double] = []
+        var airDensities: [Double] = []
+        var heatPenalties: [Double] = []
+        
+        // 1. Calculate Average Air Density and Heat Penalty encountered
+        for wp in weatherPoints {
+            let rho = physics.calculateAirDensity(
+                temperatureC: wp.temperature,
+                pressureHpa: wp.pressure,
+                relativeHumidity: wp.humidity / 100.0
+            )
+            airDensities.append(rho)
+            
+            // Performance starts dropping above 75F (Heat Index)
+            let tempF = (wp.temperature * 9/5) + 32
+            let heatIndex = calculateSimpleHeatIndex(tempF: tempF, humidity: wp.humidity)
+            if heatIndex > 75 {
+                let penalty = (heatIndex - 75) * 0.005 // 0.5% per degree above 75
+                heatPenalties.append(min(0.25, penalty)) // Cap at 25% penalty
+            } else {
+                heatPenalties.append(0)
+            }
+        }
+        let avgRho = airDensities.reduce(0, +) / Double(airDensities.count)
+        let avgHeatPenalty = heatPenalties.isEmpty ? 0 : (heatPenalties.reduce(0, +) / Double(heatPenalties.count))
+        
+        // 2. Solve for CdA at stable points (Flat sections, > 15mph, > 100W)
+        for wp in weatherPoints {
+            guard let ridePoint = dataPoints.min(by: { abs($0.timestamp.timeIntervalSince(wp.timestamp)) < abs($1.timestamp.timeIntervalSince(wp.timestamp)) }),
+                  let power = ridePoint.power, power > 100,
+                  let speed = ridePoint.speed, speed > 6.7,
+                  let alt = ridePoint.altitude else { continue }
+            
+            let fiveSecsLater = wp.timestamp.addingTimeInterval(5)
+            guard let ridePoint2 = dataPoints.min(by: { abs($0.timestamp.timeIntervalSince(fiveSecsLater)) < abs($1.timestamp.timeIntervalSince(fiveSecsLater)) }),
+                  let alt2 = ridePoint2.altitude,
+                  let dist1 = ridePoint.distance,
+                  let dist2 = ridePoint2.distance, dist2 > dist1 else { continue }
+            
+            let grade = (alt2 - alt) / (dist2 - dist1)
+            if abs(grade) > 0.01 { continue }
+            
+            let bearing = ridePoint.position != nil && ridePoint2.position != nil ?
+                calculateBearingInternal(from: ridePoint.position!, to: ridePoint2.position!) : 0.0
+            
+            let headwind = physics.calculateHeadwindComponent(
+                windSpeedMps: wp.windSpeed,
+                windDirectionDegrees: Double(wp.windDeg),
+                rideDirectionDegrees: bearing
+            )
+            
+            let crosswind = physics.calculateCrosswindComponent(
+                windSpeedMps: wp.windSpeed,
+                windDirectionDegrees: Double(wp.windDeg),
+                rideDirectionDegrees: bearing
+            )
+            
+            let crr = 0.0045
+            let rollingPower = crr * totalWeight * g * speed
+            let gravityPower = totalWeight * g * grade * speed
+            
+            let dragPower = (power * 0.97) - rollingPower - gravityPower
+            
+            if dragPower > 20 {
+                let v_air_sq = pow(speed + headwind, 2) + pow(crosswind, 2)
+                let solvedCdA = dragPower / (0.5 * avgRho * v_air_sq * speed)
+                if solvedCdA > 0.15 && solvedCdA < 0.6 {
+                    cdaSamples.append(solvedCdA)
+                }
+            }
+        }
+        
+        let finalCdA = cdaSamples.isEmpty ? 0.32 : (cdaSamples.reduce(0, +) / Double(cdaSamples.count))
+        
+        // 3. Estimate Wind Impact
+        var timeDifference: TimeInterval = 0
+        for i in stride(from: 0, to: dataPoints.count, by: 30) {
+            let pt = dataPoints[i]
+            guard let power = pt.power, power > 50, let pos = pt.position else { continue }
+            
+            let wind = interpolatedWind(at: pt.timestamp, location: pos, weatherPoints: weatherPoints)
+            let nextIdx = min(i + 1, dataPoints.count - 1)
+            let nextPos = dataPoints[nextIdx].position ?? pos
+            let bearing = calculateBearingInternal(from: pos, to: nextPos)
+            
+            let actualSpeed = pt.speed ?? 5.0
+            let zeroWindSpeed = physics.calculateSpeed(
+                targetPowerWatts: power,
+                elevationGrade: 0,
+                headwindSpeedMps: 0,
+                crosswindSpeedMps: 0,
+                temperature: 20,
+                humidity: 0.5,
+                airDensity: avgRho,
+                isWet: false
+            )
+            
+            let dist = 30.0 * actualSpeed
+            let timeWithWind = 30.0
+            let timeWithoutWind = dist / max(1.0, zeroWindSpeed)
+            timeDifference += (timeWithWind - timeWithoutWind)
+        }
+        
+        return (finalCdA, timeDifference, avgRho, avgHeatPenalty)
+    }
+    
+    private func interpolatedWind(at time: Date, location: CLLocationCoordinate2D, weatherPoints: [HistoricalWeatherPoint]) -> (speed: Double, deg: Int) {
+        guard let closest = weatherPoints.min(by: { abs($0.timestamp.timeIntervalSince(time)) < abs($1.timestamp.timeIntervalSince(time)) }) else {
+            return (0, 0)
+        }
+        return (closest.windSpeed, closest.windDeg)
+    }
+    
+    private func calculateBearingInternal(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) -> Double {
+        let lat1 = from.latitude * .pi / 180.0
+        let lon1 = from.longitude * .pi / 180.0
+        let lat2 = to.latitude * .pi / 180.0
+        let lon2 = to.longitude * .pi / 180.0
+        let dLon = lon2 - lon1
+        let y = sin(dLon) * cos(lat2)
+        let x = cos(lat1)*sin(lat2) - sin(lat1)*cos(lat2)*cos(dLon)
+        let rad = atan2(y, x)
+        return (rad * 180.0 / .pi + 360.0).truncatingRemainder(dividingBy: 360.0)
+    }
+    
+    private func calculateSimpleHeatIndex(tempF: Double, humidity: Double) -> Double {
+        // Simple Heat Index approximation
+        if tempF < 80 { return tempF }
+        let h = humidity / 100.0
+        return 0.5 * (tempF + 61.0 + ((tempF - 68.0) * 1.2) + (h * 0.094))
+    }
+
+    private func createTemporaryAnalysis(powers: [Double], movingTime: TimeInterval, distance: Double) -> RideAnalysis {
+        return RideAnalysis(
+            date: Date(),
+            rideName: "Temp",
+            duration: movingTime,
+            distance: distance,
+            metadata: nil,
+            averagePower: powers.isEmpty ? 0 : (powers.reduce(0,+) / Double(powers.count)),
+            normalizedPower: 0,
+            intensityFactor: 0,
+            trainingStressScore: 0,
+            variabilityIndex: 0,
+            peakPower5s: 0,
+            peakPower1min: 0,
+            peakPower5min: 0,
+            peakPower20min: 0,
+            terrainSegments: nil,
+            powerAllocation: nil,
+            consistencyScore: 0,
+            pacingRating: .fair,
+            powerVariability: 0,
+            fatigueDetected: false,
+            fatigueOnsetTime: nil,
+            powerDeclineRate: nil,
+            plannedRideId: nil,
+            segmentComparisons: [],
+            overallDeviation: 0,
+            surgeCount: 0,
+            pacingErrors: [],
+            performanceScore: 0,
+            insights: [],
+            powerZoneDistribution: PowerZoneDistribution(zone1Time: 0, zone2Time: 0, zone3Time: 0, zone4Time: 0, zone5Time: 0, zone6Time: 0, zone7Time: 0),
+            averageHeartRate: nil,
+            powerGraphData: nil,
+            heartRateGraphData: nil,
+            elevationGraphData: nil
+        )
     }
         
     enum RideType: String {
@@ -1703,7 +2041,12 @@ class RideFileAnalyzer {
             averageHeartRate: nil,
             powerGraphData: nil,
             heartRateGraphData: nil,
-            elevationGraphData: nil // <-- FIX: Add the missing property
+            elevationGraphData: nil,
+            averageCdA: nil,
+            windImpactSeconds: nil,
+            averageAirDensity: nil,
+            heatPenaltyPercentage: nil,
+            historicalWeatherPoints: nil
         )
     }
     

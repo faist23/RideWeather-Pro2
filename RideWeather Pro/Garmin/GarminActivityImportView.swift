@@ -166,13 +166,12 @@ struct GarminActivityImportView: View {
                 // Convert to your app's format
                 let rideData = convertToRideData(activityDetail)
                 
+                // Import into ride analysis
+                await rideViewModel.importRideData(rideData)
+
                 await MainActor.run {
-                    // Import into ride analysis
-                    rideViewModel.importRideData(rideData)
-                    
                     // Send notification
-                    if let currentAnalysis = rideViewModel.currentAnalysis {
-                        NotificationCenter.default.post(
+                    if let currentAnalysis = rideViewModel.currentAnalysis {                        NotificationCenter.default.post(
                             name: NSNotification.Name("NewAnalysisImported"),
                             object: currentAnalysis,
                             userInfo: ["source": "garmin"]

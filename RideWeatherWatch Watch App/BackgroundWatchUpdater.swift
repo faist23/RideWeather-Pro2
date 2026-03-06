@@ -1,5 +1,5 @@
 //
-//  BackgroundStepsUpdater.swift
+//  BackgroundWatchUpdater.swift
 //  RideWeatherWatch Watch App
 //
 
@@ -7,19 +7,19 @@ import Foundation
 import HealthKit
 import WidgetKit
 import CoreLocation
+import WatchKit
 
 @MainActor
 class BackgroundWatchUpdater: NSObject, CLLocationManagerDelegate {
     static let shared = BackgroundWatchUpdater()
     private let healthStore = HKHealthStore()
     private let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
-    private var backgroundTask: Task<Void, Never>?
     private let locationManager = CLLocationManager()
     
     private override init() {
         super.init()
         locationManager.delegate = self
-        locationManager.requestWhenInUseAuthorization()
+        // No auto-request here to avoid spamming
     }
     
     func startBackgroundUpdates() {
@@ -27,41 +27,57 @@ class BackgroundWatchUpdater: NSObject, CLLocationManagerDelegate {
         Task {
             await requestHealthKitAuthorization()
             
-            // Cancel any existing task
-            backgroundTask?.cancel()
+            // Schedule the first refresh
+            scheduleNextBackgroundRefresh()
             
-            // Start periodic updates every 15 minutes
-            backgroundTask = Task {
-                while !Task.isCancelled {
-                    // Update steps
-                    await updateSteps()
-                    
-                    // Update weather
-                    await updateWeather()
-                    
-                    // Wait 15 minutes before next update
-                    try? await Task.sleep(nanoseconds: 15 * 60 * 1_000_000_000)
-                }
-            }
-            
-            print("🔄 Background watch updater started (Steps + Weather)")
+            print("🔄 Background watch updater initialized via WKBackgroundTask")
         }
+    }
+    
+    func scheduleNextBackgroundRefresh() {
+        let nextRefreshDate = Date().addingTimeInterval(15 * 60) // 15 minutes
+        
+        WKExtension.shared().scheduleBackgroundRefresh(
+            withPreferredDate: nextRefreshDate,
+            userInfo: nil
+        ) { error in
+            if let error = error {
+                print("❌ Failed to schedule background refresh: \(error.localizedDescription)")
+            } else {
+                print("📅 Next background refresh scheduled for \(nextRefreshDate.formatted(date: .omitted, time: .shortened))")
+            }
+        }
+    }
+    
+    func handleBackgroundTask() async {
+        print("🛠 Handling background app refresh")
+        
+        // Perform updates
+        await updateSteps()
+        await updateWeather()
+        
+        // Schedule the next one
+        scheduleNextBackgroundRefresh()
     }
 
     private func updateWeather() async {
-        // Use the watch's own location or the last saved location
+        // Use the watch's last saved location
         let lat = defaults?.double(forKey: "user_latitude") ?? 0
         let lon = defaults?.double(forKey: "user_longitude") ?? 0
         
         guard lat != 0 && lon != 0 else {
-            print("⚠️ Skipping weather update: No location available")
+            print("⚠️ Skipping background weather update: No location saved in App Group")
+            // Try to trigger a one-shot location update for next time
+            locationManager.requestLocation()
             return
         }
         
         let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
         
         do {
+            print("⌚️ Background: Fetching weather for \(lat), \(lon)...")
             let result = try await WatchWeatherService.shared.fetchWeather(for: coordinate)
+            print("⌚️ Background: Fetch complete. Provider: \(defaults?.string(forKey: "appSettings.weatherProvider") ?? "apple"), Alerts: \(result.alerts.count)")
             
             // Map to SharedWeatherSummary (matching Phone's structure for widget/detail view)
             let summary = SharedWeatherSummary(
@@ -79,15 +95,18 @@ class BackgroundWatchUpdater: NSObject, CLLocationManagerDelegate {
             
             if let data = try? JSONEncoder().encode(summary) {
                 defaults?.set(data, forKey: "widget_weather_summary")
-                print("✅ Background weather updated successfully")
+                defaults?.synchronize()
+                print("✅ Background: Weather summary saved to App Group (Alert Severity: \(result.alerts.first?.severity.rawValue ?? "none"))")
             }
             
-            // Update UI
+            // Update the live session alerts
             WatchSessionManager.shared.updateWeatherAlerts(result.alerts)
             
+            // Force widget refresh
             WidgetCenter.shared.reloadAllTimelines()
+            print("✅ Background: All systems synced. Next refresh in 15 mins.")
         } catch {
-            print("❌ Background weather update failed: \(error)")
+            print("❌ Background: Weather update failed: \(error)")
         }
     }
     
@@ -106,12 +125,6 @@ class BackgroundWatchUpdater: NSObject, CLLocationManagerDelegate {
         } catch {
             print("❌ HealthKit authorization failed: \(error)")
         }
-    }
-    
-    func stopBackgroundUpdates() {
-        backgroundTask?.cancel()
-        backgroundTask = nil
-        print("⏹️ Background steps updater stopped")
     }
     
     private func updateSteps() async {
@@ -152,27 +165,24 @@ class BackgroundWatchUpdater: NSObject, CLLocationManagerDelegate {
         }
         
         defaults?.set(steps, forKey: "widget_today_steps")
+        defaults?.synchronize()
         
-        // Force widget refresh
-        WidgetCenter.shared.reloadAllTimelines()
-        
-        print("📊 Background updated steps: \(steps)")
+        print("📊 Background: Updated steps: \(steps)")
     }
     
     // CLLocationManagerDelegate
-    @objc func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        Task { @MainActor in
-            guard let location = locations.last else { return }
-            
-            defaults?.set(location.coordinate.latitude, forKey: "user_latitude")
-            defaults?.set(location.coordinate.longitude, forKey: "user_longitude")
-            defaults?.synchronize()
-            
-            print("⌚️ Watch saved its own location: \(location.coordinate.latitude), \(location.coordinate.longitude)")
-        }
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last else { return }
+        
+        let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
+        defaults?.set(location.coordinate.latitude, forKey: "user_latitude")
+        defaults?.set(location.coordinate.longitude, forKey: "user_longitude")
+        defaults?.synchronize()
+        
+        print("⌚️ Watch saved updated location: \(location.coordinate.latitude), \(location.coordinate.longitude)")
     }
     
-    @objc func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("❌ Location error: \(error)")
     }
 }

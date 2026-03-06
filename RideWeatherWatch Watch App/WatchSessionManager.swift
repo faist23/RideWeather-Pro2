@@ -237,32 +237,25 @@ extension WatchSessionManager: WCSessionDelegate {
             }
         }
         
-/*        // 7. Decode Weather Alert----OLD LEGACY UPDATE CODE
-        if let weatherData = context["weatherAlert"] as? Data {
+        // 7. Decode Weather Alerts
+        if let alertsData = context["weatherAlerts"] as? Data {
             do {
-                let decoded = try JSONDecoder().decode(WeatherAlert.self, from: weatherData)
-                self.weatherAlerts = [decoded]
-                
-                // FIX: Immediately save this new alert to the Widget Key
-                let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
-                defaults?.set(decoded.severity.rawValue, forKey: "widget_active_alert")
-                
-                if decoded.severity == .severe {
-                    WKInterfaceDevice.current().play(.notification)
-                }
+                let decoded = try JSONDecoder().decode([WeatherAlert].self, from: alertsData)
+                self.updateWeatherAlerts(decoded)
+                print("✅ Decoded Weather Alerts: \(decoded.count) (synced from iPhone)")
             } catch {
-                print("❌ Failed to decode Weather Alert")
+                print("❌ Failed to decode Weather Alerts: \(error)")
             }
-        } else {
-            // If context has NO alert, we should clear it ONLY if we aren't fetching locally
-            // For safety in this transition, we won't forcibly clear 'weatherAlerts' here
-            // to avoid overwriting the local fetch.
-            
-            // self.weatherAlerts = [] // Commented out to prefer local OneCall data
-            
-            let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
-            defaults?.removeObject(forKey: "widget_active_alert")
-        } */
+        } else if let legacyAlertData = context["weatherAlert"] as? Data {
+            // Support legacy single-alert key
+            do {
+                let decoded = try JSONDecoder().decode(WeatherAlert.self, from: legacyAlertData)
+                self.updateWeatherAlerts([decoded])
+                print("✅ Decoded Legacy Weather Alert (synced from iPhone)")
+            } catch {
+                print("❌ Failed to decode Legacy Weather Alert: \(error)")
+            }
+        }
         
         // 8. Save Weather Data for Widget
         // We don't need to decode it here; just pass the raw data to the Widget's storage

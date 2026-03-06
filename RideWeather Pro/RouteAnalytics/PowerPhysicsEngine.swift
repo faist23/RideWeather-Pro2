@@ -35,8 +35,15 @@ struct PowerPhysicsEngine {
         let rollingPower = crr * totalWeightKg * g * cos(atan(elevationGrade)) * speedMps
 
         // 2. Power to overcome air resistance (Aerodynamic Drag)
-        let v_rel = sqrt(pow(speedMps + headwindSpeedMps, 2) + pow(crosswindSpeedMps, 2))
-        let airResistanceForce = 0.5 * dragCoefficient * frontalArea * airDensity * pow(v_rel, 2)
+        // BBS-style: We use the apparent wind speed vector
+        // speedMps is the bike's velocity. headwindSpeedMps is the wind component against the rider.
+        let v_air_sq = pow(speedMps + headwindSpeedMps, 2) + pow(crosswindSpeedMps, 2)
+        
+        // Drag force: F = 0.5 * Cd * A * rho * v_air^2
+        // We project this force back onto the direction of travel
+        // The effective headwind component of the drag force depends on the yaw angle,
+        // but for a cycling model, using the relative air velocity squared is the standard approach.
+        let airResistanceForce = 0.5 * dragCoefficient * frontalArea * airDensity * v_air_sq
         let airPower = airResistanceForce * speedMps
 
         // 3. Power to overcome gravity (climbing)
@@ -47,6 +54,32 @@ struct PowerPhysicsEngine {
         
         // Return power at the pedals, accounting for drivetrain losses
         return max(0, totalPower / drivetrainEfficiency)
+    }
+
+    // MARK: - Air Density Calculation
+    
+    /// Calculates air density (rho) based on temperature, pressure, and humidity.
+    /// Uses the ideal gas law: rho = P / (R * T)
+    func calculateAirDensity(
+        temperatureC: Double,
+        pressureHpa: Double,
+        relativeHumidity: Double // 0.0 to 1.0
+    ) -> Double {
+        let tempK = temperatureC + 273.15
+        let pressurePa = pressureHpa * 100.0
+        
+        // Gas constant for dry air
+        let Rd = 287.058
+        // Gas constant for water vapor
+        let Rv = 461.495
+        
+        // Vapor pressure of water (Magnus-Tetens formula)
+        let saturationVaporPressure = 6.112 * exp((17.67 * temperatureC) / (temperatureC + 243.5)) * 100.0
+        let vaporPressure = saturationVaporPressure * relativeHumidity
+        let dryAirPressure = pressurePa - vaporPressure
+        
+        let rho = (dryAirPressure / (Rd * tempK)) + (vaporPressure / (Rv * tempK))
+        return rho
     }
 
     // MARK: - Speed Calculation (Robust Bisection Solver)

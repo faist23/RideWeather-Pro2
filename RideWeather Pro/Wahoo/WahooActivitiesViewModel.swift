@@ -188,7 +188,7 @@ class WahooActivitiesViewModel: ObservableObject {
                     let averageHeartRate = heartRates.isEmpty ? nil : (Double(heartRates.reduce(0, +)) / Double(heartRates.count))
                     
                     // 2. Pass ALL graph data into the analyzeRide function
-                    var rideAnalysis = analyzer.analyzeRide(
+                    var rideAnalysis = await analyzer.analyzeRide(
                         dataPoints: fitDataPoints,
                         ftp: Double(settings.functionalThresholdPower),
                         weight: settings.bodyWeight,

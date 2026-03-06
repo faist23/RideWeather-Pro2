@@ -17,9 +17,6 @@ class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegat
     @Published var currentLocation: CLLocation?
     @Published var locationStatus: CLAuthorizationStatus = .notDetermined
     
-    // NEW: Background task for periodic updates
-    private var updateTask: Task<Void, Never>?
-    
     override init() {
         super.init()
         locationManager.delegate = self
@@ -36,29 +33,6 @@ class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegat
         
         // Request initial location update
         locationManager.requestLocation()
-        
-        // NEW: Start periodic background updates
-        startPeriodicUpdates()
-    }
-    
-    // NEW: Periodic refresh every 30 minutes
-    private func startPeriodicUpdates() {
-        // Cancel any existing task
-        updateTask?.cancel()
-        
-        updateTask = Task {
-            while !Task.isCancelled {
-                // Wait 30 minutes
-                try? await Task.sleep(nanoseconds: 30 * 60 * 1_000_000_000)
-                
-                guard !Task.isCancelled else { break }
-                
-                // Trigger location refresh
-                locationManager.requestLocation()
-                
-                print("🔄 Periodic weather update triggered")
-            }
-        }
     }
     
     // MARK: - Core Location Delegate
@@ -81,7 +55,7 @@ class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegat
             sharedDefaults.set(Date(), forKey: "lastLocationUpdate")
         }
         
-        // Trigger the async weather fetch
+        // Trigger the async weather fetch for immediate UI update
         Task {
             await updateWeather(for: location)
         }
@@ -120,7 +94,7 @@ class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegat
     }
     
     deinit {
-        updateTask?.cancel()
+        // Properties and tasks already cleaned up or removed
     }
     
 }

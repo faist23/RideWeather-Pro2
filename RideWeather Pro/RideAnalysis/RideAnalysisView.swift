@@ -388,7 +388,17 @@ struct RideAnalysisView: View {
                         if analysis.powerAllocation != nil {
                             PowerAllocationCard(analysis: analysis)
                         }
+
+                        // NEW: Weather & Aero Analysis Card
+                        if analysis.averageCdA != nil || analysis.windImpactSeconds != nil {
+                            WeatherImpactCard(analysis: analysis)
+                        }
                         
+                        // NEW: Historical Weather Summary Card
+                        if let weatherPoints = analysis.historicalWeatherPoints, !weatherPoints.isEmpty {
+                            HistoricalWeatherSummaryCard(analysis: analysis, useMetric: weatherViewModel.settings.units == .metric)
+                        }
+
                         // Terrain Segments
                         if let segments = analysis.terrainSegments, !segments.isEmpty {
                             TerrainSegmentsCard(analysis: analysis)
@@ -1056,24 +1066,24 @@ struct PowerBreakdownBar: View {
                 HStack(spacing: 0) {
                     Rectangle()
                         .fill(Color.red)
-                        .frame(width: geometry.size.width * (climbWatts / totalWatts))
+                        .frame(width: max(0, min(geometry.size.width, geometry.size.width * (totalWatts > 0 ? (climbWatts / totalWatts) : 0))))
                     
                     Rectangle()
                         .fill(Color.blue)
-                        .frame(width: geometry.size.width * (flatWatts / totalWatts))
+                        .frame(width: max(0, min(geometry.size.width, geometry.size.width * (totalWatts > 0 ? (flatWatts / totalWatts) : 0))))
                     
                     Rectangle()
                         .fill(Color.green)
-                        .frame(width: geometry.size.width * (descentWatts / totalWatts))
+                        .frame(width: max(0, min(geometry.size.width, geometry.size.width * (totalWatts > 0 ? (descentWatts / totalWatts) : 0))))
                 }
             }
             .frame(height: 30)
             .cornerRadius(6)
             
             HStack(spacing: 16) {
-                LegendItem(color: .red, label: "Climbs", percentage: (climbWatts / totalWatts) * 100)
-                LegendItem(color: .blue, label: "Flats", percentage: (flatWatts / totalWatts) * 100)
-                LegendItem(color: .green, label: "Descents", percentage: (descentWatts / totalWatts) * 100)
+                LegendItem(color: .red, label: "Climbs", percentage: totalWatts > 0 ? (climbWatts / totalWatts) * 100 : 0)
+                LegendItem(color: .blue, label: "Flats", percentage: totalWatts > 0 ? (flatWatts / totalWatts) * 100 : 0)
+                LegendItem(color: .green, label: "Descents", percentage: totalWatts > 0 ? (descentWatts / totalWatts) * 100 : 0)
             }
             .font(.caption)
         }
@@ -1380,7 +1390,7 @@ struct ZoneBar: View {
                     
                     Rectangle()
                         .fill(color)
-                        .frame(width: geometry.size.width * (percentage / 100), height: 20)
+                        .frame(width: max(0, min(geometry.size.width, geometry.size.width * (percentage.isFinite ? percentage / 100 : 0))), height: 20)
                 }
                 .cornerRadius(4)
             }
@@ -2073,7 +2083,8 @@ class RideAnalysisViewModel: ObservableObject {
                 let averageHeartRate = heartRates.isEmpty ? nil : (Double(heartRates.reduce(0, +)) / Double(heartRates.count))
                 
                 // 2. Call the original analyzeRide function
-                var analysis = analyzer.analyzeRide(
+                analysisStatus = "Correlating weather data..."
+                var analysis = await analyzer.analyzeRide(
                     dataPoints: dataPoints,
                     ftp: ftp,
                     weight: weight,
@@ -2087,45 +2098,6 @@ class RideAnalysisViewModel: ObservableObject {
                 
                 // 3. Update the ride name
                 analysis.rideName = fileNameWithoutExtension
-                
-                // Update the ride name to use the filename
-                analysis = RideAnalysis(
-                    id: analysis.id,
-                    date: analysis.date,
-                    rideName: fileNameWithoutExtension,  // Use filename as ride name
-                    duration: analysis.duration,
-                    distance: analysis.distance,
-                    metadata: analysis.metadata,
-                    averagePower: analysis.averagePower,
-                    normalizedPower: analysis.normalizedPower,
-                    intensityFactor: analysis.intensityFactor,
-                    trainingStressScore: analysis.trainingStressScore,
-                    variabilityIndex: analysis.variabilityIndex,
-                    peakPower5s: analysis.peakPower5s,
-                    peakPower1min: analysis.peakPower1min,
-                    peakPower5min: analysis.peakPower5min,
-                    peakPower20min: analysis.peakPower20min,
-                    terrainSegments: analysis.terrainSegments,
-                    powerAllocation: analysis.powerAllocation,
-                    consistencyScore: analysis.consistencyScore,
-                    pacingRating: analysis.pacingRating,
-                    powerVariability: analysis.powerVariability,
-                    fatigueDetected: analysis.fatigueDetected,
-                    fatigueOnsetTime: analysis.fatigueOnsetTime,
-                    powerDeclineRate: analysis.powerDeclineRate,
-                    plannedRideId: analysis.plannedRideId,
-                    segmentComparisons: analysis.segmentComparisons,
-                    overallDeviation: analysis.overallDeviation,
-                    surgeCount: analysis.surgeCount,
-                    pacingErrors: analysis.pacingErrors,
-                    performanceScore: analysis.performanceScore,
-                    insights: analysis.insights,
-                    powerZoneDistribution: analysis.powerZoneDistribution,
-                    averageHeartRate: analysis.averageHeartRate,
-                    powerGraphData: analysis.powerGraphData,
-                    heartRateGraphData: analysis.heartRateGraphData,
-                    elevationGraphData: analysis.elevationGraphData
-                )
                 
                 await MainActor.run {
                     self.currentAnalysis = analysis
@@ -2260,7 +2232,7 @@ extension AnalysisStorageManager {
 extension RideAnalysisViewModel {
     
     /// Imports ride data from external sources (Garmin, Strava, etc.)
-    func importRideData(_ rideData: ImportedRideData) {
+    func importRideData(_ rideData: ImportedRideData) async {
         // Convert ImportedRideData to FITDataPoint format
         let fitDataPoints = convertToFITDataPoints(rideData)
         
@@ -2275,7 +2247,7 @@ extension RideAnalysisViewModel {
         let analyzer = RideFileAnalyzer(settings: self.settings)
 
         // Analyze the ride
-        let analysis = analyzer.analyzeRide(
+        let analysis = await analyzer.analyzeRide(
             dataPoints: fitDataPoints,
             ftp: ftp,
             weight: weight,
@@ -2537,5 +2509,247 @@ struct SecondaryOptionButton: View {
             .background(Color(.systemGray6))
             .cornerRadius(12)
         }
+    }
+}
+
+// MARK: - Weather Impact Card
+
+struct WeatherImpactCard: View {
+    let analysis: RideAnalysis
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "wind")
+                    .font(.title3)
+                    .foregroundColor(.blue)
+                Text("Aero & Weather Review")
+                    .font(.headline)
+                Spacer()
+                Text("BBS-Style")
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.blue.opacity(0.1))
+                    .foregroundColor(.blue)
+                    .cornerRadius(4)
+            }
+            
+            HStack(spacing: 20) {
+                // CdA Metric
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Calculated CdA")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(String(format: "%.3f", analysis.averageCdA ?? 0))
+                        .font(.title2.weight(.bold))
+                    Text(cdaRating(analysis.averageCdA ?? 0.32))
+                        .font(.caption2)
+                        .foregroundColor(cdaColor(analysis.averageCdA ?? 0.32))
+                }
+                
+                Divider()
+                
+                // Wind Impact
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Wind Impact")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    let impact = analysis.windImpactSeconds ?? 0
+                    let mins = abs(Int(impact / 60))
+                    let secs = abs(Int(impact.truncatingRemainder(dividingBy: 60)))
+                    
+                    HStack(spacing: 2) {
+                        Text(impact > 0 ? "+" : "-")
+                        Text("\(mins):\(String(format: "%02d", secs))")
+                    }
+                    .font(.title2.weight(.bold))
+                    .foregroundColor(impact > 0 ? .red : .green)
+                    
+                    Text(impact > 0 ? "Cost you time" : "Time gained")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding()
+            .background(Color(.systemGray6).opacity(0.5))
+            .cornerRadius(12)
+            
+            if let rho = analysis.averageAirDensity {
+                HStack {
+                    Text("Average Air Density:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(String(format: "%.3f kg/m³", rho))
+                        .font(.caption.weight(.medium))
+                    Spacer()
+                }
+            }
+            
+            Text("Calculated by correlating your ride data with historical hyperlocal weather snapshots from Apple Weather.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .italic()
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+    
+    private func cdaRating(_ cda: Double) -> String {
+        switch cda {
+        case 0..<0.25: return "Elite Aero"
+        case 0.25..<0.30: return "Excellent"
+        case 0.30..<0.35: return "Good"
+        case 0.35..<0.45: return "Standard"
+        default: return "Upright"
+        }
+    }
+    
+    private func cdaColor(_ cda: Double) -> Color {
+        switch cda {
+        case 0..<0.30: return .green
+        case 0.30..<0.38: return .blue
+        default: return .orange
+        }
+    }
+}
+
+// MARK: - Historical Weather Summary Card
+
+struct HistoricalWeatherSummaryCard: View {
+    let analysis: RideAnalysis
+    let useMetric: Bool
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "cloud.sun.fill")
+                    .font(.title3)
+                    .foregroundColor(.orange)
+                Text("Conditions During Ride")
+                    .font(.headline)
+                Spacer()
+            }
+            
+            if let weather = analysis.historicalWeatherPoints {
+                let avgTemp = weather.map { $0.temperature }.reduce(0, +) / Double(weather.count)
+                let avgWind = weather.map { $0.windSpeed }.reduce(0, +) / Double(weather.count)
+                
+                HStack(spacing: 20) {
+                    WeatherStatItem(
+                        label: "Avg Temp",
+                        value: formatTemp(avgTemp),
+                        icon: "thermometer.medium",
+                        color: .orange
+                    )
+                    
+                    Divider()
+                    
+                    WeatherStatItem(
+                        label: "Avg Wind",
+                        value: formatWind(avgWind),
+                        icon: "wind",
+                        color: .blue
+                    )
+                }
+                .padding()
+                .background(Color(.systemGray6).opacity(0.5))
+                .cornerRadius(12)
+                
+                Text("Weather Timeline")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.top, 4)
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(weather) { point in
+                            VStack(spacing: 8) {
+                                Text(point.timestamp.formatted(.dateTime.hour().minute()))
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.secondary)
+                                
+                                Image(systemName: "arrow.up")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .rotationEffect(.degrees(Double(point.windDeg)))
+                                    .foregroundColor(.blue)
+                                
+                                Text(formatTemp(point.temperature))
+                                    .font(.system(size: 12, weight: .semibold))
+                                
+                                Text(formatWind(point.windSpeed))
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                
+                                HStack(spacing: 2) {
+                                    Image(systemName: "humidity")
+                                        .font(.system(size: 8))
+                                    Text("\(Int(point.humidity * 100))%")
+                                        .font(.system(size: 9))
+                                }
+                                .foregroundColor(.cyan.opacity(0.8))
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                            .background(Color(.systemGray6).opacity(0.3))
+                            .cornerRadius(8)
+                        }
+                    }
+                }
+                
+                HStack {
+                    Label("\(Int((weather.first?.humidity ?? 0) * 100))% Humidity", systemImage: "humidity")
+                    Spacer()
+                    Label("\(Int(weather.first?.pressure ?? 1013)) hPa", systemImage: "gauge.with.dots.needle.bottom.50percent")
+                }
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+    
+    private func formatTemp(_ celsius: Double) -> String {
+        if useMetric {
+            return "\(Int(celsius))°C"
+        } else {
+            let f = (celsius * 9/5) + 32
+            return "\(Int(f))°"
+        }
+    }
+    
+    private func formatWind(_ mps: Double) -> String {
+        if useMetric {
+            return "\(Int(mps * 3.6)) km/h"
+        } else {
+            return "\(Int(mps * 2.237)) mph"
+        }
+    }
+}
+
+struct WeatherStatItem: View {
+    let label: String
+    let value: String
+    let icon: String
+    let color: Color
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .foregroundColor(color)
+                Text(value)
+                    .font(.headline)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

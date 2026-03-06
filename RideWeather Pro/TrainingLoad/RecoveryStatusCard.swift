@@ -44,7 +44,7 @@ struct RecoveryStatusCard: View {
                                 endPoint: .trailing
                             )
                         )
-                        .frame(width: geometry.size.width * CGFloat(recovery.recoveryPercent) / 100, height: 12)
+                        .frame(width: max(0, min(geometry.size.width, geometry.size.width * CGFloat(max(0, min(100, recovery.recoveryPercent))) / 100)), height: 12)
                 }
             }
             .frame(height: 12)

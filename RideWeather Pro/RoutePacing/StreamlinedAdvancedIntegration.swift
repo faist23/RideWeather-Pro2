@@ -411,7 +411,7 @@ struct PowerZoneRow: View {
                     
                     Rectangle()
                         .fill(zoneColor)
-                        .frame(width: geometry.size.width * (minutes / totalMinutes), height: 6)
+                        .frame(width: max(0, min(geometry.size.width, geometry.size.width * (totalMinutes > 0 ? (minutes / totalMinutes) : 0))), height: 6)
                 }
             }
             .frame(height: 6)

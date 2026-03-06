@@ -52,6 +52,9 @@ struct RideWeatherWatch_App: App {
                 }
             }
         }
+        .backgroundTask(.appRefresh) { _ in
+            await BackgroundWatchUpdater.shared.handleBackgroundTask()
+        }
     }
 }
 

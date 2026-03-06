@@ -388,7 +388,7 @@ class StravaActivitiesViewModel: ObservableObject {
                 let heartRates = dataPoints.compactMap { $0.heartRate }
                 let averageHeartRate = heartRates.isEmpty ? nil : (Double(heartRates.reduce(0, +)) / Double(heartRates.count))
                 
-                var analysis = analyzer.analyzeRide(
+                var analysis = await analyzer.analyzeRide(
                     dataPoints: dataPoints,
                     ftp: Double(weatherViewModel.settings.functionalThresholdPower),
                     weight: weatherViewModel.settings.bodyWeight,
@@ -403,43 +403,7 @@ class StravaActivitiesViewModel: ObservableObject {
                 )
                 
                 // Update the ride name to match Strava activity name
-                analysis = RideAnalysis(
-                    id: analysis.id,
-                    date: analysis.date,
-                    rideName: activity.name,  // Use Strava activity name
-                    duration: analysis.duration,
-                    distance: analysis.distance,
-                    metadata: analysis.metadata,
-                    averagePower: analysis.averagePower,
-                    normalizedPower: analysis.normalizedPower,
-                    intensityFactor: analysis.intensityFactor,
-                    trainingStressScore: analysis.trainingStressScore,
-                    variabilityIndex: analysis.variabilityIndex,
-                    peakPower5s: analysis.peakPower5s,
-                    peakPower1min: analysis.peakPower1min,
-                    peakPower5min: analysis.peakPower5min,
-                    peakPower20min: analysis.peakPower20min,
-                    terrainSegments: analysis.terrainSegments,
-                    powerAllocation: analysis.powerAllocation,
-                    consistencyScore: analysis.consistencyScore,
-                    pacingRating: analysis.pacingRating,
-                    powerVariability: analysis.powerVariability,
-                    fatigueDetected: analysis.fatigueDetected,
-                    fatigueOnsetTime: analysis.fatigueOnsetTime,
-                    powerDeclineRate: analysis.powerDeclineRate,
-                    plannedRideId: analysis.plannedRideId,
-                    segmentComparisons: analysis.segmentComparisons,
-                    overallDeviation: analysis.overallDeviation,
-                    surgeCount: analysis.surgeCount,
-                    pacingErrors: analysis.pacingErrors,
-                    performanceScore: analysis.performanceScore,
-                    insights: analysis.insights,
-                    powerZoneDistribution: analysis.powerZoneDistribution,
-                    averageHeartRate: averageHeartRate,
-                    powerGraphData: powerGraphData,
-                    heartRateGraphData: hrGraphData,
-                    elevationGraphData: elevationGraphData
-                )
+                analysis.rideName = activity.name
                 
                 print("StravaImport: Analysis complete - Performance Score: \(analysis.performanceScore)")
                 

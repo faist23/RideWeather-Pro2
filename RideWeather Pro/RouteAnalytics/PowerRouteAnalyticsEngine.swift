@@ -189,7 +189,6 @@ final class PowerRouteAnalyticsEngine {
             let coastingAdjustment = calculateCoastingAdjustment(segments: segments, terrain: terrainBreakdown)
             let adjustedTotalTime = totalTime + coastingAdjustment
             
-            let avgSpeed = adjustedTotalTime > 0 ? totalDistance / adjustedTotalTime : 0
             let totalEnergy = calculateTotalEnergyKilojoules(segments: segments)
             let comparison = compareWithTraditionalMethod(totalDistance: totalDistance, powerBasedTime: adjustedTotalTime)
 
@@ -261,7 +260,6 @@ final class PowerRouteAnalyticsEngine {
     ///   - terrain: The terrain breakdown of the route.
     /// - Returns: Additional time in seconds to add to the total estimate.
     private func calculateCoastingAdjustment(segments: [PowerRouteSegment], terrain: TerrainBreakdown) -> Double {
-        let totalTime = segments.reduce(0) { $0 + $1.timeSeconds }
         let totalDistance = segments.reduce(0) { $0 + $1.distanceMeters }
         
         guard totalDistance > 0 else { return 0 }
@@ -418,26 +416,34 @@ final class PowerRouteAnalyticsEngine {
                     lastWasClimb = false
                 }
 
-                let nearestWeather = nearestWeather(for: subStart.coordinate)
-                let tempC = convertToCelsius(nearestWeather.weather.temp)
-                let humidity = Double(nearestWeather.weather.humidity)
+                let nearestWeather = weatherAtTime(for: subStart.coordinate, time: subStart.eta)
+                let tempC = convertToCelsius(nearestWeather.temp)
+                let humidity = Double(nearestWeather.humidity) / 100.0 // Ensure 0.0-1.0
                 let bearing = calculateBearing(from: subStart.coordinate, to: subEnd.coordinate)
 
                 let headwind = physicsEngine.calculateHeadwindComponent(
-                    windSpeedMps: convertToMps(nearestWeather.weather.windSpeed),
-                    windDirectionDegrees: Double(nearestWeather.weather.windDeg),
+                    windSpeedMps: convertToMps(nearestWeather.windSpeed),
+                    windDirectionDegrees: Double(nearestWeather.windDeg),
                     rideDirectionDegrees: bearing
                 )
                 let crosswind = physicsEngine.calculateCrosswindComponent(
-                    windSpeedMps: convertToMps(nearestWeather.weather.windSpeed),
-                    windDirectionDegrees: Double(nearestWeather.weather.windDeg),
+                    windSpeedMps: convertToMps(nearestWeather.windSpeed),
+                    windDirectionDegrees: Double(nearestWeather.windDeg),
                     rideDirectionDegrees: bearing
                 )
 
                 let startElev = elevationAnalysis?.elevation(at: subStart.distance) ?? 0
                 let endElev = elevationAnalysis?.elevation(at: subEnd.distance) ?? 0
                 let midAltitude = (startElev + endElev) / 2.0
-                let airDensityKgM3 = airDensity(atAltitudeMeters: midAltitude, temperatureC: tempC)
+                
+                // Enhanced BBS-style Air Density
+                // Note: Standard pressure is 1013.25 hPa, but we adjust for altitude
+                let pressureAtAltitude = 1013.25 * pow(1 - (0.0000225577 * midAltitude), 5.25588)
+                let airDensityKgM3 = physicsEngine.calculateAirDensity(
+                    temperatureC: tempC,
+                    pressureHpa: pressureAtAltitude,
+                    relativeHumidity: humidity
+                )
 
                 // Use the new intelligent power allocation model.
                 let segmentPower = adjustedSegmentPower(
@@ -451,7 +457,7 @@ final class PowerRouteAnalyticsEngine {
                     headwindMps: headwind
                 )
                 
-                let isWet = nearestWeather.weather.pop >= 0.4
+                let isWet = nearestWeather.pop >= 0.4
 
                 let speed = physicsEngine.calculateSpeed(
                     targetPowerWatts: segmentPower,
@@ -1094,7 +1100,6 @@ final class PowerRouteAnalyticsEngine {
         
         var maxConcentratedGrade: Double = 0
         var maxConcentratedClimbing: Double = 0
-        var isClimbing = true
         
         for windowSize in windowSizes {
             // Only check windows that fit in our interval
@@ -1142,7 +1147,6 @@ final class PowerRouteAnalyticsEngine {
                 if abs(windowGrade) > abs(maxConcentratedGrade) {
                     maxConcentratedGrade = windowGrade
                     maxConcentratedClimbing = windowGrade > 0 ? windowClimbing : windowDescending
-                    isClimbing = windowGrade > 0
                 }
                 
                 i += 5 // Skip forward to avoid overlapping windows
@@ -1183,6 +1187,25 @@ final class PowerRouteAnalyticsEngine {
         return 0.0
     }
     
+    // -----------------------------
+    // MARK: - Grade calculation
+    // -----------------------------
+
+    private func calculateElevationGrade(startPoint: RouteWeatherPoint, endPoint: RouteWeatherPoint, distance: Double) -> Double {
+        // Prefer elevationAnalysis if available
+        if let ea = elevationAnalysis, ea.hasActualData, !ea.elevationProfile.isEmpty {
+            if let sElev = findClosestElevation(distance: startPoint.distance, profile: ea.elevationProfile),
+               let eElev = findClosestElevation(distance: endPoint.distance, profile: ea.elevationProfile),
+               distance > 0 {
+                return physicsEngine.calculateGrade(startElevationM: sElev, endElevationM: eElev, horizontalDistanceM: distance)
+            }
+        }
+
+        // No point-level elevation available — fallback to an approximate grade:
+        return physicsEngine.estimateAverageGrade(totalDistanceM: max(1.0, weatherPoints.last?.distance ?? 1000.0),
+                                                 totalElevationGainM: elevationAnalysis?.totalGain ?? 0.0)
+    }
+
     /// Chooses appropriate segment length based on terrain gradient
     private func chooseSegmentLength(for grade: Double, interval: Double) -> Double {
         let absGrade = abs(grade)
@@ -1372,23 +1395,15 @@ final class PowerRouteAnalyticsEngine {
         return closest
     }
 
-    // -----------------------------
-    // MARK: - Grade calculation
-    // -----------------------------
-
-    private func calculateElevationGrade(startPoint: RouteWeatherPoint, endPoint: RouteWeatherPoint, distance: Double) -> Double {
-        // Prefer elevationAnalysis if available
-        if let ea = elevationAnalysis, ea.hasActualData, !ea.elevationProfile.isEmpty {
-            if let sElev = findClosestElevation(distance: startPoint.distance, profile: ea.elevationProfile),
-               let eElev = findClosestElevation(distance: endPoint.distance, profile: ea.elevationProfile),
-               distance > 0 {
-                return physicsEngine.calculateGrade(startElevationM: sElev, endElevationM: eElev, horizontalDistanceM: distance)
-            }
+    private func weatherAtTime(for coordinate: CLLocationCoordinate2D, time: Date) -> DisplayWeatherModel {
+        // Find the weather point closest in space, but ideally we interpolate based on the hourly forecast
+        // For now, find the closest weather point anchor
+        guard let closest = weatherPoints.min(by: {
+            $0.coordinate.distance(from: coordinate) < $1.coordinate.distance(from: coordinate)
+        }) else {
+            return weatherPoints.first!.weather
         }
-
-        // No point-level elevation available — fallback to an approximate grade:
-        return physicsEngine.estimateAverageGrade(totalDistanceM: max(1.0, weatherPoints.last?.distance ?? 1000.0),
-                                                 totalElevationGainM: elevationAnalysis?.totalGain ?? 0.0)
+        return closest.weather
     }
 
     private func findClosestElevation(distance: Double, profile: [ElevationPoint]) -> Double? {

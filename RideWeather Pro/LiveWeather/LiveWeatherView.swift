@@ -623,31 +623,83 @@ extension WeatherViewModel {
 
 // MARK: - Precipitation Chart View
 
+// MARK: - Precipitation Chart View
+
 struct PrecipitationChartView: View {
     let data: [PrecipitationPoint]
     
+    private var maxIntensity: Double {
+        data.map { $0.intensity }.max() ?? 0
+    }
+    
     var body: some View {
-        Chart {
-            ForEach(data) { point in
-                BarMark(
-                    x: .value("Time", point.date),
-                    y: .value("Intensity", point.intensity)
-                )
-                .foregroundStyle(.white.opacity(0.7))
+        VStack(alignment: .leading, spacing: 4) {
+            Chart {
+                // Background Intensity Zones (Subtle)
+                RuleMark(y: .value("Light", 0.5))
+                    .foregroundStyle(.white.opacity(0.05))
+                RuleMark(y: .value("Moderate", 2.5))
+                    .foregroundStyle(.white.opacity(0.05))
+                RuleMark(y: .value("Heavy", 7.6))
+                    .foregroundStyle(.white.opacity(0.05))
+                
+                ForEach(data) { point in
+                    // Area under the curve
+                    AreaMark(
+                        x: .value("Time", point.date),
+                        y: .value("Intensity", point.intensity)
+                    )
+                    .foregroundStyle(
+                        .linearGradient(
+                            colors: [.blue.opacity(0.6), .blue.opacity(0.1)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .interpolationMethod(.catmullRom)
+                    
+                    // Sharp line on top
+                    LineMark(
+                        x: .value("Time", point.date),
+                        y: .value("Intensity", point.intensity)
+                    )
+                    .foregroundStyle(.blue.opacity(0.8))
+                    .lineStyle(StrokeStyle(lineWidth: 2))
+                    .interpolationMethod(.catmullRom)
+                }
             }
-        }
-        .chartYAxis(.hidden)
-        .chartXAxis {
-            AxisMarks(values: .stride(by: .minute, count: 15)) { value in
-                if let date = value.as(Date.self) {
-                    AxisValueLabel {
-                        Text(date.formatted(.dateTime.minute()))
-                            .font(.system(size: 8))
-                            .foregroundStyle(.white.opacity(0.6))
+            .chartYScale(domain: 0...max(5, maxIntensity + 1))
+            .chartYAxis {
+                AxisMarks(position: .leading, values: [0, 2.5, 7.6]) { value in
+                    if let intensity = value.as(Double.self) {
+                        AxisValueLabel {
+                            Text(intensityLabel(intensity))
+                                .font(.system(size: 7, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
+                    }
+                }
+            }
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .minute, count: 15)) { value in
+                    if let date = value.as(Date.self) {
+                        AxisValueLabel {
+                            let minutes = Calendar.current.component(.minute, from: date)
+                            Text(minutes == 0 ? "Now" : "\(minutes)m")
+                                .font(.system(size: 8))
+                                .foregroundStyle(.white.opacity(0.6))
+                        }
                     }
                 }
             }
         }
+    }
+    
+    private func intensityLabel(_ value: Double) -> String {
+        if value >= 7.6 { return "HEAVY" }
+        if value >= 2.5 { return "MED" }
+        if value > 0 { return "LIGHT" }
+        return ""
     }
 }
 
@@ -703,36 +755,6 @@ struct PrecipitationChartView: View {
             }
         }
         .background(.blue.gradient)
-    }
-}
-
-// MARK: - Precipitation Chart View
-
-struct PrecipitationChartView: View {
-    let data: [PrecipitationPoint]
-    
-    var body: some View {
-        Chart {
-            ForEach(data) { point in
-                BarMark(
-                    x: .value("Time", point.date),
-                    y: .value("Intensity", point.intensity)
-                )
-                .foregroundStyle(.white.opacity(0.7))
-            }
-        }
-        .chartYAxis(.hidden)
-        .chartXAxis {
-            AxisMarks(values: .stride(by: .minute, count: 15)) { value in
-                if let date = value.as(Date.self) {
-                    AxisValueLabel {
-                        Text(date.formatted(.dateTime.minute()))
-                            .font(.system(size: 8))
-                            .foregroundStyle(.white.opacity(0.6))
-                    }
-                }
-            }
-        }
     }
 }
 */

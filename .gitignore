@@ -3,3 +3,8 @@ WahooConfig.plist
 OpenWeather.plist
 AnthropicConfig.plist
 GarminConfig.plist
+DerivedData
+build/
+*.xcuserstate
+*.xcuserdata
+.DS_Store
