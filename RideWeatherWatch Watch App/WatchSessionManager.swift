@@ -37,6 +37,19 @@ class WatchSessionManager: NSObject, ObservableObject {
     @Published var trainingHistory: [DailyTrainingLoad] = []
     @Published var wellnessHistory: [DailyWellnessMetrics] = []
     @Published var weatherAlerts: [WeatherAlert] = []
+    @Published var weatherSummary: SharedWeatherSummary?
+    
+    func prunePastHours(_ summary: SharedWeatherSummary) -> SharedWeatherSummary {
+        guard let hourly = summary.hourlyForecast, !hourly.isEmpty else { return summary }
+        let now = Date()
+        // Relax filter: Keep hours from the last 2 hours to ensure "Current" hour stays visible
+        let filtered = hourly.filter { $0.time > now.addingTimeInterval(-7200) }
+        
+        var updated = summary
+        // Safety: If filter removes everything, keep original list
+        updated.hourlyForecast = filtered.isEmpty ? hourly : filtered
+        return updated
+    }
     
     // Computed properties for watch views
     @Published var recoveryStatus: RecoveryStatus?
@@ -50,7 +63,17 @@ class WatchSessionManager: NSObject, ObservableObject {
     
     override private init() {
         super.init()
+        loadInitialData()
         setupWatchConnectivity()
+    }
+    
+    private func loadInitialData() {
+        let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
+        if let data = defaults?.data(forKey: "widget_weather_summary"),
+           let summary = try? JSONDecoder().decode(SharedWeatherSummary.self, from: data) {
+            self.weatherSummary = prunePastHours(summary)
+            print("⌚️ Loaded initial weather summary from App Group")
+        }
     }
     
     private func setupWatchConnectivity() {
@@ -88,6 +111,12 @@ class WatchSessionManager: NSObject, ObservableObject {
             print("⌚️ Updating Widget Alert: \(status) (Rank: \(mostSevere.severity.rank))")
             defaults?.set(status, forKey: "widget_active_alert")
             
+            // Update local summary if it exists to keep it in sync
+            if var current = self.weatherSummary {
+                current.alertSeverity = mostSevere.severity.rawValue
+                self.weatherSummary = current
+            }
+            
             // Haptic only for severe
             if mostSevere.severity == .severe {
                 WKInterfaceDevice.current().play(.notification)
@@ -95,6 +124,11 @@ class WatchSessionManager: NSObject, ObservableObject {
         } else {
             print("⌚️ Clearing Widget Alert")
             defaults?.removeObject(forKey: "widget_active_alert")
+            
+            if var current = self.weatherSummary {
+                current.alertSeverity = nil
+                self.weatherSummary = current
+            }
         }
         
         WidgetCenter.shared.reloadAllTimelines()
@@ -285,16 +319,26 @@ extension WatchSessionManager: WCSessionDelegate {
                             nextHourSummary: newSummary.nextHourSummary // Use the new summary from iPhone
                         )
                         
-                        if let encoded = try? JSONEncoder().encode(mergedSummary) {
+                        let pruned = prunePastHours(mergedSummary)
+                        self.weatherSummary = pruned
+                        
+                        if let encoded = try? JSONEncoder().encode(pruned) {
                             defaults?.set(encoded, forKey: "widget_weather_summary")
                         }
-                        return
+                    } else {
+                        self.weatherSummary = prunePastHours(newSummary)
+                        defaults?.set(weatherData, forKey: "widget_weather_summary")
                     }
+                } else {
+                    // New summary HAS forecast, use it directly
+                    self.weatherSummary = prunePastHours(newSummary)
+                    defaults?.set(weatherData, forKey: "widget_weather_summary")
                 }
+                print("✅ Decoded & Published Weather Summary (synced from iPhone)")
             }
             
-            // Fallback: save as usual if merging isn't needed
-            defaults?.set(weatherData, forKey: "widget_weather_summary")
+            defaults?.synchronize()
+            WidgetCenter.shared.reloadAllTimelines()
         }
         
         // 9. Decode AND Save Precise Timestamp (Fix for "19h")

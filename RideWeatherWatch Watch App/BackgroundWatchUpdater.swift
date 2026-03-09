@@ -92,14 +92,18 @@ class BackgroundWatchUpdater: NSObject, CLLocationManagerDelegate {
                 hourlyForecast: result.hourly,
                 nextHourSummary: result.nextHourSummary
             )
-            
-            if let data = try? JSONEncoder().encode(summary) {
+
+            // NEW: Prune past hours immediately
+            let prunedSummary = WatchSessionManager.shared.prunePastHours(summary)
+
+            if let data = try? JSONEncoder().encode(prunedSummary) {
                 defaults?.set(data, forKey: "widget_weather_summary")
                 defaults?.synchronize()
                 print("✅ Background: Weather summary saved to App Group (Alert Severity: \(result.alerts.first?.severity.rawValue ?? "none"))")
             }
-            
-            // Update the live session alerts
+
+            // Update the live session
+            WatchSessionManager.shared.weatherSummary = prunedSummary
             WatchSessionManager.shared.updateWeatherAlerts(result.alerts)
             
             // Force widget refresh

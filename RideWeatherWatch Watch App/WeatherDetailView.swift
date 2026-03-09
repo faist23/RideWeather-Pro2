@@ -23,7 +23,7 @@ struct WeatherDetailView: View {
                         .frame(height: 1)
                         .id(topScrollID)
                     
-                    if let weather = loadWeatherData() {
+                    if let weather = session.weatherSummary {
                         
                         // Check the array for the first alert
                         if let alert = session.weatherAlerts.first {
@@ -241,17 +241,6 @@ struct WeatherDetailView: View {
         }
     }
     
-    // MARK: - Logic
-    
-    private func loadWeatherData() -> WeatherSummaryData? {
-        let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
-        guard let data = defaults?.data(forKey: "widget_weather_summary"),
-              let weather = try? JSONDecoder().decode(WeatherSummaryData.self, from: data) else {
-            return nil
-        }
-        return weather
-    }
-    
     private func windColor(_ speed: Int) -> Color {
         switch speed {
         case 0..<10: return .green
@@ -280,25 +269,4 @@ struct WeatherDetailView: View {
             }
         }
     }
-}
-
-struct WeatherSummaryData: Codable {
-    let temperature: Int
-    let feelsLike: Int
-    let conditionIcon: String
-    let windSpeed: Int
-    let windDirection: String
-    let pop: Int
-    let generatedAt: Date
-    let hourlyForecast: [ForecastHour]?
-    let nextHourSummary: String? // Added for Apple WeatherKit
-}
-
-struct ForecastHour: Codable, Identifiable {
-    var id: Date { time }
-    let time: Date
-    let temp: Int
-    let feelsLike: Int
-    let windSpeed: Int
-    let icon: String
 }

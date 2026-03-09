@@ -83,8 +83,26 @@ class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegat
             // 2. Update Session (Main Actor is guaranteed by class annotation)
             WatchSessionManager.shared.updateWeatherAlerts(alerts)
             
+            // Create a summary for the live UI and publish it immediately
+            let liveSummary = SharedWeatherSummary(
+                temperature: Int(weatherData.temperature),
+                feelsLike: Int(weatherData.feelsLike),
+                conditionIcon: weatherData.condition,
+                windSpeed: Int(weatherData.windSpeed),
+                windDirection: "N", // Defaulting for local fetch
+                pop: 0,
+                generatedAt: Date(),
+                alertSeverity: alerts.first?.severity.rawValue,
+                hourlyForecast: hourly,
+                nextHourSummary: nextHourSummary
+            )
+            
+            // NEW: Prune past hours immediately
+            let prunedSummary = WatchSessionManager.shared.prunePastHours(liveSummary)
+            WatchSessionManager.shared.weatherSummary = prunedSummary
+            
             // 3. Save weather data for widget
-            WatchAppGroupManager.shared.saveWeatherData(weatherData, alert: alerts.first, hourly: hourly, nextHourSummary: nextHourSummary)
+            WatchAppGroupManager.shared.saveWeatherData(weatherData, alert: alerts.first, hourly: prunedSummary.hourlyForecast ?? [], nextHourSummary: nextHourSummary)
             
             print("✅ Weather Updated. Alerts found: \(alerts.count)")
             

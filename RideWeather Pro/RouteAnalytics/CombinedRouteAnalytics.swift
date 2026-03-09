@@ -699,7 +699,8 @@ struct UnifiedRouteAnalyticsEngine {
                     pop: forecastForTime.pop,
                     visibility: nil,
                     uvIndex: forecastForTime.uvIndex,
-                    nextHourSummary: nil
+                    nextHourSummary: nil,
+                    upcomingConditionsSummary: nil
                 )
             }
             

@@ -44,8 +44,11 @@ struct WeatherRepository {
         
         let (apple, alerts) = try await (appleData, owAlerts)
         
+        // Generate broader outlook summary
+        let upcomingSummary = appleService.generateUpcomingConditionsSummary(from: apple.hourly)
+        
         // Map Apple Weather to OpenWeather-style models for compatibility
-        let current = WeatherMapper.mapAppleCurrentToOpenWeather(apple.current, location: location, units: units, nextHourSummary: apple.minute?.summary, minuteForecast: apple.minute)
+        let current = WeatherMapper.mapAppleCurrentToOpenWeather(apple.current, location: location, units: units, nextHourSummary: apple.minute?.summary, minuteForecast: apple.minute, upcomingSummary: upcomingSummary)
         let hourly = apple.hourly.map { WeatherMapper.mapAppleHourlyToOpenWeather($0) }
         
         let forecast = OneCallResponse(hourly: hourly, alerts: alerts.alerts)
@@ -97,7 +100,9 @@ struct WeatherRepository {
             
             let (apple, alerts, pollution) = try await (appleData, owAlerts, airPollution)
             
-            let current = WeatherMapper.mapAppleCurrentToOpenWeather(apple.current, location: location, units: units, nextHourSummary: apple.minute?.summary, minuteForecast: apple.minute)
+            let upcomingSummary = appleService.generateUpcomingConditionsSummary(from: apple.hourly)
+            
+            let current = WeatherMapper.mapAppleCurrentToOpenWeather(apple.current, location: location, units: units, nextHourSummary: apple.minute?.summary, minuteForecast: apple.minute, upcomingSummary: upcomingSummary)
             let hourly = apple.hourly.map { WeatherMapper.mapAppleHourlyToOpenWeather($0) }
             let forecast = OneCallResponse(hourly: hourly, alerts: alerts.alerts)
             

@@ -13,7 +13,7 @@ struct WeatherMapper {
     // MARK: - Apple WeatherKit Mappings
     
     @available(iOS 16.0, *)
-    static func mapAppleCurrentToOpenWeather(_ current: WeatherKit.CurrentWeather, location: CLLocation, units: String, nextHourSummary: String?, minuteForecast: Forecast<MinuteWeather>?) -> CurrentWeatherResponse {
+    static func mapAppleCurrentToOpenWeather(_ current: WeatherKit.CurrentWeather, location: CLLocation, units: String, nextHourSummary: String?, minuteForecast: Forecast<MinuteWeather>?, upcomingSummary: String? = nil) -> CurrentWeatherResponse {
         let isImperial = units == "imperial"
         
         let temp = isImperial ? current.temperature.converted(to: .fahrenheit).value : current.temperature.converted(to: .celsius).value
@@ -32,7 +32,8 @@ struct WeatherMapper {
             visibility: Int(current.visibility.converted(to: .meters).value),
             name: "", // Keep empty, WeatherViewModel handles name via CityNameResolver
             nextHourSummary: nextHourSummary,
-            precipitationData: precipitationData
+            precipitationData: precipitationData,
+            upcomingConditionsSummary: upcomingSummary
         )
     }
     
@@ -128,7 +129,8 @@ struct WeatherMapper {
             visibility: current.visibility,
             uvIndex: nil,
             nextHourSummary: current.nextHourSummary,
-            precipitationData: current.precipitationData
+            precipitationData: current.precipitationData,
+            upcomingConditionsSummary: current.upcomingConditionsSummary
         )
     }
     
@@ -146,7 +148,8 @@ struct WeatherMapper {
             visibility: nil,
             uvIndex: forecastItem.uvi,
             nextHourSummary: nil,
-            precipitationData: nil
+            precipitationData: nil,
+            upcomingConditionsSummary: nil
         )
     }
     
@@ -165,7 +168,8 @@ struct WeatherMapper {
             visibility: insights.visibility,
             uvIndex: insights.uvIndex,
             nextHourSummary: current.nextHourSummary,
-            precipitationData: current.precipitationData
+            precipitationData: current.precipitationData,
+            upcomingConditionsSummary: current.upcomingConditionsSummary
         )
     }
     

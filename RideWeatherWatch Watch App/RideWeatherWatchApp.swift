@@ -29,6 +29,7 @@ enum WatchTab: Hashable {
 @main
 struct RideWeatherWatch_App: App {
     @StateObject private var navigationManager = NavigationManager()
+    @Environment(\.scenePhase) private var scenePhase
     
     var body: some Scene {
         WindowGroup {
@@ -49,6 +50,15 @@ struct RideWeatherWatch_App: App {
                 
                 Task {
                     await WatchLocationManager.shared.startUpdating()
+                }
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    // Trigger immediate refresh when app is opened or returns to foreground
+                    Task {
+                        print("⌚️ App Active: Triggering immediate weather refresh")
+                        await WatchLocationManager.shared.updateWeather()
+                    }
                 }
             }
         }

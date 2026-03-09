@@ -56,15 +56,19 @@ class WatchWeatherService {
             lowTemp: weather.dailyForecast.first?.lowTemperature.converted(to: .fahrenheit).value
         )
         
-        let hourly = weather.hourlyForecast.prefix(8).map { hour in
-            ForecastHour(
-                time: hour.date,
-                temp: Int(hour.temperature.converted(to: .fahrenheit).value),
-                feelsLike: Int(hour.apparentTemperature.converted(to: .fahrenheit).value),
-                windSpeed: Int(hour.wind.speed.converted(to: .milesPerHour).value),
-                icon: mapAppleConditionToIcon(hour.condition)
-            )
-        }
+        let now = Date()
+        let hourly = weather.hourlyForecast
+            .filter { $0.date > now.addingTimeInterval(-1800) }
+            .prefix(8)
+            .map { hour in
+                ForecastHour(
+                    time: hour.date,
+                    temp: Int(hour.temperature.converted(to: .fahrenheit).value),
+                    feelsLike: Int(hour.apparentTemperature.converted(to: .fahrenheit).value),
+                    windSpeed: Int(hour.wind.speed.converted(to: .milesPerHour).value),
+                    icon: mapAppleConditionToIcon(hour.condition)
+                )
+            }
         
         return (weatherData, alerts, Array(hourly), weather.minuteForecast?.summary)
     }
@@ -97,26 +101,33 @@ class WatchWeatherService {
         let (data, _) = try await URLSession.shared.data(from: url)
         let response = try JSONDecoder().decode(WatchOneCallResponse.self, from: data)
         
-        let hourly = response.hourly?.prefix(8).map { hour in
-            ForecastHour(
-                time: Date(timeIntervalSince1970: hour.dt),
-                temp: Int(hour.temp),
-                feelsLike: Int(hour.feels_like),
-                windSpeed: Int(hour.wind_speed),
-                icon: mapConditionToIcon(hour.weather.first?.main ?? "Clear")
-            )
-        } ?? []
+        let now = Date()
+        let hourly = (response.hourly ?? [])
+            .filter { $0.dt > now.timeIntervalSince1970 - 1800 }
+            .prefix(8)
+            .map { hour in
+                ForecastHour(
+                    time: Date(timeIntervalSince1970: hour.dt),
+                    temp: Int(hour.temp),
+                    feelsLike: Int(hour.feels_like),
+                    windSpeed: Int(hour.wind_speed),
+                    icon: mapConditionToIcon(hour.weather.first?.main ?? "Clear")
+                )
+            }
         
+        guard let current = response.current else {
+            throw WatchWeatherError.networkError
+        }
             
         // Map Basic Data
         let weatherData = WatchWeatherData(
-            temperature: response.current.temp,
-            feelsLike: response.current.feels_like,
-            condition: mapConditionToIcon(response.current.weather.first?.main ?? "Clear"),
-            description: response.current.weather.first?.description.capitalized ?? "Clear",
+            temperature: current.temp,
+            feelsLike: current.feels_like,
+            condition: mapConditionToIcon(current.weather.first?.main ?? "Clear"),
+            description: current.weather.first?.description.capitalized ?? "Clear",
             location: "Current Location", // OneCall doesn't return city name, generic fallback
-            humidity: response.current.humidity,
-            windSpeed: response.current.wind_speed,
+            humidity: current.humidity,
+            windSpeed: current.wind_speed,
             timestamp: Date(),
             highTemp: 0, // OneCall 'current' doesn't have daily high/low, would need 'daily' include
             lowTemp: 0
@@ -193,7 +204,7 @@ enum WatchWeatherError: Error {
 // MARK: - One Call Structs
 
 struct WatchOneCallResponse: Codable {
-    let current: WatchCurrentWeather
+    let current: WatchCurrentWeather? // Changed to optional to support alerts-only fetches
     let hourly: [WatchHourlyWeather]?
     let alerts: [WatchOpenWeatherAlert]?
 }

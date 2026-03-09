@@ -31,6 +31,33 @@ class AppleWeatherService {
         }
     }
     
+    /// Scans next 6 hours to find significant changes (e.g. "Rain at 2pm")
+    func generateUpcomingConditionsSummary(from hourly: Forecast<HourWeather>) -> String? {
+        let nextHours = hourly.prefix(7) // Current + 6 hours
+        guard nextHours.count >= 2 else { return nil }
+        
+        let currentCondition = nextHours.first?.condition
+        
+        // Find the first hour where condition differs significantly from current
+        for i in 1..<nextHours.count {
+            let hour = nextHours[i]
+            
+            // Only highlight "significant" changes like precipitation or storms
+            if hour.condition != currentCondition {
+                let isPrecip = hour.condition.description.lowercased().contains("rain") || 
+                               hour.condition.description.lowercased().contains("storm") ||
+                               hour.condition.description.lowercased().contains("snow")
+                
+                if isPrecip {
+                    let timeStr = hour.date.formatted(.dateTime.hour())
+                    return "\(hour.condition.description) expected at \(timeStr)."
+                }
+            }
+        }
+        
+        return nil
+    }
+    
     // MARK: - Historical Weather
     
     /// Fetches weather conditions for a specific point in time (past)

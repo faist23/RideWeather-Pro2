@@ -30,6 +30,7 @@ struct DisplayWeatherModel {
     let uvIndex: Double? // Add UV index
     let nextHourSummary: String? // Added for Apple WeatherKit
     var precipitationData: [PrecipitationPoint]? // For minutely graph
+    let upcomingConditionsSummary: String? // For broader Apple-style outlook (e.g. "Rain at 2pm")
 }
 
 struct HourlyForecast: Identifiable, Equatable {
@@ -187,6 +188,7 @@ struct CurrentWeatherResponse: Codable {
     let name: String
     let nextHourSummary: String? // Added for Apple WeatherKit support
     var precipitationData: [PrecipitationPoint]? // Added for Apple WeatherKit support
+    let upcomingConditionsSummary: String? // Added for Apple WeatherKit support
 }
 
 struct OneCallResponse: Codable {
@@ -370,7 +372,7 @@ extension RouteWeatherPoint: Codable {
         case weather_temp, weather_feelsLike, weather_humidity
         case weather_windSpeed, weather_windDirection, weather_windDeg
         case weather_description, weather_iconName, weather_pop
-        case weather_visibility, weather_uvIndex, weather_nextHourSummary
+        case weather_visibility, weather_uvIndex, weather_nextHourSummary, weather_upcomingConditionsSummary
     }
     
     func encode(to encoder: Encoder) throws {
@@ -391,6 +393,7 @@ extension RouteWeatherPoint: Codable {
         try container.encodeIfPresent(weather.visibility, forKey: .weather_visibility)
         try container.encodeIfPresent(weather.uvIndex, forKey: .weather_uvIndex)
         try container.encodeIfPresent(weather.nextHourSummary, forKey: .weather_nextHourSummary)
+        try container.encodeIfPresent(weather.upcomingConditionsSummary, forKey: .weather_upcomingConditionsSummary)
     }
     
     init(from decoder: Decoder) throws {
@@ -413,7 +416,8 @@ extension RouteWeatherPoint: Codable {
             pop: try container.decode(Double.self, forKey: .weather_pop),
             visibility: try container.decodeIfPresent(Int.self, forKey: .weather_visibility),
             uvIndex: try container.decodeIfPresent(Double.self, forKey: .weather_uvIndex),
-            nextHourSummary: try container.decodeIfPresent(String.self, forKey: .weather_nextHourSummary)
+            nextHourSummary: try container.decodeIfPresent(String.self, forKey: .weather_nextHourSummary),
+            upcomingConditionsSummary: try container.decodeIfPresent(String.self, forKey: .weather_upcomingConditionsSummary)
         )
     }
 }

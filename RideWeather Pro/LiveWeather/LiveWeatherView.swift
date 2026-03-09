@@ -66,10 +66,26 @@ struct LiveWeatherView: View {
                                                 .frame(height: 60)
                                                 .padding(.top, 4)
                                         }
+                                        
+                                        // NEW: Broader Outlook (Apple-style)
+                                        if let upcoming = displayWeather.upcomingConditionsSummary, !upcoming.isEmpty {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "clock")
+                                                    .font(.caption2)
+                                                Text(upcoming)
+                                                    .font(.caption.weight(.medium))
+                                            }
+                                            .foregroundStyle(.white.opacity(0.8))
+                                            .padding(.top, 2)
+                                        }
                                     }
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 10)
-                                    .background(.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .stroke(.white.opacity(0.1), lineWidth: 1)
+                                    )
                                     .transition(.opacity.combined(with: .move(edge: .top)))
                                 }
                             }
@@ -91,10 +107,26 @@ struct LiveWeatherView: View {
                                         .frame(height: 60)
                                         .padding(.top, 4)
                                 }
+                                
+                                // NEW: Broader Outlook (Apple-style)
+                                if let upcoming = displayWeather.upcomingConditionsSummary, !upcoming.isEmpty {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "clock")
+                                            .font(.caption2)
+                                        Text(upcoming)
+                                            .font(.caption.weight(.medium))
+                                    }
+                                    .foregroundStyle(.white.opacity(0.8))
+                                    .padding(.top, 2)
+                                }
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
-                            .background(.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(.white.opacity(0.1), lineWidth: 1)
+                            )
                             .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                         

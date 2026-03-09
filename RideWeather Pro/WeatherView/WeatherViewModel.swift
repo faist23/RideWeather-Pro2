@@ -677,15 +677,20 @@ class WeatherViewModel: ObservableObject {
         }
         
         // Map your existing hourlyForecast to the new ForecastHour format
-        let summaryHourly = self.hourlyForecast.prefix(8).map { forecast in
-            ForecastHour(
-                time: forecast.date,
-                temp: Int(forecast.temp),
-                feelsLike: Int(forecast.feelsLike),
-                windSpeed: Int(forecast.windSpeed),
-                icon: forecast.iconName
-            )
-        }
+        // CRITICAL: Ensure we start from the current hour for the Watch summary
+        let now = Date()
+        let summaryHourly = allData
+            .filter { $0.dt > now.timeIntervalSince1970 - 1800 } // Keep current hour
+            .prefix(8)
+            .map { forecast in
+                ForecastHour(
+                    time: Date(timeIntervalSince1970: forecast.dt),
+                    temp: Int(forecast.temp),
+                    feelsLike: Int(forecast.feelsLike),
+                    windSpeed: Int(forecast.windSpeed),
+                    icon: WeatherMapper.mapIcon(from: forecast.weather.first?.icon ?? "01d")
+                )
+            }
 
         // Save Summary for Widget
         // This takes the current weather and saves it to the App Group
