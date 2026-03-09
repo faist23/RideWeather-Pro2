@@ -72,6 +72,7 @@ class WeatherViewModel: ObservableObject {
     @Published var powerAnalysisResult: PowerRouteAnalysisResult?
     
     @Published var enhancedRoutePoints: [EnhancedRoutePoint] = []
+    @Published var routeIntelligenceResult: RouteSummaryResult?
     
     @Published var currentRideAnalyzer: RideFileAnalyzer?
     @Published var lastPowerAnalysis: PowerRouteAnalysisResult?
@@ -902,6 +903,7 @@ extension WeatherViewModel {
         routePoints.removeAll()
         weatherDataForRoute.removeAll()
         enhancedRoutePoints.removeAll()
+        routeIntelligenceResult = nil
         lastImportedFileName = ""
         authoritativeRouteDistanceMeters = nil
         importedRouteDisplayName = "" // Explicitly reset the imported name
@@ -913,9 +915,28 @@ extension WeatherViewModel {
 
 extension WeatherViewModel {
     
-    /// Call this after importing a route to prepare for FIT export
+    /// Call this after importing a route to prepare for FIT export and generate summary
     func finalizeRouteImport() async {
         await buildEnhancedRoutePoints()
+        
+        // Generate intelligence summary for the new route
+        if !routePoints.isEmpty {
+            let totalDist = authoritativeRouteDistanceMeters ?? calculateTotalDistance(routePoints)
+            let totalGain = elevationAnalysis?.totalGain ?? 0.0
+            
+            let result = await RouteIntelligenceEngine.shared.generateSummary(
+                coordinates: routePoints,
+                distance: totalDist,
+                elevationGain: totalGain,
+                startCoord: routePoints.first,
+                endCoord: routePoints.last
+            )
+            
+            await MainActor.run {
+                self.routeIntelligenceResult = result
+                print("✅ Generated Route Intelligence Summary: \(result.summary)")
+            }
+        }
     }
 }
 

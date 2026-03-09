@@ -535,10 +535,8 @@ class StravaRoutesViewModel: ObservableObject {
                 weatherViewModel.importedRouteDisplayName = routeName
                 weatherViewModel.importSource = "Strava"
                 
-                // If we have elevation analysis, trigger finalize to prepare for power analysis
-                if elevationAnalysis != nil {
-                    await weatherViewModel.finalizeRouteImport()
-                }
+                // ALWAYS trigger finalize to ensure summary is generated
+                await weatherViewModel.finalizeRouteImport()
                 
                 print("🔵 Step 6: Import complete")
                 self.isImporting = false
@@ -700,10 +698,8 @@ class StravaActivitiesImportViewModel: ObservableObject {
                 weatherViewModel.importedRouteDisplayName = activityName
                 weatherViewModel.importSource = "Strava"
                 
-                // If we have elevation analysis, trigger finalize to prepare for power analysis
-                if elevationAnalysis != nil {
-                    await weatherViewModel.finalizeRouteImport()
-                }
+                // ALWAYS trigger finalize to ensure summary is generated
+                await weatherViewModel.finalizeRouteImport()
                 
                 print("🔵 Step 7: Import complete")
                 self.isImporting = false

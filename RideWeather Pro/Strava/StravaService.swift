@@ -1094,7 +1094,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             
             if let p = prevAlt {
                 let diff = a - p
-                if diff > 0.2 { // Small threshold to filter noise
+                if diff > 0.1 { // Lowered from 0.2 to filter less noise for Strava grid data
                     totalGain += diff
                 } else if diff < -0.1 {
                     totalLoss += abs(diff)

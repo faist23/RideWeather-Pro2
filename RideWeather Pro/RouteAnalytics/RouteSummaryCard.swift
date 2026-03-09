@@ -209,17 +209,15 @@ private struct RouteSummaryCardContainer: View {
     
     @MainActor
         private func loadForecastSummary(viewModel: WeatherViewModel) async {
-            guard let powerAnalysis = viewModel.getPowerAnalysisResult(),
-                  let elevationAnalysis = viewModel.elevationAnalysis,
-                  !viewModel.weatherDataForRoute.isEmpty else {
+            // Need at least coordinates to generate a summary
+            guard !viewModel.routePoints.isEmpty || !viewModel.weatherDataForRoute.isEmpty else {
                 summaryResult = nil
                 return
             }
             
             isLoading = true
             
-            // FIX: Use dense route points for accurate geometry (Turnarounds/Loops)
-            // Fallback to weather points only if routePoints is empty
+            // 1. Get coordinates (dense preferred)
             let coords: [CLLocationCoordinate2D]
             if !viewModel.routePoints.isEmpty {
                 coords = viewModel.routePoints
@@ -227,12 +225,21 @@ private struct RouteSummaryCardContainer: View {
                 coords = viewModel.weatherDataForRoute.map { $0.coordinate }
             }
             
-            let dist = powerAnalysis.segments.last?.endPoint.distance ?? 0
+            // 2. Get distance and gain
+            let dist: Double
+            if let powerAnalysis = viewModel.getPowerAnalysisResult(),
+               let lastSegment = powerAnalysis.segments.last {
+                dist = lastSegment.endPoint.distance
+            } else {
+                dist = viewModel.authoritativeRouteDistanceMeters ?? 0
+            }
+            
+            let totalGain = viewModel.elevationAnalysis?.totalGain ?? 0.0
             
             summaryResult = await RouteIntelligenceEngine.shared.generateSummary(
                 coordinates: coords,
                 distance: dist,
-                elevationGain: elevationAnalysis.totalGain,
+                elevationGain: totalGain,
                 startCoord: coords.first,
                 endCoord: coords.last
             )
@@ -514,7 +521,7 @@ private struct RouteSummaryCardContainer: View {
     private var dataChangeKey: String {
         switch source {
         case .forecast(let viewModel):
-            return "\(viewModel.weatherDataForRoute.count)"
+            return "\(viewModel.weatherDataForRoute.count)_\(viewModel.routePoints.count)"
         case .analysis(let analysis, _):
             return analysis.id.uuidString
         }
