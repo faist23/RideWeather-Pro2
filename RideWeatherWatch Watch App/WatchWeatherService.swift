@@ -186,10 +186,10 @@ class WatchWeatherService {
     
     // Heuristic to map text event to severity
     private func mapSeverity(_ event: String) -> WeatherAlert.Severity {
-        let lower = event.lowercased()
-        if lower.contains("warning") || lower.contains("tornado") || lower.contains("severe") {
+        let eventLower = event.lowercased()
+        if eventLower.contains("warning") {
             return .severe
-        } else if lower.contains("watch") || lower.contains("advisory") {
+        } else if eventLower.contains("watch") {
             return .warning
         }
         return .advisory
