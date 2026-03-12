@@ -117,13 +117,22 @@ class WatchSessionManager: NSObject, ObservableObject {
                 self.weatherSummary = current
             }
             
-            // Haptic only for severe
+            // Haptic only for severe, and only if it's a new alert
             if mostSevere.severity == .severe {
-                WKInterfaceDevice.current().play(.notification)
+                let lastAlertMessage = defaults?.string(forKey: "last_haptic_alert_message")
+                if lastAlertMessage != mostSevere.message {
+                    print("⌚️ Triggering haptic for NEW severe alert: \(mostSevere.message)")
+                    WKInterfaceDevice.current().play(.notification)
+                    defaults?.set(mostSevere.message, forKey: "last_haptic_alert_message")
+                }
+            } else {
+                // Clear the tracked message if the most severe alert is no longer severe
+                defaults?.removeObject(forKey: "last_haptic_alert_message")
             }
         } else {
             print("⌚️ Clearing Widget Alert")
             defaults?.removeObject(forKey: "widget_active_alert")
+            defaults?.removeObject(forKey: "last_haptic_alert_message")
             
             if var current = self.weatherSummary {
                 current.alertSeverity = nil
