@@ -43,6 +43,9 @@ class WatchWeatherService {
         
         let (weather, alerts) = try await (apple, owAlerts)
         
+        let windDeg = weather.currentWeather.wind.direction.value
+        let nextHourPop = Int((weather.hourlyForecast.first?.precipitationChance ?? 0) * 100)
+
         let weatherData = WatchWeatherData(
             temperature: weather.currentWeather.temperature.converted(to: .fahrenheit).value,
             feelsLike: weather.currentWeather.apparentTemperature.converted(to: .fahrenheit).value,
@@ -51,6 +54,8 @@ class WatchWeatherService {
             location: "Current Location",
             humidity: Int(weather.currentWeather.humidity * 100),
             windSpeed: weather.currentWeather.wind.speed.converted(to: .milesPerHour).value,
+            windDirection: compassDirection(for: windDeg),
+            pop: nextHourPop,
             timestamp: Date(),
             highTemp: weather.dailyForecast.first?.highTemperature.converted(to: .fahrenheit).value,
             lowTemp: weather.dailyForecast.first?.lowTemperature.converted(to: .fahrenheit).value
@@ -119,17 +124,20 @@ class WatchWeatherService {
             throw WatchWeatherError.networkError
         }
             
-        // Map Basic Data
+        let firstHourPop = Int((response.hourly?.first?.pop ?? 0) * 100)
+
         let weatherData = WatchWeatherData(
             temperature: current.temp,
             feelsLike: current.feels_like,
             condition: mapConditionToIcon(current.weather.first?.main ?? "Clear"),
             description: current.weather.first?.description.capitalized ?? "Clear",
-            location: "Current Location", // OneCall doesn't return city name, generic fallback
+            location: "Current Location",
             humidity: current.humidity,
             windSpeed: current.wind_speed,
+            windDirection: compassDirection(for: current.wind_deg ?? 0),
+            pop: firstHourPop,
             timestamp: Date(),
-            highTemp: 0, // OneCall 'current' doesn't have daily high/low, would need 'daily' include
+            highTemp: 0,
             lowTemp: 0
         )
         
@@ -184,6 +192,12 @@ class WatchWeatherService {
         }
     }
     
+    private func compassDirection(for degrees: Double) -> String {
+        let directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        let index = Int((degrees + 22.5) / 45.0) & 7
+        return directions[index]
+    }
+
     // Heuristic to map text event to severity
     private func mapSeverity(_ event: String) -> WeatherAlert.Severity {
         let eventLower = event.lowercased()
@@ -214,6 +228,7 @@ struct WatchCurrentWeather: Codable {
     let feels_like: Double
     let humidity: Int
     let wind_speed: Double
+    let wind_deg: Double?
     let weather: [WatchWeatherCondition]
 }
 
@@ -222,6 +237,7 @@ struct WatchHourlyWeather: Codable {
     let temp: Double
     let feels_like: Double
     let wind_speed: Double
+    let pop: Double?   // 0.0–1.0 probability of precipitation
     let weather: [WatchWeatherCondition]
 }
 
@@ -247,6 +263,8 @@ struct WatchWeatherData: Codable {
     let location: String
     let humidity: Int
     let windSpeed: Double
+    let windDirection: String  // cardinal direction e.g. "NW"
+    let pop: Int               // precipitation probability 0–100
     let timestamp: Date
     let highTemp: Double?
     let lowTemp: Double?

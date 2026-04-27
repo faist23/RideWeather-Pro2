@@ -41,23 +41,19 @@ struct RideWeatherWatch_App: App {
                 navigationManager.handleURL(url)
             }
             .onAppear {
-                // Permissions & Background Tasks
                 UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
-                
                 Task { @MainActor in
                     BackgroundWatchUpdater.shared.startBackgroundUpdates()
                 }
-                
-                Task {
-                    await WatchLocationManager.shared.startUpdating()
-                }
+                // Do NOT call startUpdating() here — onChange(.active) fires
+                // immediately after onAppear on cold launch, so we let that
+                // single path handle the initial location request.
             }
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {
-                    // Trigger immediate refresh when app is opened or returns to foreground
                     Task {
-                        print("⌚️ App Active: Triggering immediate weather refresh")
-                        await WatchLocationManager.shared.updateWeather()
+                        print("⌚️ App Active: Requesting fresh location")
+                        await WatchLocationManager.shared.startUpdating()
                     }
                 }
             }

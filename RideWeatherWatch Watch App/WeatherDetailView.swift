@@ -10,20 +10,27 @@ import SwiftUI
 
 struct WeatherDetailView: View {
     @ObservedObject private var session = WatchSessionManager.shared
+    @ObservedObject private var locationManager = WatchLocationManager.shared
     @EnvironmentObject var navigationManager: NavigationManager
-    
+
     private let topScrollID = "SCROLL_TOP"
-    
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 8) {
-                    
+
                     Color.clear
                         .frame(height: 1)
                         .id(topScrollID)
-                    
-                    if let weather = session.weatherSummary {
+
+                    if locationManager.locationStatus == .denied || locationManager.locationStatus == .restricted {
+                        ContentUnavailableView(
+                            "Location Unavailable",
+                            systemImage: "location.slash",
+                            description: Text("Enable Location in Settings to see weather for your current position.")
+                        )
+                    } else if let weather = session.weatherSummary {
                         
                         // Check the array for the first alert
                         if let alert = session.weatherAlerts.first {

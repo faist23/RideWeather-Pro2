@@ -11,108 +11,119 @@ import Combine
 @MainActor
 class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     static let shared = WatchLocationManager()
-    private let locationManager = CLLocationManager()
-    
-    // Publish location so views can observe it if needed
+
+    // Internal so tests can inject a MockCLLocationManager subclass.
+    let locationManager: CLLocationManager
+
     @Published var currentLocation: CLLocation?
     @Published var locationStatus: CLAuthorizationStatus = .notDetermined
-    
-    override init() {
+
+    private var locationContinuation: CheckedContinuation<CLLocation?, Never>?
+    private var isFetchingWeather = false
+
+    init(manager: CLLocationManager = CLLocationManager()) {
+        locationManager = manager
         super.init()
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         locationManager.requestWhenInUseAuthorization()
     }
-    
-    /// Entry point: Call this from onAppear in your App root
+
+    /// Foreground entry point: call on app launch and scene-active transitions.
     func startUpdating() async {
-        // Check status and request if needed
         if locationManager.authorizationStatus == .notDetermined {
             locationManager.requestWhenInUseAuthorization()
         }
-        
-        // Request initial location update
         locationManager.requestLocation()
     }
-    
-    // MARK: - Core Location Delegate
-    
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        locationStatus = manager.authorizationStatus
-        if locationStatus == .authorizedWhenInUse || locationStatus == .authorizedAlways {
-            manager.requestLocation()
+
+    /// Background entry point: suspends until a one-shot location fix arrives or
+    /// the timeout elapses. Returns nil on timeout so the caller can fall back to
+    /// cached App Group coordinates.
+    func requestLocationAsync(timeout: TimeInterval = 8.0) async -> CLLocation? {
+        return await withCheckedContinuation { continuation in
+            locationContinuation = continuation
+            locationManager.requestLocation()
+
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(timeout))
+                guard let pending = locationContinuation else { return }
+                locationContinuation = nil
+                pending.resume(returning: nil)
+            }
         }
     }
-    
+
+    // MARK: - CLLocationManagerDelegate
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        locationStatus = manager.authorizationStatus
+        // Do NOT call requestLocation() here — startUpdating() handles the
+        // initial fetch on every foreground entry. Calling it here produces
+        // duplicate fetches because this delegate fires on every init.
+    }
+
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
-        self.currentLocation = location
-        
-        // Save to Shared Defaults for Widgets/Complications
+        currentLocation = location
+
         if let sharedDefaults = UserDefaults(suiteName: "group.com.ridepro.rideweather") {
             sharedDefaults.set(location.coordinate.latitude, forKey: "user_latitude")
             sharedDefaults.set(location.coordinate.longitude, forKey: "user_longitude")
             sharedDefaults.set(Date(), forKey: "lastLocationUpdate")
         }
-        
-        // Trigger the async weather fetch for immediate UI update
+
+        // Background path: resolve the awaiting continuation and let the caller
+        // handle weather fetch. Foreground path: trigger weather fetch directly.
+        if let cont = locationContinuation {
+            locationContinuation = nil
+            cont.resume(returning: location)
+            return
+        }
+
         Task {
             await updateWeather(for: location)
         }
     }
-    
+
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("❌ Location Manager Error: \(error.localizedDescription)")
+        if let cont = locationContinuation {
+            locationContinuation = nil
+            cont.resume(returning: nil)
+        }
     }
-    
-    // MARK: - Weather Update Logic
-    
+
+    // MARK: - Weather Update
+
     func updateWeather(for location: CLLocation? = nil) async {
-        // Use passed location or fall back to cached
+        guard !isFetchingWeather else {
+            print("⌚️ Weather fetch already in-flight, skipping duplicate")
+            return
+        }
         guard let loc = location ?? currentLocation ?? locationManager.location else {
             print("⚠️ No location available for weather update")
             return
         }
-        
+        isFetchingWeather = true
+        defer { isFetchingWeather = false }
+
         do {
             print("🔄 Fetching weather for: \(loc.coordinate.latitude), \(loc.coordinate.longitude)")
-            
-            // 1. Fetch Data (Tuple: Data + Array of Alerts + Hourly + Summary)
+
             let (weatherData, alerts, hourly, nextHourSummary) = try await WatchWeatherService.shared.fetchWeather(for: loc.coordinate)
-            
-            // 2. Update Session (Main Actor is guaranteed by class annotation)
+
             WatchSessionManager.shared.updateWeatherAlerts(alerts)
-            
-            // Create a summary for the live UI and publish it immediately
-            let liveSummary = SharedWeatherSummary(
-                temperature: Int(weatherData.temperature),
-                feelsLike: Int(weatherData.feelsLike),
-                conditionIcon: weatherData.condition,
-                windSpeed: Int(weatherData.windSpeed),
-                windDirection: "N", // Defaulting for local fetch
-                pop: 0,
-                generatedAt: Date(),
-                alertSeverity: alerts.first?.severity.rawValue,
-                hourlyForecast: hourly,
-                nextHourSummary: nextHourSummary
-            )
-            
-            // NEW: Prune past hours immediately
+
+            let liveSummary = SharedWeatherSummary.make(from: weatherData, alert: alerts.first, hourly: hourly, nextHourSummary: nextHourSummary)
             let prunedSummary = WatchSessionManager.shared.prunePastHours(liveSummary)
             WatchSessionManager.shared.weatherSummary = prunedSummary
-            
-            // 3. Save weather data for widget
+
             WatchAppGroupManager.shared.saveWeatherData(weatherData, alert: alerts.first, hourly: prunedSummary.hourlyForecast ?? [], nextHourSummary: nextHourSummary)
-            
+
             print("✅ Weather Updated. Alerts found: \(alerts.count)")
-            
         } catch {
             print("❌ Error fetching weather: \(error)")
         }
     }
-    
-    deinit {
-        // Properties and tasks already cleaned up or removed
-    }
-    
 }

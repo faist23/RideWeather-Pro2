@@ -26,23 +26,9 @@ class WatchAppGroupManager {
     
     private init() {}
     
-    // Updated: Accepts optional Alert and nextHourSummary
     func saveWeatherData(_ data: WatchWeatherData, alert: WeatherAlert? = nil, hourly: [ForecastHour] = [], nextHourSummary: String? = nil) {
         let defaults = UserDefaults(suiteName: suiteName)
-        
-        // Map to Shared Summary (matches Widget definition)
-        let summary = SharedWeatherSummary(
-            temperature: Int(data.temperature),
-            feelsLike: Int(data.feelsLike),
-            conditionIcon: data.condition,
-            windSpeed: Int(data.windSpeed),
-            windDirection: compassDirection(for: 0), // Simplification if wind deg missing
-            pop: 0, // Pop not always available in current current-weather call
-            generatedAt: Date(),
-            alertSeverity: alert?.severity.rawValue,
-            hourlyForecast: hourly,
-            nextHourSummary: nextHourSummary
-        )
+        let summary = SharedWeatherSummary.make(from: data, alert: alert, hourly: hourly, nextHourSummary: nextHourSummary)
         
         if let encoded = try? JSONEncoder().encode(summary) {
             defaults?.set(encoded, forKey: "widget_weather_summary")
@@ -72,6 +58,8 @@ class WatchAppGroupManager {
             location: "Current Location",
             humidity: 0,
             windSpeed: Double(summary.windSpeed),
+            windDirection: summary.windDirection,
+            pop: summary.pop,
             timestamp: summary.generatedAt,
             highTemp: nil,
             lowTemp: nil
@@ -86,12 +74,6 @@ class WatchAppGroupManager {
         
         // Force all timelines to reload
         WidgetCenter.shared.reloadAllTimelines()
-    }
-    
-    private func compassDirection(for degrees: Double) -> String {
-        let directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
-        let index = Int((degrees + 22.5) / 45.0) & 7
-        return directions[index]
     }
     
     func getSteps() -> Int {
@@ -124,6 +106,28 @@ struct SharedWeatherSummary: Codable {
     var alertSeverity: String? // Changed to var for WatchSessionManager updates
     var hourlyForecast: [ForecastHour]? // Changed to var for WatchSessionManager updates
     var nextHourSummary: String? // Changed to var for WatchSessionManager updates
+}
+
+extension SharedWeatherSummary {
+    static func make(
+        from data: WatchWeatherData,
+        alert: WeatherAlert? = nil,
+        hourly: [ForecastHour] = [],
+        nextHourSummary: String? = nil
+    ) -> SharedWeatherSummary {
+        SharedWeatherSummary(
+            temperature: Int(data.temperature),
+            feelsLike: Int(data.feelsLike),
+            conditionIcon: data.condition,
+            windSpeed: Int(data.windSpeed),
+            windDirection: data.windDirection,
+            pop: data.pop,
+            generatedAt: Date(),
+            alertSeverity: alert?.severity.rawValue,
+            hourlyForecast: hourly,
+            nextHourSummary: nextHourSummary
+        )
+    }
 }
 
 struct ForecastHour: Codable, Identifiable {
