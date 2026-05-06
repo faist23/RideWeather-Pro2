@@ -52,12 +52,18 @@ class BackgroundWatchUpdater: NSObject {
         print("🛠 Handling background app refresh")
         defaults?.set(Date(), forKey: "last_background_refresh")
 
-        var success = false
-        // defer guarantees scheduling even if the task is killed mid-flight.
-        defer { scheduleNextBackgroundRefresh(success: success) }
+        // Schedule the next refresh immediately so the chain survives even if
+        // watchOS kills this task before it completes.
+        scheduleNextBackgroundRefresh(success: true)
 
         await updateSteps()
-        success = await updateWeather()
+        let success = await updateWeather()
+
+        // If this run failed, reschedule with back-off on top of the optimistic
+        // one already queued (the later one wins on watchOS).
+        if !success {
+            scheduleNextBackgroundRefresh(success: false)
+        }
     }
 
     // MARK: - Weather
@@ -65,7 +71,7 @@ class BackgroundWatchUpdater: NSObject {
     private func updateWeather() async -> Bool {
         // Always try a fresh one-shot location fix first (8-second budget).
         // Falls back to cached App Group coordinates on timeout or GPS failure.
-        let freshLocation = await WatchLocationManager.shared.requestLocationAsync(timeout: 8.0)
+        let freshLocation = await WatchLocationManager.shared.requestLocationAsync(timeout: 5.0)
 
         let coordinate: CLLocationCoordinate2D
         if let loc = freshLocation {

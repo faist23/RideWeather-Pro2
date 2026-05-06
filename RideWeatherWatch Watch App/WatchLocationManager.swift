@@ -89,8 +89,15 @@ class WatchLocationManager: NSObject, ObservableObject, CLLocationManagerDelegat
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("❌ Location Manager Error: \(error.localizedDescription)")
         if let cont = locationContinuation {
+            // Background path: let the caller fall back to cached App Group coords.
             locationContinuation = nil
             cont.resume(returning: nil)
+        } else {
+            // Foreground path: GPS failed, but we still need fresh weather.
+            // Use cached location (currentLocation or locationManager.location).
+            Task {
+                await updateWeather()
+            }
         }
     }
 

@@ -231,10 +231,15 @@ struct WeatherDetailView: View {
                 scrollToTop(proxy)
             }
         }
+        .task {
+            // Fetch fresh weather whenever this view appears.
+            // Uses cached coordinates if GPS isn't immediately available.
+            await WatchLocationManager.shared.updateWeather()
+        }
         .containerBackground(.blue.gradient, for: .tabView)
         .containerBackground(.blue.gradient, for: .navigation)
     }
-    
+
     private func scrollToTop(_ proxy: ScrollViewProxy) {
         // Small delay ensures the view has finished its transition or deep link processing
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
