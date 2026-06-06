@@ -80,6 +80,8 @@ class WeatherViewModel: ObservableObject {
     // MARK: - Dependencies
     let initialDataLoaded = PassthroughSubject<Void, Never>()
     private var hasLoadedInitialData = false
+    @Published private(set) var isConnected = true
+    private let networkMonitor = NetworkMonitor.shared
     private let weatherRepo = WeatherRepository()
     private let locationManager = LocationManager()
     private let hapticsManager = HapticsManager.shared
@@ -144,6 +146,29 @@ class WeatherViewModel: ObservableObject {
     init() {
         self.settings = UserDefaultsManager.shared.loadSettings()
         self.averageSpeedInput = String(settings.averageSpeed)
+
+        networkMonitor.$isConnected
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] connected in
+                guard let self = self else { return }
+                self.isConnected = connected
+                if !connected {
+                    // Went offline — surface an error immediately so the launch screen
+                    // can dismiss instead of spinning forever.
+                    self.uiState = .error("No internet connection. Check your network and try again.")
+                    if !self.hasLoadedInitialData {
+                        self.hasLoadedInitialData = true
+                        self.initialDataLoaded.send()
+                    }
+                } else if connected && self.displayWeather == nil {
+                    // Came back online with no data yet — retry automatically.
+                    if let location = self.currentLocation ?? self.locationManager.location {
+                        Task { @MainActor in await self.fetchAllWeather(for: location) }
+                    }
+                }
+            }
+            .store(in: &cancellables)
+
         locationManager.$location
             .compactMap { $0 }
             .first()
@@ -153,7 +178,7 @@ class WeatherViewModel: ObservableObject {
                 Task { @MainActor in await self.fetchAllWeather(for: location) }
             }
             .store(in: &cancellables)
-        
+
         locationManager.$authorizationStatus
             .sink { [weak self] status in
                 guard let self = self else { return }
@@ -166,7 +191,7 @@ class WeatherViewModel: ObservableObject {
                 }
             }
             .store(in: &cancellables)
-        
+
         locationManager.requestLocationAccess()
     }
     
@@ -368,11 +393,19 @@ class WeatherViewModel: ObservableObject {
                 initialDataLoaded.send()
             }
         } catch {
-            uiState = .error("Failed to fetch weather: \(error.localizedDescription)")
+            if !isConnected {
+                uiState = .error("No internet connection. Check your network and try again.")
+            } else {
+                uiState = .error("Failed to fetch weather: \(error.localizedDescription)")
+            }
             hapticsManager.triggerError()
+            if !hasLoadedInitialData {
+                hasLoadedInitialData = true
+                initialDataLoaded.send()
+            }
         }
     }
-    
+
     private func saveLocationForWidget(_ location: CLLocation) {
         // Try BOTH standard and shared
         let sharedDefaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")

@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct LaunchView: View {
+    @ObservedObject var networkMonitor = NetworkMonitor.shared
+
     var body: some View {
         ZStack {
             LinearGradient(
@@ -16,23 +18,32 @@ struct LaunchView: View {
                 endPoint: .bottom
             ).ignoresSafeArea()
 
-            VStack {
-                    Image("rider_bike_image")
- //               Image(systemName: "bicycle")
+            VStack(spacing: 16) {
+                Image("rider_bike_image")
                     .resizable()
-                    .renderingMode(.template) // 2. THIS allows .foregroundColor to work
+                    .renderingMode(.template)
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 100, height: 100)
                     .foregroundColor(.white)
-                
+
                 Text("RideWeather Pro")
                     .font(.largeTitle)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
-                
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    .padding(.top)
+
+                if networkMonitor.isConnected {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                } else {
+                    VStack(spacing: 8) {
+                        Image(systemName: "wifi.slash")
+                            .font(.title2)
+                            .foregroundColor(.white.opacity(0.9))
+                        Text("Waiting for connection…")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                }
             }
         }
     }
