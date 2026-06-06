@@ -582,7 +582,7 @@ class StravaActivitiesImportViewModel: ObservableObject {
     @Published var hasMorePages = true
      
      private var currentPage = 1
-     private let perPage = 50
+     private let perPage = 100
      
     func loadActivities(service: StravaService) {
         isLoading = true
