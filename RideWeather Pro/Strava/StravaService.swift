@@ -135,6 +135,8 @@ struct StravaStreams: Codable {
 class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
     
     // MARK: - Configuration
+    // June 1, 2027: change to "https://www.api-v3.strava.com"
+    private let apiBase = "https://www.strava.com/api/v3"
     private var stravaConfig: [String: String]?
     private var clientId: String { configValue(forKey: "StravaClientID") ?? "INVALID_CLIENT_ID" }
     private var clientSecret: String { configValue(forKey: "StravaClientSecret") ?? "INVALID_CLIENT_SECRET" }
@@ -568,7 +570,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             throw StravaError.notAuthenticated
         }
         
-        guard let url = URL(string: "https://www.strava.com/api/v3/athlete") else {
+        guard let url = URL(string: "\(apiBase)/athlete") else {
             throw StravaError.invalidURL
         }
         
@@ -708,7 +710,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             throw StravaError.notAuthenticated
         }
         
-        var components = URLComponents(string: "https://www.strava.com/api/v3/athlete/activities")!
+        var components = URLComponents(string: "\(apiBase)/athlete/activities")!
         components.queryItems = [
             URLQueryItem(name: "per_page", value: String(perPage)),
             URLQueryItem(name: "page", value: String(page))
@@ -775,12 +777,12 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         let streamTypes = ["time", "distance", "latlng", "altitude", "velocity_smooth",
                            "heartrate", "cadence", "watts", "temp", "moving", "grade_smooth"]
         
-        var components = URLComponents(string: "https://www.strava.com/api/v3/activities/\(activityId)/streams")!
+        var components = URLComponents(string: "\(apiBase)/activities/\(activityId)/streams")!
         components.queryItems = [
             URLQueryItem(name: "keys", value: streamTypes.joined(separator: ",")),
             URLQueryItem(name: "key_by_type", value: "true")
         ]
-        
+
         guard let url = components.url else {
             throw StravaError.invalidURL
         }
@@ -824,7 +826,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             throw StravaError.notAuthenticated
         }
 
-        var components = URLComponents(string: "https://www.strava.com/api/v3/athletes/\(athleteId)/routes")!
+        var components = URLComponents(string: "\(apiBase)/athletes/\(athleteId)/routes")!
         components.queryItems = [
             URLQueryItem(name: "per_page", value: String(limit)),
             URLQueryItem(name: "page", value: "1")
@@ -875,7 +877,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             throw StravaError.notAuthenticated
         }
         
-        guard let url = URL(string: "https://www.strava.com/api/v3/routes/\(routeId)") else {
+        guard let url = URL(string: "\(apiBase)/routes/\(routeId)") else {
             throw StravaError.invalidURL
         }
         
@@ -960,7 +962,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         
         let streamTypes = ["distance", "latlng", "altitude"]
         
-        var components = URLComponents(string: "https://www.strava.com/api/v3/routes/\(routeId)/streams")!
+        var components = URLComponents(string: "\(apiBase)/routes/\(routeId)/streams")!
         components.queryItems = [
             URLQueryItem(name: "keys", value: streamTypes.joined(separator: ",")),
             URLQueryItem(name: "key_by_type", value: "true")
@@ -992,7 +994,7 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
             // Added "altitude" to request
             let streamTypes = ["time", "distance", "latlng", "moving", "altitude"]
             
-            var components = URLComponents(string: "https://www.strava.com/api/v3/activities/\(activityId)/streams")!
+            var components = URLComponents(string: "\(apiBase)/activities/\(activityId)/streams")!
             components.queryItems = [
                 URLQueryItem(name: "keys", value: streamTypes.joined(separator: ",")),
                 URLQueryItem(name: "key_by_type", value: "true")
