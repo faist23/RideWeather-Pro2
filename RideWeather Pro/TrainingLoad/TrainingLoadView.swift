@@ -337,7 +337,7 @@ struct TrainingLoadView: View {
                 }
             }
             // THROTTLE the readiness change listener
-            .onChange(of: healthManager.readiness) { newValue in
+            .onChange(of: healthManager.readiness) { _, newValue in
                 // Only refresh if readiness actually changed meaningfully
                 guard let lastReadiness = viewModel.readiness else {
                     // First time, always refresh
