@@ -1615,43 +1615,61 @@ class RideFileAnalyzer {
         let avgRho = airDensities.reduce(0, +) / Double(airDensities.count)
         let avgHeatPenalty = heatPenalties.isEmpty ? 0 : (heatPenalties.reduce(0, +) / Double(heatPenalties.count))
         
-        // 2. Solve for CdA at stable points (Flat sections, > 15mph, > 100W)
-        for wp in weatherPoints {
-            guard let ridePoint = dataPoints.min(by: { abs($0.timestamp.timeIntervalSince(wp.timestamp)) < abs($1.timestamp.timeIntervalSince(wp.timestamp)) }),
-                  let power = ridePoint.power, power > 100,
-                  let speed = ridePoint.speed, speed > 6.7,
-                  let alt = ridePoint.altitude else { continue }
-            
-            let fiveSecsLater = wp.timestamp.addingTimeInterval(5)
-            guard let ridePoint2 = dataPoints.min(by: { abs($0.timestamp.timeIntervalSince(fiveSecsLater)) < abs($1.timestamp.timeIntervalSince(fiveSecsLater)) }),
-                  let alt2 = ridePoint2.altitude,
-                  let dist1 = ridePoint.distance,
-                  let dist2 = ridePoint2.distance, dist2 > dist1 else { continue }
-            
-            let grade = (alt2 - alt) / (dist2 - dist1)
-            if abs(grade) > 0.01 { continue }
-            
-            let bearing = ridePoint.position != nil && ridePoint2.position != nil ?
-                calculateBearingInternal(from: ridePoint.position!, to: ridePoint2.position!) : 0.0
-            
+        // 2. Solve for CdA at steady-state points across the whole ride.
+        // Sampling every ride point (not just the 8 weather points) gives far more
+        // candidates. The critical correction is the INERTIA term: when accelerating
+        // (e.g. spinning back up to speed after slowing for traffic on a trail) a large
+        // share of power goes into kinetic energy, not drag. Attributing that to drag
+        // is what inflates CdA. We subtract it, reject hard transients, and take the
+        // MEDIAN so any residual outliers don't skew the estimate.
+        let crr = 0.0045
+        let drivetrainEfficiency = 0.97
+        var i = 1
+        while i < dataPoints.count - 1 {
+            defer { i += 1 }
+            let prev = dataPoints[i - 1]
+            let cur = dataPoints[i]
+            let next = dataPoints[i + 1]
+
+            guard let power = cur.power, power > 100,
+                  let speed = cur.speed, speed > 6.7,
+                  let vPrev = prev.speed, let vNext = next.speed,
+                  let dPrev = prev.distance, let dNext = next.distance, dNext > dPrev else { continue }
+
+            let dt = next.timestamp.timeIntervalSince(prev.timestamp)
+            guard dt > 0 else { continue }
+
+            // Reject non-steady-state points (large accel/decel — corners, traffic surges)
+            let acceleration = (vNext - vPrev) / dt
+            if abs(acceleration) > 0.2 { continue }
+
+            // Grade over the window; require near-flat (altitude noise dominates on steep, short windows)
+            var grade = 0.0
+            if let aPrev = prev.altitude, let aNext = next.altitude {
+                grade = (aNext - aPrev) / (dNext - dPrev)
+            }
+            if abs(grade) > 0.015 { continue }
+
+            let bearing = (prev.position != nil && next.position != nil)
+                ? calculateBearingInternal(from: prev.position!, to: next.position!) : 0.0
+            let wind = interpolatedWind(at: cur.timestamp, location: cur.position ?? prev.position ?? next.position ?? CLLocationCoordinate2D(), weatherPoints: weatherPoints)
             let headwind = physics.calculateHeadwindComponent(
-                windSpeedMps: wp.windSpeed,
-                windDirectionDegrees: Double(wp.windDeg),
+                windSpeedMps: wind.speed,
+                windDirectionDegrees: Double(wind.deg),
                 rideDirectionDegrees: bearing
             )
-            
             let crosswind = physics.calculateCrosswindComponent(
-                windSpeedMps: wp.windSpeed,
-                windDirectionDegrees: Double(wp.windDeg),
+                windSpeedMps: wind.speed,
+                windDirectionDegrees: Double(wind.deg),
                 rideDirectionDegrees: bearing
             )
-            
-            let crr = 0.0045
+
             let rollingPower = crr * totalWeight * g * speed
             let gravityPower = totalWeight * g * grade * speed
-            
-            let dragPower = (power * 0.97) - rollingPower - gravityPower
-            
+            let inertiaPower = totalWeight * acceleration * speed   // power into/out of kinetic energy
+
+            let dragPower = (power * drivetrainEfficiency) - rollingPower - gravityPower - inertiaPower
+
             if dragPower > 20 {
                 let v_air_sq = pow(speed + headwind, 2) + pow(crosswind, 2)
                 let solvedCdA = dragPower / (0.5 * avgRho * v_air_sq * speed)
@@ -1660,24 +1678,75 @@ class RideFileAnalyzer {
                 }
             }
         }
-        
-        let finalCdA = cdaSamples.isEmpty ? 0.32 : (cdaSamples.reduce(0, +) / Double(cdaSamples.count))
+
+        let finalCdA: Double
+        if cdaSamples.count >= 3 {
+            let sorted = cdaSamples.sorted()
+            let mid = sorted.count / 2
+            finalCdA = sorted.count % 2 == 0 ? (sorted[mid - 1] + sorted[mid]) / 2.0 : sorted[mid]
+        } else {
+            finalCdA = 0.32
+        }
         
         // 3. Estimate Wind Impact
+        // Compare the MODELED speed with the actual wind against the MODELED speed
+        // with zero wind, holding power AND grade constant across both. Because the
+        // grade is identical in each model, terrain cancels out and the time delta
+        // reflects wind alone (positive = headwind cost time, negative = tailwind
+        // saved time). When wind ≈ 0, the delta is ≈ 0.
         var timeDifference: TimeInterval = 0
-        for i in stride(from: 0, to: dataPoints.count, by: 30) {
+        let stepSize = 30
+        for i in stride(from: 0, to: dataPoints.count, by: stepSize) {
             let pt = dataPoints[i]
             guard let power = pt.power, power > 50, let pos = pt.position else { continue }
-            
+
+            let endIdx = min(i + stepSize, dataPoints.count - 1)
+            guard endIdx > i else { continue }
+            let endPt = dataPoints[endIdx]
+
+            // Real distance covered across this window
+            let segDist: Double
+            if let d1 = pt.distance, let d2 = endPt.distance, d2 > d1 {
+                segDist = d2 - d1
+            } else {
+                segDist = (pt.speed ?? 5.0) * endPt.timestamp.timeIntervalSince(pt.timestamp)
+            }
+            guard segDist > 1 else { continue }
+
+            // Grade across the window — applied identically to both models so it cancels
+            var grade = 0.0
+            if let a1 = pt.altitude, let a2 = endPt.altitude {
+                grade = max(-0.2, min(0.2, (a2 - a1) / segDist))
+            }
+
+            // Actual wind components for this segment
             let wind = interpolatedWind(at: pt.timestamp, location: pos, weatherPoints: weatherPoints)
-            let nextIdx = min(i + 1, dataPoints.count - 1)
-            let nextPos = dataPoints[nextIdx].position ?? pos
-            let bearing = calculateBearingInternal(from: pos, to: nextPos)
-            
-            let actualSpeed = pt.speed ?? 5.0
-            let zeroWindSpeed = physics.calculateSpeed(
+            let bearing = endPt.position != nil
+                ? calculateBearingInternal(from: pos, to: endPt.position!) : 0.0
+            let headwind = physics.calculateHeadwindComponent(
+                windSpeedMps: wind.speed,
+                windDirectionDegrees: Double(wind.deg),
+                rideDirectionDegrees: bearing
+            )
+            let crosswind = physics.calculateCrosswindComponent(
+                windSpeedMps: wind.speed,
+                windDirectionDegrees: Double(wind.deg),
+                rideDirectionDegrees: bearing
+            )
+
+            let speedWithWind = physics.calculateSpeed(
                 targetPowerWatts: power,
-                elevationGrade: 0,
+                elevationGrade: grade,
+                headwindSpeedMps: headwind,
+                crosswindSpeedMps: crosswind,
+                temperature: 20,
+                humidity: 0.5,
+                airDensity: avgRho,
+                isWet: false
+            )
+            let speedNoWind = physics.calculateSpeed(
+                targetPowerWatts: power,
+                elevationGrade: grade,
                 headwindSpeedMps: 0,
                 crosswindSpeedMps: 0,
                 temperature: 20,
@@ -1685,13 +1754,12 @@ class RideFileAnalyzer {
                 airDensity: avgRho,
                 isWet: false
             )
-            
-            let dist = 30.0 * actualSpeed
-            let timeWithWind = 30.0
-            let timeWithoutWind = dist / max(1.0, zeroWindSpeed)
-            timeDifference += (timeWithWind - timeWithoutWind)
+
+            let timeWithWind = segDist / max(0.5, speedWithWind)
+            let timeNoWind = segDist / max(0.5, speedNoWind)
+            timeDifference += (timeWithWind - timeNoWind)
         }
-        
+
         return (finalCdA, timeDifference, avgRho, avgHeatPenalty)
     }
     
