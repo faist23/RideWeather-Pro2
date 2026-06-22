@@ -1,4 +1,4 @@
-# Gemini CLI Project Instructions for RideWeather Pro
+# CLAUDE.md — RideWeather Pro
 
 ## Project Overview
 RideWeather Pro is a multi-platform Apple ecosystem application (iOS, watchOS, and widgets/complications) built to provide cyclists with route forecasting, pacing insights, and wellness tracking. It integrates with major fitness platforms (Strava, Garmin, Wahoo) and uses Supabase for backend services.
@@ -11,6 +11,17 @@ RideWeather Pro is a multi-platform Apple ecosystem application (iOS, watchOS, a
 - **Backend:** Supabase (PostgreSQL, Edge Functions via Deno/TypeScript).
 - **Key Frameworks:** HealthKit, CoreLocation, WeatherKit / OpenWeather.
 
+## Build & Verify
+- **Scheme:** `RideWeather Pro` (other schemes: `RideWeatherWatch Watch App`, `RideWeatherComplicationsExtension`).
+- **Build for simulator:**
+  ```sh
+  xcodebuild build -scheme "RideWeather Pro" \
+    -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+    -configuration Debug
+  ```
+- A `No such module 'FitFileParser'` (or similar SPM module) error from SourceKit is an indexer artifact only — the SPM build resolves these packages and compiles fine.
+- Ride analysis (CdA, wind impact, weather correlation) is recomputed fresh on every import; results are not cached.
+
 ## Architectural Guidelines
 
 ### Swift & SwiftUI
@@ -22,13 +33,13 @@ RideWeather Pro is a multi-platform Apple ecosystem application (iOS, watchOS, a
 
 ### Supabase Edge Functions
 1. **Runtime:** Deno / TypeScript.
-2. **Style:** Use modern TypeScript, explicit typing for request/response payloads, and standard Deno HTTP modules. 
+2. **Style:** Use modern TypeScript, explicit typing for request/response payloads, and standard Deno HTTP modules.
 3. **Secrets:** Never hardcode API keys. Rely on Supabase Vault or environment variables (`Deno.env.get`).
 
 ## Coding Standards
 1. **Naming:** Use standard Swift `camelCase` for variables/functions and `PascalCase` for types/classes/structs. Use descriptive names over abbreviations.
 2. **Error Handling:** Avoid force-unwrapping (`!`). Handle optionality gracefully using `if let` or `guard let`. Propagate errors using `throws` or `Result` types where UI feedback is necessary.
-3. **File Structure:** 
+3. **File Structure:**
    - Ensure new SwiftUI views are placed in their respective feature folders (e.g., `LiveWeather/`, `RoutePacing/`).
    - Keep files focused. If a file exceeds 300-400 lines, consider breaking out sub-views or moving logic into a ViewModel/Helper.
 4. **Documentation:** Add brief documentation comments (`///`) to public methods, complex algorithms (like pacing and power physics engines), and model properties.
