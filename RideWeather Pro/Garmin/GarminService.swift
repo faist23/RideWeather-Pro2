@@ -859,14 +859,17 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
     
     // MARK: - Presentation Anchor
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let window = windowScene.windows.first(where: { $0.isKeyWindow }) else {
-            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-                return scene.windows.first ?? UIWindow()
-            }
-            return UIWindow()
+        guard let windowScene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first else {
+            // Unreachable while presenting a web-auth sheet: an app always has an
+            // active window scene here, and there is no non-deprecated way to build
+            // a UIWindow without one.
+            preconditionFailure("No active UIWindowScene available for presentation anchor")
         }
-        return window
+        return windowScene.windows.first(where: { $0.isKeyWindow })
+            ?? windowScene.windows.first
+            ?? UIWindow(windowScene: windowScene)
     }
     
     // MARK: - Helpers
