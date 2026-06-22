@@ -124,7 +124,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7E87E94D2F15F2840050060A"
             BuildableName = "RideWeatherComplicationsExtension.appex"
-            BlueprintName = "RideWeatherComplicationsExtension"
             ReferencedContainer = "container:RideWeather Pro.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

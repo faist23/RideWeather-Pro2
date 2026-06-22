@@ -73,7 +73,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7E87E91B2F12EDBF0050060A"
             BuildableName = "RideWeatherWatch Watch App.app"
-            BlueprintName = "RideWeatherWatch Watch App"
             ReferencedContainer = "container:RideWeather Pro.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -90,7 +89,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7E87E91B2F12EDBF0050060A"
             BuildableName = "RideWeatherWatch Watch App.app"
-            BlueprintName = "RideWeatherWatch Watch App"
             ReferencedContainer = "container:RideWeather Pro.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
