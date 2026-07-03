@@ -62,7 +62,9 @@ class WatchAppGroupManager {
             pop: summary.pop,
             timestamp: summary.generatedAt,
             highTemp: nil,
-            lowTemp: nil
+            lowTemp: nil,
+            heatIndex: summary.heatIndex,
+            heatIndexSeverity: summary.heatIndexSeverity
         )
     }
     
@@ -119,10 +121,7 @@ extension SharedWeatherSummary {
         hourly: [ForecastHour] = [],
         nextHourSummary: String? = nil
     ) -> SharedWeatherSummary {
-        // Watch-side fetches are always Fahrenheit; humidity is 0 when the
-        // data came from a summary round-trip, which yields no heat index
-        let heatIndex = HeatIndexCalculator.reading(temperatureF: data.temperature, humidity: data.humidity)
-        return SharedWeatherSummary(
+        SharedWeatherSummary(
             temperature: Int(data.temperature),
             feelsLike: Int(data.feelsLike),
             conditionIcon: data.condition,
@@ -133,8 +132,8 @@ extension SharedWeatherSummary {
             alertSeverity: alert?.severity.rawValue,
             hourlyForecast: hourly,
             nextHourSummary: nextHourSummary,
-            heatIndex: heatIndex.map { Int($0.value.rounded()) },
-            heatIndexSeverity: heatIndex.map { $0.category.severityRank }
+            heatIndex: data.heatIndex,
+            heatIndexSeverity: data.heatIndexSeverity
         )
     }
 }

@@ -26,61 +26,82 @@ class WatchWeatherService {
     func fetchWeather(for coordinate: CLLocationCoordinate2D) async throws -> (data: WatchWeatherData, alerts: [WeatherAlert], hourly: [ForecastHour], nextHourSummary: String?) {
         let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
         let providerString = defaults?.string(forKey: "appSettings.weatherProvider") ?? "apple"
-        
+        let isImperial = (defaults?.string(forKey: "appSettings.units") ?? "imperial") == "imperial"
+
         if providerString == "apple" {
-            return try await fetchAppleWeather(for: coordinate)
+            return try await fetchAppleWeather(for: coordinate, isImperial: isImperial)
         } else {
-            return try await fetchOpenWeather(for: coordinate)
+            return try await fetchOpenWeather(for: coordinate, isImperial: isImperial)
         }
     }
 
-    private func fetchAppleWeather(for coordinate: CLLocationCoordinate2D) async throws -> (data: WatchWeatherData, alerts: [WeatherAlert], hourly: [ForecastHour], nextHourSummary: String?) {
+    /// Heat index in the display unit plus its severity rank; the NWS
+    /// formula runs in °F regardless of the display unit.
+    private func heatIndexDisplay(temperatureF: Double, humidity: Int, isImperial: Bool) -> (value: Int, severity: Int)? {
+        guard let reading = HeatIndexCalculator.reading(temperatureF: temperatureF, humidity: humidity) else { return nil }
+        let value = isImperial ? reading.value : (reading.value - 32) * 5 / 9
+        return (Int(value.rounded()), reading.category.severityRank)
+    }
+
+    private func fetchAppleWeather(for coordinate: CLLocationCoordinate2D, isImperial: Bool) async throws -> (data: WatchWeatherData, alerts: [WeatherAlert], hourly: [ForecastHour], nextHourSummary: String?) {
         let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        
+        let tempUnit: UnitTemperature = isImperial ? .fahrenheit : .celsius
+        let speedUnit: UnitSpeed = isImperial ? .milesPerHour : .kilometersPerHour
+
         // Fetch Apple Weather and OpenWeather alerts in parallel
         async let apple = appleWeather.weather(for: location)
         async let owAlerts = fetchOpenWeatherAlerts(for: coordinate)
-        
+
         let (weather, alerts) = try await (apple, owAlerts)
-        
+
         let windDeg = weather.currentWeather.wind.direction.value
         let nextHourPop = Int((weather.hourlyForecast.first?.precipitationChance ?? 0) * 100)
 
+        let currentHumidity = Int(weather.currentWeather.humidity * 100)
+        let currentHeatIndex = heatIndexDisplay(
+            temperatureF: weather.currentWeather.temperature.converted(to: .fahrenheit).value,
+            humidity: currentHumidity,
+            isImperial: isImperial
+        )
+
         let weatherData = WatchWeatherData(
-            temperature: weather.currentWeather.temperature.converted(to: .fahrenheit).value,
-            feelsLike: weather.currentWeather.apparentTemperature.converted(to: .fahrenheit).value,
+            temperature: weather.currentWeather.temperature.converted(to: tempUnit).value,
+            feelsLike: weather.currentWeather.apparentTemperature.converted(to: tempUnit).value,
             condition: mapAppleConditionToIcon(weather.currentWeather.condition),
             description: weather.currentWeather.condition.description,
             location: "Current Location",
-            humidity: Int(weather.currentWeather.humidity * 100),
-            windSpeed: weather.currentWeather.wind.speed.converted(to: .milesPerHour).value,
+            humidity: currentHumidity,
+            windSpeed: weather.currentWeather.wind.speed.converted(to: speedUnit).value,
             windDirection: compassDirection(for: windDeg),
             pop: nextHourPop,
             timestamp: Date(),
-            highTemp: weather.dailyForecast.first?.highTemperature.converted(to: .fahrenheit).value,
-            lowTemp: weather.dailyForecast.first?.lowTemperature.converted(to: .fahrenheit).value
+            highTemp: weather.dailyForecast.first?.highTemperature.converted(to: tempUnit).value,
+            lowTemp: weather.dailyForecast.first?.lowTemperature.converted(to: tempUnit).value,
+            heatIndex: currentHeatIndex?.value,
+            heatIndexSeverity: currentHeatIndex?.severity
         )
-        
+
         let now = Date()
         let hourly = weather.hourlyForecast
             .filter { $0.date > now.addingTimeInterval(-1800) }
             .prefix(8)
             .map { hour in
-                let heatIndex = HeatIndexCalculator.reading(
+                let heatIndex = heatIndexDisplay(
                     temperatureF: hour.temperature.converted(to: .fahrenheit).value,
-                    humidity: Int(hour.humidity * 100)
+                    humidity: Int(hour.humidity * 100),
+                    isImperial: isImperial
                 )
                 return ForecastHour(
                     time: hour.date,
-                    temp: Int(hour.temperature.converted(to: .fahrenheit).value),
-                    feelsLike: Int(hour.apparentTemperature.converted(to: .fahrenheit).value),
-                    windSpeed: Int(hour.wind.speed.converted(to: .milesPerHour).value),
+                    temp: Int(hour.temperature.converted(to: tempUnit).value),
+                    feelsLike: Int(hour.apparentTemperature.converted(to: tempUnit).value),
+                    windSpeed: Int(hour.wind.speed.converted(to: speedUnit).value),
                     icon: mapAppleConditionToIcon(hour.condition),
-                    heatIndex: heatIndex.map { Int($0.value.rounded()) },
-                    heatIndexSeverity: heatIndex.map { $0.category.severityRank }
+                    heatIndex: heatIndex?.value,
+                    heatIndexSeverity: heatIndex?.severity
                 )
             }
-        
+
         return (weatherData, alerts, Array(hourly), weather.minuteForecast?.summary)
     }
 
@@ -101,41 +122,57 @@ class WatchWeatherService {
         } ?? []
     }
 
-    private func fetchOpenWeather(for coordinate: CLLocationCoordinate2D) async throws -> (data: WatchWeatherData, alerts: [WeatherAlert], hourly: [ForecastHour], nextHourSummary: String?) {
+    private func fetchOpenWeather(for coordinate: CLLocationCoordinate2D, isImperial: Bool) async throws -> (data: WatchWeatherData, alerts: [WeatherAlert], hourly: [ForecastHour], nextHourSummary: String?) {
         // Switch to One Call API (exclude minutely, daily to save data/battery)
-        let urlString = "https://api.openweathermap.org/data/3.0/onecall?lat=\(coordinate.latitude)&lon=\(coordinate.longitude)&exclude=minutely,daily&appid=\(apiKey)&units=imperial"
-        
+        let unitsParam = isImperial ? "imperial" : "metric"
+        let urlString = "https://api.openweathermap.org/data/3.0/onecall?lat=\(coordinate.latitude)&lon=\(coordinate.longitude)&exclude=minutely,daily&appid=\(apiKey)&units=\(unitsParam)"
+
         guard let url = URL(string: urlString) else {
             throw WatchWeatherError.invalidURL
         }
-        
+
         let (data, _) = try await URLSession.shared.data(from: url)
         let response = try JSONDecoder().decode(WatchOneCallResponse.self, from: data)
-        
+
+        // OpenWeather returns wind in m/s for metric (mph for imperial);
+        // the app displays kph for metric, matching the iOS side
+        func displayWind(_ speed: Double) -> Double {
+            isImperial ? speed : speed * 3.6
+        }
+        func temperatureF(_ temp: Double) -> Double {
+            isImperial ? temp : temp * 9 / 5 + 32
+        }
+
         let now = Date()
         let hourly = (response.hourly ?? [])
             .filter { $0.dt > now.timeIntervalSince1970 - 1800 }
             .prefix(8)
             .map { hour in
                 let heatIndex = hour.humidity.flatMap {
-                    HeatIndexCalculator.reading(temperatureF: hour.temp, humidity: $0)
+                    heatIndexDisplay(temperatureF: temperatureF(hour.temp), humidity: $0, isImperial: isImperial)
                 }
                 return ForecastHour(
                     time: Date(timeIntervalSince1970: hour.dt),
                     temp: Int(hour.temp),
                     feelsLike: Int(hour.feels_like),
-                    windSpeed: Int(hour.wind_speed),
+                    windSpeed: Int(displayWind(hour.wind_speed)),
                     icon: mapConditionToIcon(hour.weather.first?.main ?? "Clear"),
-                    heatIndex: heatIndex.map { Int($0.value.rounded()) },
-                    heatIndexSeverity: heatIndex.map { $0.category.severityRank }
+                    heatIndex: heatIndex?.value,
+                    heatIndexSeverity: heatIndex?.severity
                 )
             }
-        
+
         guard let current = response.current else {
             throw WatchWeatherError.networkError
         }
-            
+
         let firstHourPop = Int((response.hourly?.first?.pop ?? 0) * 100)
+
+        let currentHeatIndex = heatIndexDisplay(
+            temperatureF: temperatureF(current.temp),
+            humidity: current.humidity,
+            isImperial: isImperial
+        )
 
         let weatherData = WatchWeatherData(
             temperature: current.temp,
@@ -144,12 +181,14 @@ class WatchWeatherService {
             description: current.weather.first?.description.capitalized ?? "Clear",
             location: "Current Location",
             humidity: current.humidity,
-            windSpeed: current.wind_speed,
+            windSpeed: displayWind(current.wind_speed),
             windDirection: compassDirection(for: current.wind_deg ?? 0),
             pop: firstHourPop,
             timestamp: Date(),
             highTemp: 0,
-            lowTemp: 0
+            lowTemp: 0,
+            heatIndex: currentHeatIndex?.value,
+            heatIndexSeverity: currentHeatIndex?.severity
         )
         
         // Map ALL alerts
@@ -280,4 +319,7 @@ struct WatchWeatherData: Codable {
     let timestamp: Date
     let highTemp: Double?
     let lowTemp: Double?
+    // NWS heat index in the same unit as `temperature`, with severity rank
+    var heatIndex: Int? = nil
+    var heatIndexSeverity: Int? = nil
 }

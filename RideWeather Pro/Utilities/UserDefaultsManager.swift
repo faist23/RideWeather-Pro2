@@ -279,8 +279,10 @@ class UserDefaultsManager {
         if let encoded = try? JSONEncoder().encode(settings) {
             defaults.set(encoded, forKey: settingsKey)
             
-            // Also save the weather provider string separately to App Group for easy Watch access
+            // Also save the weather provider and units separately to the App Group
+            // (widgets on this device; the watch receives them via WCSession context)
             sharedDefaults?.set(settings.weatherProvider.rawValue.lowercased(), forKey: "appSettings.weatherProvider")
+            sharedDefaults?.set(settings.units.rawValue, forKey: "appSettings.units")
             sharedDefaults?.synchronize()
         }
     }

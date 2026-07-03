@@ -257,7 +257,14 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
                 print("📱 Sending Timestamp: \(lastRide.timeIntervalSinceReferenceDate) (\(lastRide.formatted(date: .omitted, time: .standard)))")
                 finalKeyCount += 1
             }
-            
+
+            // 11. User settings the watch needs — app groups don't sync
+            // between iPhone and Watch, so these must travel in the context
+            let settings = UserDefaultsManager.shared.loadSettings()
+            mutableContext["unitsSetting"] = settings.units.rawValue
+            mutableContext["weatherProviderSetting"] = settings.weatherProvider.rawValue.lowercased()
+            finalKeyCount += 2
+
             // Send the combined package
             try WCSession.default.updateApplicationContext(mutableContext)
             print("✅ WCSession: Sent \(finalKeyCount) keys to Watch")

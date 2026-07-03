@@ -300,6 +300,18 @@ extension WatchSessionManager: WCSessionDelegate {
             }
         }
         
+        // 7b. Persist synced user settings into the watch-side app group so
+        // WatchWeatherService and views can honor them (app groups don't
+        // sync between iPhone and Watch on their own)
+        if let unitsSetting = context["unitsSetting"] as? String {
+            UserDefaults(suiteName: "group.com.ridepro.rideweather")?.set(unitsSetting, forKey: "appSettings.units")
+            print("✅ Synced units setting from iPhone: \(unitsSetting)")
+        }
+        if let providerSetting = context["weatherProviderSetting"] as? String {
+            UserDefaults(suiteName: "group.com.ridepro.rideweather")?.set(providerSetting, forKey: "appSettings.weatherProvider")
+            print("✅ Synced weather provider setting from iPhone: \(providerSetting)")
+        }
+
         // 8. Save Weather Data for Widget
         // We don't need to decode it here; just pass the raw data to the Widget's storage
         if let weatherData = context["weatherSummary"] as? Data {

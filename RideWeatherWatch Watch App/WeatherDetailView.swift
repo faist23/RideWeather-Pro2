@@ -136,7 +136,7 @@ struct WeatherDetailView: View {
                                 CompactMetricRow(
                                     icon: "wind",
                                     value: "\(weather.windSpeed)",
-                                    unit: "mph",
+                                    unit: isImperial ? "mph" : "kph",
                                     color: windColor(weather.windSpeed)
                                 )
                                 
@@ -285,10 +285,17 @@ struct WeatherDetailView: View {
         }
     }
     
+    private var isImperial: Bool {
+        let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
+        return (defaults?.string(forKey: "appSettings.units") ?? "imperial") == "imperial"
+    }
+
     private func windColor(_ speed: Int) -> Color {
+        // Thresholds ≈ 10/20 mph and their kph equivalents
+        let (moderate, strong) = isImperial ? (10, 20) : (16, 32)
         switch speed {
-        case 0..<10: return .green
-        case 10..<20: return .yellow
+        case 0..<moderate: return .green
+        case moderate..<strong: return .yellow
         default: return .red
         }
     }
