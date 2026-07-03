@@ -49,7 +49,7 @@ struct WeatherRepository {
         
         // Map Apple Weather to OpenWeather-style models for compatibility
         let current = WeatherMapper.mapAppleCurrentToOpenWeather(apple.current, location: location, units: units, nextHourSummary: apple.minute?.summary, minuteForecast: apple.minute, upcomingSummary: upcomingSummary)
-        let hourly = apple.hourly.map { WeatherMapper.mapAppleHourlyToOpenWeather($0) }
+        let hourly = apple.hourly.map { WeatherMapper.mapAppleHourlyToOpenWeather($0, units: units) }
         
         let forecast = OneCallResponse(hourly: hourly, alerts: alerts.alerts)
         return (current, forecast)
@@ -61,7 +61,7 @@ struct WeatherRepository {
         
         if settings.weatherProvider == .apple {
             let apple = try await appleService.fetchWeather(for: location)
-            return apple.hourly.map { WeatherMapper.mapAppleHourlyToUIModel($0) }
+            return apple.hourly.map { WeatherMapper.mapAppleHourlyToUIModel($0, units: units) }
         } else {
             let extended = try await service.fetchExtendedForecast(
                 lat: location.coordinate.latitude,
@@ -103,7 +103,7 @@ struct WeatherRepository {
             let upcomingSummary = appleService.generateUpcomingConditionsSummary(from: apple.hourly)
             
             let current = WeatherMapper.mapAppleCurrentToOpenWeather(apple.current, location: location, units: units, nextHourSummary: apple.minute?.summary, minuteForecast: apple.minute, upcomingSummary: upcomingSummary)
-            let hourly = apple.hourly.map { WeatherMapper.mapAppleHourlyToOpenWeather($0) }
+            let hourly = apple.hourly.map { WeatherMapper.mapAppleHourlyToOpenWeather($0, units: units) }
             let forecast = OneCallResponse(hourly: hourly, alerts: alerts.alerts)
             
             return CompleteWeatherData(
@@ -143,7 +143,7 @@ struct WeatherRepository {
         
         if settings.weatherProvider == .apple {
             let apple = try await appleService.fetchWeather(for: location)
-            return apple.daily.map { WeatherMapper.mapAppleDailyToOpenWeather($0) }
+            return apple.daily.map { WeatherMapper.mapAppleDailyToOpenWeather($0, units: units) }
         } else {
             return try await service.fetchDailyForecast(
                 lat: location.coordinate.latitude,

@@ -381,20 +381,31 @@ struct AIWeatherPacingInsights {
             ))
         }
         
-        // HUMIDITY & HEAT INDEX
+        // HUMIDITY & HEAT INDEX (NWS)
         let humidityAnalysis = analyzeHumidityImpact(powerSegments: powerSegments)
-        if humidityAnalysis.hasDangerousHeatIndex {
+        if let heatCategory = HeatIndexCalculator.Category(heatIndexF: humidityAnalysis.maxHeatIndexF),
+           heatCategory != .caution {
+            let displayHeatIndex = settings.units == .metric ?
+                (humidityAnalysis.maxHeatIndexF - 32) * 5 / 9 :
+                humidityAnalysis.maxHeatIndexF
+            let isDangerous = heatCategory == .danger || heatCategory == .extremeDanger
+
             guidance.append(StrategicGuidance(
                 category: .safety,
-                title: "Dangerous Heat Index",
-                description: "Heat index reaches \(Int(humidityAnalysis.maxHeatIndex))°F due to high humidity. This severely limits your body's cooling ability.",
-                actionItems: [
+                title: isDangerous ? "Dangerous Heat Index" : "High Heat Index",
+                description: "The heat index reaches \(Int(displayHeatIndex.rounded()))\(settings.units.tempSymbol) (NWS category: \(heatCategory.label)) during your ride. Humidity severely limits your body's evaporative cooling — and cycling effort is far above the walking pace the index assumes.",
+                actionItems: isDangerous ? [
                     "Consider delaying ride to cooler hours",
                     "Double normal hydration rate (1+ bottle/hour)",
                     "Take 2-minute cooling breaks every 30 minutes",
                     "Watch for heat exhaustion: dizziness, nausea, excessive fatigue"
+                ] : [
+                    "Start earlier or later to avoid the peak heat index",
+                    "Increase hydration rate and add electrolytes",
+                    "Reduce power targets 3-5% during the hottest stretch",
+                    "Use shaded rest stops to bring core temperature down"
                 ],
-                impactLevel: .critical
+                impactLevel: isDangerous ? .critical : .high
             ))
         }
         
@@ -600,28 +611,19 @@ struct AIWeatherPacingInsights {
     }
     
     private struct HumidityAnalysisResult {
-        let hasDangerousHeatIndex: Bool
-        let maxHeatIndex: Double
+        let maxHeatIndexF: Double
     }
-    
+
     private func analyzeHumidityImpact(powerSegments: [PowerRouteSegment]) -> HumidityAnalysisResult {
-        var maxHeatIndex: Double = 0
-        
+        var maxHeatIndexF: Double = 0
+
         for seg in powerSegments {
             let tempF = seg.averageTemperatureC * 9/5 + 32
-            let humidity = seg.averageHumidity
-            
-            if tempF >= 80 {
-                let hi = -42.379 + 2.04901523 * tempF + 10.14333127 * humidity
-                    - 0.22475541 * tempF * humidity
-                maxHeatIndex = max(maxHeatIndex, hi)
-            }
+            let hi = HeatIndexCalculator.heatIndexF(temperatureF: tempF, relativeHumidity: seg.averageHumidity)
+            maxHeatIndexF = max(maxHeatIndexF, hi)
         }
-        
-        return HumidityAnalysisResult(
-            hasDangerousHeatIndex: maxHeatIndex >= 105,
-            maxHeatIndex: maxHeatIndex
-        )
+
+        return HumidityAnalysisResult(maxHeatIndexF: maxHeatIndexF)
     }
     
     private struct UVAnalysisResult {

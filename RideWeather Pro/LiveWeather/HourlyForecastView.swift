@@ -60,10 +60,20 @@ struct HourlyForecastCard: View {
                 Text("\(Int(hour.temp))°")
                     .font(.headline.weight(.bold))
                     .foregroundStyle(.white)
-                
+
                 Text("Feels \(Int(hour.feelsLike))°")
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.7))
+
+                if let heatIndex = HeatIndexCalculator.reading(
+                    temperature: hour.temp,
+                    humidity: hour.humidity,
+                    units: viewModel.settings.units
+                ) {
+                    Text("HI \(Int(heatIndex.value.rounded()))°")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(heatIndex.category.color)
+                }
             }
             
             HStack(spacing: 2) {

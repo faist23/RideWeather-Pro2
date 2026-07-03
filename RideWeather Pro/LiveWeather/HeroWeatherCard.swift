@@ -66,6 +66,14 @@ struct HeroWeatherCard: View {
                     )
                 }
             }
+
+            if let heatIndex = HeatIndexCalculator.reading(
+                temperature: weather.temp,
+                humidity: weather.humidity,
+                units: viewModel.settings.units
+            ) {
+                HeatIndexBanner(reading: heatIndex)
+            }
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -80,6 +88,49 @@ struct HeroWeatherCard: View {
         .onChange(of: weather.temp) { _, _ in
             animateTemp.toggle()
         }
+    }
+}
+
+/// NWS heat index with its advisory category, shown alongside (not instead of)
+/// the provider's feels-like temperature whenever the heat index reaches 80 °F.
+struct HeatIndexBanner: View {
+    let reading: HeatIndexCalculator.Reading
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "thermometer.sun.fill")
+                .font(.title3)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(reading.category.color)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("Heat Index \(Int(reading.value.rounded()))°")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white)
+
+                    Text(reading.category.label)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(reading.category.color)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(reading.category.color.opacity(0.2), in: Capsule())
+                }
+
+                Text(reading.category.ridingAdvice)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(reading.category.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(reading.category.color.opacity(0.35), lineWidth: 1)
+        )
     }
 }
 

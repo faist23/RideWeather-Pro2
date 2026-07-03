@@ -54,14 +54,15 @@ class WeatherService {
             throw URLError(.badURL)
         }
         
-        let response: CurrentWeatherResponse = try await fetchData(from: url)
-        
+        let decoded: CurrentWeatherResponse = try await fetchData(from: url)
+        let response = Self.normalizingWind(decoded, units: units)
+
         // Cache the result
         await cacheData(key: cacheKey, currentWeather: response, forecast: nil, extendedForecast: nil)
-        
+
         return response
     }
-    
+
     // Regular forecast for 6-hour display (excludes hourly to save bandwidth)
     func fetchForecast(lat: Double, lon: Double, units: String) async throws -> OneCallResponse {
         let cacheKey = "forecast_\(lat)_\(lon)_\(units)"
@@ -78,11 +79,12 @@ class WeatherService {
             throw URLError(.badURL)
         }
         
-        let response: OneCallResponse = try await fetchData(from: url)
-        
+        let decoded: OneCallResponse = try await fetchData(from: url)
+        let response = Self.normalizingWind(decoded, units: units)
+
         // Cache the result
         await cacheData(key: cacheKey, currentWeather: nil, forecast: response, extendedForecast: nil)
-        
+
         return response
     }
     
@@ -119,17 +121,18 @@ class WeatherService {
         do {
             let decoder = JSONDecoder()
             let dailyResp = try decoder.decode(DailyResponse.self, from: data)
+            let daily = dailyResp.daily.map { Self.normalizingWind($0, units: units) }
             // Cache the daily response as a simple JSON blob via our existing cache wrapper
             // We'll store it in the forecast field wrapped inside a minimal OneCallResponse with empty hourly (not ideal but keeps cache types)
             // Instead, create a CachedWeatherData with extendedForecast nil and forecast nil but store the daily list inside a separate cache keyed by cacheKey
-            let cachedDaily = DailyCacheWrapper(daily: dailyResp.daily, timestamp: Date())
+            let cachedDaily = DailyCacheWrapper(daily: daily, timestamp: Date())
             await withCheckedContinuation { cont in
                 cacheQueue.async {
                     self.dailyCache.setObject(cachedDaily, forKey: NSString(string: cacheKey))
                     cont.resume()
                 }
             }
-            return dailyResp.daily
+            return daily
         } catch {
             throw WeatherServiceError.decodingError(error)
         }
@@ -151,11 +154,12 @@ class WeatherService {
             throw URLError(.badURL)
         }
         
-        let response: ExtendedOneCallResponse = try await fetchData(from: url)
-        
+        let decoded: ExtendedOneCallResponse = try await fetchData(from: url)
+        let response = Self.normalizingWind(decoded, units: units)
+
         // Cache the result
         await cacheData(key: cacheKey, currentWeather: nil, forecast: nil, extendedForecast: response)
-        
+
         return response
     }
     
@@ -342,7 +346,91 @@ class WeatherService {
     private func configValue(forKey key: String) -> String? {
         return openWeather?[key]
     }
-    
+
+    // MARK: - Wind Speed Normalization
+
+    /// OpenWeather returns wind in m/s for metric requests (mph for imperial),
+    /// but the app stores wind in the display unit — mph or kph — matching the
+    /// Apple WeatherKit mappers and the analytics engines' assumptions. These
+    /// helpers convert metric responses to kph immediately after decoding.
+    private static func normalizedWindSpeed(_ metersPerSecond: Double) -> Double {
+        return metersPerSecond * 3.6
+    }
+
+    private static func normalizingWind(_ response: CurrentWeatherResponse, units: String) -> CurrentWeatherResponse {
+        guard units == "metric" else { return response }
+        return CurrentWeatherResponse(
+            coord: response.coord,
+            weather: response.weather,
+            main: response.main,
+            wind: Wind(speed: normalizedWindSpeed(response.wind.speed), deg: response.wind.deg),
+            visibility: response.visibility,
+            name: response.name,
+            nextHourSummary: response.nextHourSummary,
+            precipitationData: response.precipitationData,
+            upcomingConditionsSummary: response.upcomingConditionsSummary
+        )
+    }
+
+    private static func normalizingWind(_ response: OneCallResponse, units: String) -> OneCallResponse {
+        guard units == "metric" else { return response }
+        let hourly = response.hourly.map { item in
+            HourlyItem(
+                dt: item.dt,
+                temp: item.temp,
+                feelsLike: item.feelsLike,
+                pop: item.pop,
+                humidity: item.humidity,
+                weather: item.weather,
+                windSpeed: normalizedWindSpeed(item.windSpeed),
+                windDeg: item.windDeg,
+                uvi: item.uvi
+            )
+        }
+        return OneCallResponse(hourly: hourly, alerts: response.alerts)
+    }
+
+    private static func normalizingWind(_ item: DailyItem, units: String) -> DailyItem {
+        guard units == "metric" else { return item }
+        return DailyItem(
+            dt: item.dt,
+            temp: item.temp,
+            pop: item.pop,
+            weather: item.weather,
+            windSpeed: normalizedWindSpeed(item.windSpeed),
+            windDeg: item.windDeg,
+            summary: item.summary
+        )
+    }
+
+    private static func normalizingWind(_ response: ExtendedOneCallResponse, units: String) -> ExtendedOneCallResponse {
+        guard units == "metric" else { return response }
+        let hourly = response.hourly.map { data in
+            HourlyWeatherData(
+                dt: data.dt,
+                temp: data.temp,
+                feelsLike: data.feelsLike,
+                pressure: data.pressure,
+                humidity: data.humidity,
+                dewPoint: data.dewPoint,
+                uvi: data.uvi,
+                clouds: data.clouds,
+                visibility: data.visibility,
+                windSpeed: normalizedWindSpeed(data.windSpeed),
+                windDeg: data.windDeg,
+                windGust: data.windGust.map(normalizedWindSpeed),
+                weather: data.weather,
+                pop: data.pop
+            )
+        }
+        return ExtendedOneCallResponse(
+            lat: response.lat,
+            lon: response.lon,
+            timezone: response.timezone,
+            timezoneOffset: response.timezoneOffset,
+            hourly: hourly
+        )
+    }
 }
 
 // MARK: - Complete Weather Data Structure

@@ -216,7 +216,7 @@ enum UnitSystem: String, CaseIterable, Identifiable, Codable {
     }
 
     var speedSymbol: String {
-        return self == .imperial ? "mph" : "m/s"
+        return self == .imperial ? "mph" : "kph"
     }
 
     var speedUnitAbbreviation: String {

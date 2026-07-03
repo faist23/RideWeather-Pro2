@@ -464,7 +464,27 @@ struct UnifiedRouteAnalyticsEngine {
             )
         }
         
-        if let maxTemp = temps.max(), maxTemp > (settings.units == .metric ? 28 : 82) {
+        // NWS heat index across the route — combined heat + humidity risk
+        let worstHeatIndex = weatherPoints
+            .compactMap { HeatIndexCalculator.reading(temperature: $0.weather.temp, humidity: $0.weather.humidity, units: settings.units) }
+            .max { $0.value < $1.value }
+
+        if let heatIndex = worstHeatIndex {
+            let priority: UnifiedRecommendation.Priority
+            switch heatIndex.category {
+            case .caution: priority = .moderate
+            case .extremeCaution: priority = .important
+            case .danger, .extremeDanger: priority = .critical
+            }
+            recs.append(
+                UnifiedRecommendation(
+                    title: "Heat Index: \(heatIndex.category.label)",
+                    message: "Heat index reaches \(Int(heatIndex.value.rounded()))\(settings.units.tempSymbol) along your route. \(heatIndex.category.ridingAdvice)",
+                    icon: "thermometer.sun.fill",
+                    priority: priority
+                )
+            )
+        } else if let maxTemp = temps.max(), maxTemp > (settings.units == .metric ? 28 : 82) {
             recs.append(
                 UnifiedRecommendation(
                     title: "Stay Hydrated",
@@ -474,7 +494,7 @@ struct UnifiedRouteAnalyticsEngine {
                 )
             )
         }
-        
+
         return recs
     }
     
