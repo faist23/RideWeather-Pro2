@@ -155,7 +155,31 @@ struct WeatherDetailView: View {
                             .frame(maxWidth: .infinity)
                         }
                         .padding(.top, session.weatherAlerts.isEmpty ? 4 : 0)
-                        
+
+                        // NWS heat index — shown alongside feels-like when it reaches 80°F
+                        if let heatIndex = weather.heatIndex,
+                           let severity = weather.heatIndexSeverity,
+                           let category = HeatIndexCalculator.Category(severityRank: severity) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "thermometer.sun.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(category.color)
+
+                                Text("Heat Index \(heatIndex)°")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(.white)
+
+                                Spacer()
+
+                                Text(category.label)
+                                    .font(.system(size: 9, weight: .black))
+                                    .foregroundStyle(category.color)
+                            }
+                            .padding(8)
+                            .background(category.color.opacity(0.2))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+
                         if let forecasts = weather.hourlyForecast?.prefix(8), !forecasts.isEmpty {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("NEXT 8 HOURS")
@@ -177,10 +201,18 @@ struct WeatherDetailView: View {
                                             VStack(spacing: 0) {
                                                 Text("\(hour.temp)°")
                                                     .font(.system(size: 16, weight: .bold))
-                                                
+
                                                 Text("(\(hour.feelsLike)°)")
                                                     .font(.system(size: 10))
                                                     .foregroundStyle(.secondary)
+
+                                                if let heatIndex = hour.heatIndex,
+                                                   let severity = hour.heatIndexSeverity,
+                                                   let category = HeatIndexCalculator.Category(severityRank: severity) {
+                                                    Text("HI \(heatIndex)°")
+                                                        .font(.system(size: 9, weight: .bold))
+                                                        .foregroundStyle(category.color)
+                                                }
                                             }
                                             
                                             HStack(spacing: 2) {

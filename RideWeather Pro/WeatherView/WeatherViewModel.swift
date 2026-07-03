@@ -717,28 +717,34 @@ class WeatherViewModel: ObservableObject {
             .filter { $0.dt > now.timeIntervalSince1970 - 1800 } // Keep current hour
             .prefix(8)
             .map { forecast in
-                ForecastHour(
+                let heatIndex = HeatIndexCalculator.reading(temperature: forecast.temp, humidity: forecast.humidity, units: settings.units)
+                return ForecastHour(
                     time: Date(timeIntervalSince1970: forecast.dt),
                     temp: Int(forecast.temp),
                     feelsLike: Int(forecast.feelsLike),
                     windSpeed: Int(forecast.windSpeed),
-                    icon: WeatherMapper.mapIcon(from: forecast.weather.first?.icon ?? "01d")
+                    icon: WeatherMapper.mapIcon(from: forecast.weather.first?.icon ?? "01d"),
+                    heatIndex: heatIndex.map { Int($0.value.rounded()) },
+                    heatIndexSeverity: heatIndex.map { $0.category.severityRank }
                 )
             }
 
         // Save Summary for Widget
         // This takes the current weather and saves it to the App Group
+        let currentHeatIndex = HeatIndexCalculator.reading(temperature: current.main.temp, humidity: current.main.humidity, units: settings.units)
         let summary = SharedWeatherSummary(
             temperature: Int(current.main.temp),
             feelsLike: Int(current.main.feelsLike),
             conditionIcon: current.weather.first?.icon ?? "sun.max",
             windSpeed: Int(current.wind.speed),
-            windDirection: getCardinalDirection(Double(current.wind.deg)), 
+            windDirection: getCardinalDirection(Double(current.wind.deg)),
             pop: Int((forecast.hourly.first?.pop ?? 0) * 100),
             generatedAt: Date(),
             alertSeverity: self.weatherAlerts.first?.severity.rawValue,
             hourlyForecast: summaryHourly,
-            nextHourSummary: displayWeather?.nextHourSummary
+            nextHourSummary: displayWeather?.nextHourSummary,
+            heatIndex: currentHeatIndex.map { Int($0.value.rounded()) },
+            heatIndexSeverity: currentHeatIndex.map { $0.category.severityRank }
         )
         
         UserDefaultsManager.shared.saveWeatherSummary(summary)

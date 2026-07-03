@@ -106,6 +106,10 @@ struct SharedWeatherSummary: Codable {
     var alertSeverity: String? // Changed to var for WatchSessionManager updates
     var hourlyForecast: [ForecastHour]? // Changed to var for WatchSessionManager updates
     var nextHourSummary: String? // Changed to var for WatchSessionManager updates
+    // NWS heat index in the same unit as `temperature`, with its severity
+    // rank (1–4, see HeatIndexCalculator.Category); nil when it doesn't apply
+    var heatIndex: Int? = nil
+    var heatIndexSeverity: Int? = nil
 }
 
 extension SharedWeatherSummary {
@@ -115,7 +119,10 @@ extension SharedWeatherSummary {
         hourly: [ForecastHour] = [],
         nextHourSummary: String? = nil
     ) -> SharedWeatherSummary {
-        SharedWeatherSummary(
+        // Watch-side fetches are always Fahrenheit; humidity is 0 when the
+        // data came from a summary round-trip, which yields no heat index
+        let heatIndex = HeatIndexCalculator.reading(temperatureF: data.temperature, humidity: data.humidity)
+        return SharedWeatherSummary(
             temperature: Int(data.temperature),
             feelsLike: Int(data.feelsLike),
             conditionIcon: data.condition,
@@ -125,7 +132,9 @@ extension SharedWeatherSummary {
             generatedAt: Date(),
             alertSeverity: alert?.severity.rawValue,
             hourlyForecast: hourly,
-            nextHourSummary: nextHourSummary
+            nextHourSummary: nextHourSummary,
+            heatIndex: heatIndex.map { Int($0.value.rounded()) },
+            heatIndexSeverity: heatIndex.map { $0.category.severityRank }
         )
     }
 }
@@ -137,5 +146,7 @@ struct ForecastHour: Codable, Identifiable {
     let feelsLike: Int
     let windSpeed: Int
     let icon: String
+    var heatIndex: Int? = nil
+    var heatIndexSeverity: Int? = nil
 }
 

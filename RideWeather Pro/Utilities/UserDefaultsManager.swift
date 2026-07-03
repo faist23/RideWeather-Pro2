@@ -246,6 +246,10 @@ struct SharedWeatherSummary: Codable {
     let alertSeverity: String?
     let hourlyForecast: [ForecastHour]?
     let nextHourSummary: String? // Added for Apple WeatherKit
+    // NWS heat index in the same unit as `temperature`, with its severity
+    // rank (1–4, see HeatIndexCalculator.Category); nil when it doesn't apply
+    var heatIndex: Int? = nil
+    var heatIndexSeverity: Int? = nil
 }
 
 struct ForecastHour: Codable, Identifiable {
@@ -255,6 +259,8 @@ struct ForecastHour: Codable, Identifiable {
     let feelsLike: Int
     let windSpeed: Int
     let icon: String
+    var heatIndex: Int? = nil
+    var heatIndexSeverity: Int? = nil
 }
 
 class UserDefaultsManager {

@@ -325,7 +325,9 @@ extension WatchSessionManager: WCSessionDelegate {
                             generatedAt: newSummary.generatedAt,
                             alertSeverity: newSummary.alertSeverity,
                             hourlyForecast: oldSummary.hourlyForecast, // Keep the old forecast
-                            nextHourSummary: newSummary.nextHourSummary // Use the new summary from iPhone
+                            nextHourSummary: newSummary.nextHourSummary, // Use the new summary from iPhone
+                            heatIndex: newSummary.heatIndex,
+                            heatIndexSeverity: newSummary.heatIndexSeverity
                         )
                         
                         let pruned = prunePastHours(mergedSummary)

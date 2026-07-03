@@ -66,12 +66,18 @@ class WatchWeatherService {
             .filter { $0.date > now.addingTimeInterval(-1800) }
             .prefix(8)
             .map { hour in
-                ForecastHour(
+                let heatIndex = HeatIndexCalculator.reading(
+                    temperatureF: hour.temperature.converted(to: .fahrenheit).value,
+                    humidity: Int(hour.humidity * 100)
+                )
+                return ForecastHour(
                     time: hour.date,
                     temp: Int(hour.temperature.converted(to: .fahrenheit).value),
                     feelsLike: Int(hour.apparentTemperature.converted(to: .fahrenheit).value),
                     windSpeed: Int(hour.wind.speed.converted(to: .milesPerHour).value),
-                    icon: mapAppleConditionToIcon(hour.condition)
+                    icon: mapAppleConditionToIcon(hour.condition),
+                    heatIndex: heatIndex.map { Int($0.value.rounded()) },
+                    heatIndexSeverity: heatIndex.map { $0.category.severityRank }
                 )
             }
         
@@ -111,12 +117,17 @@ class WatchWeatherService {
             .filter { $0.dt > now.timeIntervalSince1970 - 1800 }
             .prefix(8)
             .map { hour in
-                ForecastHour(
+                let heatIndex = hour.humidity.flatMap {
+                    HeatIndexCalculator.reading(temperatureF: hour.temp, humidity: $0)
+                }
+                return ForecastHour(
                     time: Date(timeIntervalSince1970: hour.dt),
                     temp: Int(hour.temp),
                     feelsLike: Int(hour.feels_like),
                     windSpeed: Int(hour.wind_speed),
-                    icon: mapConditionToIcon(hour.weather.first?.main ?? "Clear")
+                    icon: mapConditionToIcon(hour.weather.first?.main ?? "Clear"),
+                    heatIndex: heatIndex.map { Int($0.value.rounded()) },
+                    heatIndexSeverity: heatIndex.map { $0.category.severityRank }
                 )
             }
         
@@ -236,6 +247,7 @@ struct WatchHourlyWeather: Codable {
     let dt: TimeInterval
     let temp: Double
     let feels_like: Double
+    let humidity: Int?
     let wind_speed: Double
     let pop: Double?   // 0.0–1.0 probability of precipitation
     let weather: [WatchWeatherCondition]

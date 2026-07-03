@@ -1,17 +1,17 @@
 //
 //  HeatIndexCalculator.swift
-//  RideWeather Pro
+//  RideWeatherWatch Watch App
+//
+//  Watch-target copy of the NWS heat index calculator in
+//  RideWeather Pro/Utilities/HeatIndexCalculator.swift — keep the
+//  algorithm and category bands in sync with the iOS version.
 //
 
 import SwiftUI
 
 /// NWS heat index (Rothfusz 1990 regression on Steadman 1979).
-///
-/// Unlike the provider "feels like" values (Apple's `apparentTemperature`,
-/// OpenWeather's `feels_like`), this is the official National Weather Service
-/// heat index, so it matches NWS heat advisories and grows much more steeply
-/// with humidity. Computed locally from temperature + relative humidity so both
-/// weather providers produce identical values.
+/// The watch's own weather fetch is always Fahrenheit, so this copy
+/// exposes a °F-only convenience instead of the iOS unit-aware one.
 enum HeatIndexCalculator {
 
     /// NWS heat advisory categories.
@@ -32,9 +32,7 @@ enum HeatIndexCalculator {
             }
         }
 
-        /// Stable rank (1–4) for serializing severity in cross-target payloads
-        /// (watch summary, complications), where the unit of the stored heat
-        /// index value may differ from °F.
+        /// Stable rank (1–4) matching the iOS side's payload encoding.
         var severityRank: Int {
             switch self {
             case .caution: return 1
@@ -71,39 +69,25 @@ enum HeatIndexCalculator {
             case .extremeDanger: return .purple
             }
         }
-
-        /// Short rider-facing guidance for the category.
-        var ridingAdvice: String {
-            switch self {
-            case .caution: return "Fatigue possible — stay hydrated."
-            case .extremeCaution: return "Heat cramps and exhaustion possible — ease the pace, drink often."
-            case .danger: return "Heat exhaustion likely — shorten the ride, seek shade."
-            case .extremeDanger: return "Heat stroke risk — riding not advised."
-            }
-        }
     }
 
-    /// The result of a heat index calculation, in the requested unit system.
+    /// The result of a heat index calculation, in °F.
     struct Reading {
         let value: Double
         let category: Category
     }
 
-    /// Heat index in the user's unit system, or nil when it doesn't apply
-    /// (heat index below 80 °F). `temperature` must be in the given unit
-    /// system; `humidity` is relative humidity in percent (0–100).
-    static func reading(temperature: Double, humidity: Int, units: UnitSystem) -> Reading? {
-        let tempF = units == .metric ? temperature * 9 / 5 + 32 : temperature
-        let hiF = heatIndexF(temperatureF: tempF, relativeHumidity: Double(humidity))
+    /// Heat index for a °F temperature and relative humidity in percent,
+    /// or nil when it doesn't apply (heat index below 80 °F).
+    static func reading(temperatureF: Double, humidity: Int) -> Reading? {
+        let hiF = heatIndexF(temperatureF: temperatureF, relativeHumidity: Double(humidity))
         guard let category = Category(heatIndexF: hiF) else { return nil }
-        let value = units == .metric ? (hiF - 32) * 5 / 9 : hiF
-        return Reading(value: value, category: category)
+        return Reading(value: hiF, category: category)
     }
 
     /// Full NWS algorithm: Steadman's simple formula averaged with the
     /// temperature; when that average is 80 °F or higher, the Rothfusz
     /// regression with the low- and high-humidity adjustment terms.
-    /// Valid for relative humidity in 0–100 %.
     static func heatIndexF(temperatureF: Double, relativeHumidity: Double) -> Double {
         let T = temperatureF
         let RH = min(max(relativeHumidity, 0), 100)
