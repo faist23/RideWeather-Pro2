@@ -979,8 +979,63 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw StravaError.apiError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 500)
         }
-        
-        return try JSONDecoder().decode(StravaStreams.self, from: data)
+
+        // Unlike activity streams, the route streams endpoint ignores
+        // key_by_type and returns a bare array of streams — accept both shapes
+        if let keyed = try? JSONDecoder().decode(StravaStreams.self, from: data) {
+            return keyed
+        }
+        return try Self.streamsFromArrayResponse(data)
+    }
+
+    /// Maps the array-of-streams shape returned by `/routes/{id}/streams`
+    /// (`[{"type": "altitude", "data": [...]}, ...]`) into `StravaStreams`.
+    private static func streamsFromArrayResponse(_ data: Data) throws -> StravaStreams {
+        struct Element: Decodable {
+            let type: String
+            let scalarData: [Double]?
+            let pairData: [[Double]]?
+
+            enum CodingKeys: String, CodingKey { case type, data }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                type = try container.decode(String.self, forKey: .type)
+                if let pairs = try? container.decode([[Double]].self, forKey: .data) {
+                    pairData = pairs
+                    scalarData = nil
+                } else {
+                    scalarData = try container.decode([Double].self, forKey: .data)
+                    pairData = nil
+                }
+            }
+        }
+
+        let elements = try JSONDecoder().decode([Element].self, from: data)
+
+        func scalarStream(_ type: String) -> StravaStreams.StreamData? {
+            guard let values = elements.first(where: { $0.type == type })?.scalarData else { return nil }
+            return StravaStreams.StreamData(data: values, series_type: "distance", original_size: values.count, resolution: "high")
+        }
+
+        var latlng: StravaStreams.LatLngStreamData?
+        if let pairs = elements.first(where: { $0.type == "latlng" })?.pairData {
+            latlng = StravaStreams.LatLngStreamData(data: pairs, series_type: "distance", original_size: pairs.count, resolution: "high")
+        }
+
+        return StravaStreams(
+            time: scalarStream("time"),
+            distance: scalarStream("distance"),
+            latlng: latlng,
+            altitude: scalarStream("altitude"),
+            velocity_smooth: nil,
+            heartrate: nil,
+            cadence: nil,
+            watts: nil,
+            temp: nil,
+            moving: nil,
+            grade_smooth: nil
+        )
     }
         
         /// Extracts GPS route from a Strava activity for weather analysis
