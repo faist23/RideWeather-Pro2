@@ -283,6 +283,7 @@ final class PacingEngine {
         print("⏱️ Estimated total time: \(String(format: "%.1f", totalDurationHours))h")
         
         var cumulativeStress: Double = 0
+        var hotExposureSeconds: Double = 0
         var pacedSegments: [PacedSegment] = []
         let ftp = Double(settings.functionalThresholdPower)
         
@@ -306,11 +307,17 @@ final class PacingEngine {
             // We apply it to the strategy power before we calculate in-ride fatigue.
             // This effectively lowers the "ceiling" of the rider's capability for the day.
             let readinessAdjustedPower = strategyPower * readinessFactor
-            
+
             let fatigueFactor = calculateFatigueFactor(cumulativeStress: cumulativeStress)
-            let adjustedPower = strategyPower * fatigueFactor
+            let heatIndexF = segmentHeatIndexF(segment)
+            let heatFactor = calculateHeatFactor(heatIndexF: heatIndexF, hotExposureSeconds: hotExposureSeconds)
+            let adjustedPower = readinessAdjustedPower * fatigueFactor * heatFactor
             let finalPower = constrainPower(adjustedPower, ftp: ftp, grade: segment.elevationGrade)
             let estimatedTime = estimateSegmentTime(segment: segment, targetPower: finalPower)
+            if heatFactor < 1.0 {
+                hotExposureSeconds += estimatedTime
+                print("       🔥 Heat: HI \(Int(heatIndexF))°F, factor \(String(format: "%.3f", heatFactor))")
+            }
             
             print("DEBUG: Segment \(index + 1) | Power Input: \(Int(finalPower)) | FTP: \(Int(ftp))")
             let powerZone = getPowerZone(for: finalPower)
@@ -446,6 +453,26 @@ final class PacingEngine {
         guard cumulativeStress > fatigueThreshold else { return 1.0 }
         let fatigueRate: Double = 0.001
         return max(0.70, 1.0 - (cumulativeStress - fatigueThreshold) * fatigueRate)
+    }
+
+    /// NWS heat index (°F) for a segment's forecast temperature and humidity
+    /// (averageHumidity is a 0–1 fraction).
+    private func segmentHeatIndexF(_ segment: PowerRouteSegment) -> Double {
+        let tempF = segment.averageTemperatureC * 9/5 + 32
+        return HeatIndexCalculator.heatIndexF(temperatureF: tempF, relativeHumidity: segment.averageHumidity * 100)
+    }
+
+    /// Power degradation for riding in heat. The dose-response matches
+    /// post-ride analysis (0.5% per °F of heat index above 75 °F, capped at
+    /// 25%), scaled by accumulated hot exposure: core temperature builds over
+    /// roughly the first hour, so targets start at half the penalty and ramp
+    /// to full — later segments of a hot ride get progressively lower targets,
+    /// matching how sustainable power actually falls.
+    private func calculateHeatFactor(heatIndexF: Double, hotExposureSeconds: Double) -> Double {
+        guard heatIndexF > 75 else { return 1.0 }
+        let basePenalty = min(0.25, (heatIndexF - 75) * 0.005)
+        let exposureRamp = 0.5 + 0.5 * min(1.0, hotExposureSeconds / 3600)
+        return 1.0 - basePenalty * exposureRamp
     }
     
     private func constrainPower(_ power: Double, ftp: Double, grade: Double) -> Double {
@@ -686,7 +713,13 @@ final class PacingEngine {
         if totalTime > 14400 {
             warnings.append("⚠️ Long duration ride - plan nutrition and hydration carefully")
         }
-        
+
+        let peakHeatIndexF = segments.map { segmentHeatIndexF($0.originalSegment) }.max() ?? 0
+        if let heatCategory = HeatIndexCalculator.Category(heatIndexF: peakHeatIndexF) {
+            let displayHI = settings.units == .metric ? (peakHeatIndexF - 32) * 5 / 9 : peakHeatIndexF
+            warnings.append("🥵 Heat index up to \(Int(displayHI.rounded()))\(settings.units.tempSymbol) (\(heatCategory.label)) - power targets reduced as heat strain builds. \(heatCategory.ridingAdvice)")
+        }
+
         return warnings
     }
 }

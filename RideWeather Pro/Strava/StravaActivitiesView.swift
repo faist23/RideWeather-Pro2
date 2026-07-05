@@ -470,6 +470,7 @@ class StravaActivitiesViewModel: ObservableObject {
         let speedData = streams.velocity_smooth?.data
         let latlngData = streams.latlng?.data
         let movingData = streams.moving?.data
+        let tempData = streams.temp?.data // °C from the head unit
         
         if let moving = movingData {
             let stoppedCount = moving.filter { !$0 }.count
@@ -516,7 +517,8 @@ class StravaActivitiesViewModel: ObservableObject {
                 speed: speed,
                 distance: distance,
                 altitude: altitude,
-                position: coordinate
+                position: coordinate,
+                temperature: tempData?[safe: i]
             ))
         }
         

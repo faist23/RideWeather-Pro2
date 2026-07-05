@@ -324,6 +324,9 @@ struct FITDataPoint {
     let distance: Double? // meters
     let altitude: Double? // meters
     let position: CLLocationCoordinate2D?
+    /// Ambient temperature recorded by the head unit, °C. Preferred over
+    /// modeled weather-service temperatures when correlating weather.
+    var temperature: Double? = nil
 }
 
 // MARK: - Ride File Analyzer
@@ -411,11 +414,15 @@ class RideFileAnalyzer {
                     do {
                         let location = CLLocation(latitude: pos.latitude, longitude: pos.longitude)
                         let weatherResult = try await AppleWeatherService.shared.fetchHistoricalWeather(for: location, at: pt.timestamp)
-                        
+
+                        // Prefer the head unit's recorded ambient temperature over
+                        // WeatherKit's gridded model value, which can lag actual
+                        // surface heating by several degrees on hot mornings.
+                        let deviceTempC = deviceTemperatureC(around: pt.timestamp, in: pointsWithPos)
                         let hw = HistoricalWeatherPoint(
                             timestamp: pt.timestamp,
                             coordinate: pos,
-                            temperature: weatherResult.current.temperature.converted(to: .celsius).value,
+                            temperature: deviceTempC ?? weatherResult.current.temperature.converted(to: .celsius).value,
                             windSpeed: weatherResult.current.wind.speed.converted(to: .metersPerSecond).value,
                             windDeg: Int(weatherResult.current.wind.direction.converted(to: .degrees).value),
                             pressure: weatherResult.current.pressure.converted(to: .hectopascals).value,
@@ -1594,17 +1601,18 @@ class RideFileAnalyzer {
         var heatPenalties: [Double] = []
         
         // 1. Calculate Average Air Density and Heat Penalty encountered
+        // wp.humidity is a 0–1 fraction (WeatherKit convention).
         for wp in weatherPoints {
             let rho = physics.calculateAirDensity(
                 temperatureC: wp.temperature,
                 pressureHpa: wp.pressure,
-                relativeHumidity: wp.humidity / 100.0
+                relativeHumidity: wp.humidity
             )
             airDensities.append(rho)
-            
-            // Performance starts dropping above 75F (Heat Index)
+
+            // Performance starts dropping above a 75°F NWS heat index
             let tempF = (wp.temperature * 9/5) + 32
-            let heatIndex = calculateSimpleHeatIndex(tempF: tempF, humidity: wp.humidity)
+            let heatIndex = HeatIndexCalculator.heatIndexF(temperatureF: tempF, relativeHumidity: wp.humidity * 100)
             if heatIndex > 75 {
                 let penalty = (heatIndex - 75) * 0.005 // 0.5% per degree above 75
                 heatPenalties.append(min(0.25, penalty)) // Cap at 25% penalty
@@ -1763,6 +1771,23 @@ class RideFileAnalyzer {
         return (finalCdA, timeDifference, avgRho, avgHeatPenalty)
     }
     
+    /// Median head-unit temperature (°C) within ±5 minutes of `time`, or nil
+    /// when the ride file has no usable temperature stream near that point.
+    /// The median smooths sensor lag and rejects sun-soaked outlier readings.
+    private func deviceTemperatureC(around time: Date, in points: [FITDataPoint]) -> Double? {
+        let window: TimeInterval = 300
+        let temps = points.compactMap { p -> Double? in
+            guard let t = p.temperature,
+                  t > -30, t < 65, // reject implausible sensor values
+                  abs(p.timestamp.timeIntervalSince(time)) <= window else { return nil }
+            return t
+        }
+        guard temps.count >= 3 else { return nil }
+        let sorted = temps.sorted()
+        let mid = sorted.count / 2
+        return sorted.count % 2 == 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+    }
+
     private func interpolatedWind(at time: Date, location: CLLocationCoordinate2D, weatherPoints: [HistoricalWeatherPoint]) -> (speed: Double, deg: Int) {
         guard let closest = weatherPoints.min(by: { abs($0.timestamp.timeIntervalSince(time)) < abs($1.timestamp.timeIntervalSince(time)) }) else {
             return (0, 0)
@@ -1782,13 +1807,6 @@ class RideFileAnalyzer {
         return (rad * 180.0 / .pi + 360.0).truncatingRemainder(dividingBy: 360.0)
     }
     
-    private func calculateSimpleHeatIndex(tempF: Double, humidity: Double) -> Double {
-        // Simple Heat Index approximation
-        if tempF < 80 { return tempF }
-        let h = humidity / 100.0
-        return 0.5 * (tempF + 61.0 + ((tempF - 68.0) * 1.2) + (h * 0.094))
-    }
-
     private func createTemporaryAnalysis(powers: [Double], movingTime: TimeInterval, distance: Double) -> RideAnalysis {
         return RideAnalysis(
             date: Date(),
@@ -2368,6 +2386,7 @@ class FITFileParser {
             var altitude: Double?
             var coordinate: CLLocationCoordinate2D?
             var timestamp: Date?
+            var temperature: Double?
             
             // Use reflection to access the message fields
             let mirror = Mirror(reflecting: msg)
@@ -2390,6 +2409,7 @@ class FITFileParser {
                 cadence = values["cadence"].map { Int($0) }
                 speed = values["speed"] ?? values["enhanced_speed"]
                 distance = values["distance"]
+                temperature = values["temperature"] // °C from the head unit
                 
                 // Try multiple altitude keys
                 for altKey in ["enhanced_altitude", "altitude", "enhanced_alt", "alt"] {
@@ -2423,7 +2443,8 @@ class FITFileParser {
                     speed: speed,
                     distance: distance,
                     altitude: altitude,
-                    position: coordinate
+                    position: coordinate,
+                    temperature: temperature
                 ))
             }
         }

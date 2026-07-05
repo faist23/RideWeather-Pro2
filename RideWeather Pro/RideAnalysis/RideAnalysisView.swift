@@ -2637,7 +2637,8 @@ struct HistoricalWeatherSummaryCard: View {
             if let weather = analysis.historicalWeatherPoints {
                 let avgTemp = weather.map { $0.temperature }.reduce(0, +) / Double(weather.count)
                 let avgWind = weather.map { $0.windSpeed }.reduce(0, +) / Double(weather.count)
-                
+                let peakHeat = weather.compactMap { heatIndex(for: $0) }.max { $0.celsius < $1.celsius }
+
                 HStack(spacing: 20) {
                     WeatherStatItem(
                         label: "Avg Temp",
@@ -2645,9 +2646,20 @@ struct HistoricalWeatherSummaryCard: View {
                         icon: "thermometer.medium",
                         color: .orange
                     )
-                    
+
+                    if let peakHeat {
+                        Divider()
+
+                        WeatherStatItem(
+                            label: "Peak Heat Index",
+                            value: formatTemp(peakHeat.celsius),
+                            icon: "thermometer.sun.fill",
+                            color: peakHeat.category.color
+                        )
+                    }
+
                     Divider()
-                    
+
                     WeatherStatItem(
                         label: "Avg Wind",
                         value: formatWind(avgWind),
@@ -2658,7 +2670,13 @@ struct HistoricalWeatherSummaryCard: View {
                 .padding()
                 .background(Color(.systemGray6).opacity(0.5))
                 .cornerRadius(12)
-                
+
+                if let peakHeat {
+                    Label("\(peakHeat.category.label): \(peakHeat.category.ridingAdvice)", systemImage: "exclamationmark.thermometer")
+                        .font(.caption2)
+                        .foregroundColor(peakHeat.category.color)
+                }
+
                 Text("Weather Timeline")
                     .font(.subheadline.weight(.semibold))
                     .padding(.top, 4)
@@ -2678,7 +2696,13 @@ struct HistoricalWeatherSummaryCard: View {
                                 
                                 Text(formatTemp(point.temperature))
                                     .font(.system(size: 12, weight: .semibold))
-                                
+
+                                if let heat = heatIndex(for: point) {
+                                    Text("HI \(formatTemp(heat.celsius))")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(heat.category.color)
+                                }
+
                                 Text(formatWind(point.windSpeed))
                                     .font(.system(size: 10))
                                     .foregroundColor(.secondary)
@@ -2714,6 +2738,15 @@ struct HistoricalWeatherSummaryCard: View {
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
     
+    /// NWS heat index for a weather point (°C for display via formatTemp),
+    /// or nil when it doesn't apply (below the 80 °F floor).
+    private func heatIndex(for point: HistoricalWeatherPoint) -> (celsius: Double, category: HeatIndexCalculator.Category)? {
+        let tempF = point.temperature * 9/5 + 32
+        let hiF = HeatIndexCalculator.heatIndexF(temperatureF: tempF, relativeHumidity: point.humidity * 100)
+        guard let category = HeatIndexCalculator.Category(heatIndexF: hiF) else { return nil }
+        return ((hiF - 32) * 5/9, category)
+    }
+
     private func formatTemp(_ celsius: Double) -> String {
         if useMetric {
             return "\(Int(celsius))°C"
