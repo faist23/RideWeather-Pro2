@@ -262,7 +262,7 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
             // between iPhone and Watch, so these must travel in the context
             let settings = UserDefaultsManager.shared.loadSettings()
             mutableContext["unitsSetting"] = settings.units.rawValue
-            mutableContext["weatherProviderSetting"] = settings.weatherProvider.rawValue.lowercased()
+            mutableContext["weatherProviderSetting"] = settings.weatherProvider.syncToken
             finalKeyCount += 2
 
             // Send the combined package

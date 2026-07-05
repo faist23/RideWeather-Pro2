@@ -304,9 +304,11 @@ struct WeatherDetailView: View {
     private var attributionView: some View {
         let defaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")
         let provider = defaults?.string(forKey: "appSettings.weatherProvider") ?? "apple"
-        
+
         Group {
-            if provider == "apple" {
+            // Contains-match: older phone builds synced the display string
+            // ("apple weather"), not the "apple" token.
+            if provider.contains("apple") {
                 HStack(spacing: 2) {
                     Image(systemName: "apple.logo")
                     Text("Weather")

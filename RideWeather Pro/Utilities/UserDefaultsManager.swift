@@ -8,8 +8,19 @@ import WidgetKit
 enum WeatherProvider: String, CaseIterable, Identifiable, Codable {
     case apple = "Apple Weather"
     case openWeather = "OpenWeather"
-    
+
     var id: String { self.rawValue }
+
+    /// Stable token for cross-device sync (app group, WCSession context).
+    /// The watch matches on "apple"; never derive this from the display
+    /// rawValue — "Apple Weather".lowercased() broke the watch's provider
+    /// selection.
+    var syncToken: String {
+        switch self {
+        case .apple: return "apple"
+        case .openWeather: return "openweather"
+        }
+    }
 }
 
 struct AppSettings: Codable, Equatable {
@@ -281,7 +292,7 @@ class UserDefaultsManager {
             
             // Also save the weather provider and units separately to the App Group
             // (widgets on this device; the watch receives them via WCSession context)
-            sharedDefaults?.set(settings.weatherProvider.rawValue.lowercased(), forKey: "appSettings.weatherProvider")
+            sharedDefaults?.set(settings.weatherProvider.syncToken, forKey: "appSettings.weatherProvider")
             sharedDefaults?.set(settings.units.rawValue, forKey: "appSettings.units")
             sharedDefaults?.synchronize()
         }

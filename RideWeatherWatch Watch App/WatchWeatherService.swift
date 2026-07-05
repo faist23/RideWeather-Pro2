@@ -28,7 +28,9 @@ class WatchWeatherService {
         let providerString = defaults?.string(forKey: "appSettings.weatherProvider") ?? "apple"
         let isImperial = (defaults?.string(forKey: "appSettings.units") ?? "imperial") == "imperial"
 
-        if providerString == "apple" {
+        // Contains-match: older phone builds synced the display string
+        // ("apple weather"), not the "apple" token.
+        if providerString.contains("apple") {
             return try await fetchAppleWeather(for: coordinate, isImperial: isImperial)
         } else {
             return try await fetchOpenWeather(for: coordinate, isImperial: isImperial)
