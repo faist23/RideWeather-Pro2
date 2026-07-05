@@ -25,6 +25,10 @@ struct SharedWeatherSummary: Codable {
     let alertSeverity: String?
     let hourlyForecast: [ForecastHour]?
     let nextHourSummary: String? // Added for Apple WeatherKit
+    // NWS heat index in the same unit as `temperature`, with its severity
+    // rank (1–4, see HeatIndexCalculator.Category); nil when it doesn't apply
+    var heatIndex: Int? = nil
+    var heatIndexSeverity: Int? = nil
 }
 
 // Ensure ForecastHour is also defined in this file/target
@@ -35,6 +39,18 @@ struct ForecastHour: Codable, Identifiable {
     let feelsLike: Int
     let windSpeed: Int
     let icon: String
+    var heatIndex: Int? = nil
+    var heatIndexSeverity: Int? = nil
+}
+
+/// NWS severity band colors matching HeatIndexCalculator.Category in the app targets.
+func heatIndexColor(severityRank: Int) -> Color {
+    switch severityRank {
+    case 1: return .yellow  // Caution
+    case 2: return .orange  // Extreme Caution
+    case 3: return .red     // Danger
+    default: return .purple // Extreme Danger
+    }
 }
 
 enum ComplicationMode {
@@ -60,19 +76,27 @@ struct SmartRideStatsEntry: TimelineEntry {
     let windSpeed: Int
     let windDir: String
     let conditionIcon: String
+
+    // Heat Index (replaces feels-like in views when it applies)
+    var heatIndex: Int? = nil
+    var heatIndexSeverity: Int? = nil
 }
 
 // MARK: - Entry
 struct SimpleComplicationEntry: TimelineEntry {
     let date: Date
-    
+
     // Weather Data
     let temp: Int
     let feelsLike: Int
     let windSpeed: Int
     let windDir: String
     let conditionIcon: String
-    
+
+    // Heat Index (replaces feels-like in views when it applies)
+    var heatIndex: Int? = nil
+    var heatIndexSeverity: Int? = nil
+
     // Alert Data
     let alertSeverity: String? // Holds "severe", "warning", or "advisory"
     
@@ -130,7 +154,9 @@ struct SmartRideStatsProvider: TimelineProvider {
         var wind = 0
         var dir = "--"
         var icon = "questionmark"
-        
+        var heatIndex: Int? = nil
+        var heatIndexSeverity: Int? = nil
+
         if let data = defaults?.data(forKey: "widget_weather_summary"),
            let weather = try? JSONDecoder().decode(SharedWeatherSummary.self, from: data) {
             temp = weather.temperature
@@ -138,8 +164,10 @@ struct SmartRideStatsProvider: TimelineProvider {
             wind = weather.windSpeed
             dir = weather.windDirection
             icon = weather.conditionIcon
+            heatIndex = weather.heatIndex
+            heatIndexSeverity = weather.heatIndexSeverity
         }
-        
+
         let hour = Calendar.current.component(.hour, from: date)
         let mode: ComplicationMode
         
@@ -153,7 +181,8 @@ struct SmartRideStatsProvider: TimelineProvider {
             date: date,
             mode: mode,
             tsb: tsb, readiness: readiness, status: status,
-            temp: temp, feelsLike: feelsLike, windSpeed: wind, windDir: dir, conditionIcon: icon
+            temp: temp, feelsLike: feelsLike, windSpeed: wind, windDir: dir, conditionIcon: icon,
+            heatIndex: heatIndex, heatIndexSeverity: heatIndexSeverity
         )
     }
 }
@@ -197,7 +226,9 @@ struct SimpleComplicationProvider: TimelineProvider {
         var dir = "--"
         var icon = "questionmark"
         var alert: String? = nil
-        
+        var heatIndex: Int? = nil
+        var heatIndexSeverity: Int? = nil
+
         if let data = defaults?.data(forKey: "widget_weather_summary"),
            let weather = try? JSONDecoder().decode(SharedWeatherSummary.self, from: data) {
             temp = weather.temperature
@@ -206,6 +237,8 @@ struct SimpleComplicationProvider: TimelineProvider {
             dir = weather.windDirection
             icon = weather.conditionIcon
             alert = weather.alertSeverity // Load Alert
+            heatIndex = weather.heatIndex
+            heatIndexSeverity = weather.heatIndexSeverity
         }
         
         // NEW: Override with the specific priority alert set by WatchSessionManager
@@ -218,6 +251,7 @@ struct SimpleComplicationProvider: TimelineProvider {
         return SimpleComplicationEntry(
             date: date,
             temp: temp, feelsLike: feelsLike, windSpeed: wind, windDir: dir, conditionIcon: icon,
+            heatIndex: heatIndex, heatIndexSeverity: heatIndexSeverity,
             alertSeverity: alert,
             todaySteps: todaySteps
         )
@@ -298,7 +332,13 @@ struct StepsComplicationProvider: TimelineProvider {
 struct SmartRideStatsEntryView: View {
     var entry: SmartRideStatsProvider.Entry
     @Environment(\.widgetFamily) var family
-    
+
+    /// Heat index shown in place of feels-like when it applies (≥80 °F).
+    private var heatReading: (value: Int, color: Color)? {
+        guard let value = entry.heatIndex, let severity = entry.heatIndexSeverity else { return nil }
+        return (value, heatIndexColor(severityRank: severity))
+    }
+
     var body: some View {
         switch family {
         case .accessoryCircular:
@@ -331,9 +371,15 @@ struct SmartRideStatsEntryView: View {
             VStack(spacing: 1) {
                 Text("\(entry.temp)°")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
-                Text("FL \(entry.feelsLike)°")
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                
+                if let heat = heatReading {
+                    Text("HI \(heat.value)°")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(heat.color)
+                } else {
+                    Text("FL \(entry.feelsLike)°")
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
+                }
+
                 HStack(spacing: 1) {
                     Image(systemName: "wind")
                         .font(.system(size: 8))
@@ -383,9 +429,16 @@ struct SmartRideStatsEntryView: View {
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                         .minimumScaleFactor(0.8)
                     
-                    Text("Feels \(entry.feelsLike)°")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    if let heat = heatReading {
+                        Text("HI \(heat.value)°")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(heat.color)
+                    } else {
+                        Text("Feels \(entry.feelsLike)°")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 
                 Spacer()
@@ -438,7 +491,11 @@ struct SmartRideStatsEntryView: View {
                 .minimumScaleFactor(0.7)
                 .widgetLabel {
                     Image(systemName: "wind")
-                    Text("\(entry.windSpeed) \(entry.windDir)  FL \(entry.feelsLike)°")
+                    if let heat = heatReading {
+                        Text("\(entry.windSpeed) \(entry.windDir)  HI \(heat.value)°")
+                    } else {
+                        Text("\(entry.windSpeed) \(entry.windDir)  FL \(entry.feelsLike)°")
+                    }
                 }
         case .recovery:
             Image(systemName: "bed.double.fill")
@@ -452,7 +509,11 @@ struct SmartRideStatsEntryView: View {
         case .readiness:
             Text("Readiness: \(entry.readiness)%")
         case .ride:
-            Text("Feels \(entry.feelsLike)° • Wind \(entry.windSpeed) \(entry.windDir)")
+            if let heat = heatReading {
+                Text("HI \(heat.value)° • Wind \(entry.windSpeed) \(entry.windDir)")
+            } else {
+                Text("Feels \(entry.feelsLike)° • Wind \(entry.windSpeed) \(entry.windDir)")
+            }
         case .recovery:
             Text("Recovery: Good")
         }
@@ -469,7 +530,13 @@ struct SmartRideStatsEntryView: View {
 struct RideWeatherComplicationEntryView: View {
     var entry: SimpleComplicationProvider.Entry
     @Environment(\.widgetFamily) var family
-    
+
+    /// Heat index shown in place of feels-like when it applies (≥80 °F).
+    private var heatReading: (value: Int, color: Color)? {
+        guard let value = entry.heatIndex, let severity = entry.heatIndexSeverity else { return nil }
+        return (value, heatIndexColor(severityRank: severity))
+    }
+
     var destinationURL: URL {
         if entry.alertSeverity != nil {
             return URL(string: "rideweather://weather")! // weather was alert to go to alert tab
@@ -501,11 +568,18 @@ struct RideWeatherComplicationEntryView: View {
                 .font(.system(size: 16, weight: .bold, design: .rounded))
                 .minimumScaleFactor(0.8)
             
-            // 2. Feels Like (Always Visible)
-            Text("FL \(entry.feelsLike)°")
-                .font(.system(size: 8))
-                .minimumScaleFactor(0.8)
-                .foregroundStyle(.secondary)
+            // 2. Heat Index when it applies, otherwise Feels Like
+            if let heat = heatReading {
+                Text("HI \(heat.value)°")
+                    .font(.system(size: 8, weight: .semibold))
+                    .minimumScaleFactor(0.8)
+                    .foregroundStyle(heat.color)
+            } else {
+                Text("FL \(entry.feelsLike)°")
+                    .font(.system(size: 8))
+                    .minimumScaleFactor(0.8)
+                    .foregroundStyle(.secondary)
+            }
             
             // 3. Icon Slot: Shows Alert Triangle OR Weather Icon
             if entry.alertSeverity != nil {
@@ -538,20 +612,30 @@ struct RideWeatherComplicationEntryView: View {
                     .imageScale(.medium)
                     .widgetAccentable()
                 Image(systemName: "wind")
-                Text("\(entry.windSpeed) \(entry.windDir) • FL \(entry.feelsLike)°")
+                Text("\(entry.windSpeed) \(entry.windDir) • \(cornerTempLabel)")
             }
             else {
                 Image(systemName: "wind")
-                Text("\(entry.windSpeed) \(entry.windDir) • FL \(entry.feelsLike)°")
+                Text("\(entry.windSpeed) \(entry.windDir) • \(cornerTempLabel)")
             } }
     }
     
+    /// "HI 95°" when the heat index applies, else "FL 70°".
+    private var cornerTempLabel: String {
+        if let heat = heatReading {
+            return "HI \(heat.value)°"
+        }
+        return "FL \(entry.feelsLike)°"
+    }
+
     @ViewBuilder
     var inlineView: some View {
         if let severity = entry.alertSeverity {
             // "⚠️ 72° • Severe Warning"
             Text("⚠️ \(entry.temp)° • \(severity.capitalized) Alert")
                 .foregroundStyle(alertColor)
+        } else if let heat = heatReading {
+            Text("HI \(heat.value)° • Wind \(entry.windSpeed) \(entry.windDir)")
         } else {
             Text("Feels \(entry.feelsLike)° • Wind \(entry.windSpeed) \(entry.windDir)")
         }
@@ -663,7 +747,7 @@ struct RideWeatherComplication: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Ride Weather")
-        .description("Current temperature, feels like, and wind conditions.")
+        .description("Current temperature, heat index or feels like, and wind conditions.")
         .supportedFamilies([.accessoryCircular, .accessoryCorner, .accessoryInline])
     }
 }
