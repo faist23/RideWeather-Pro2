@@ -21,6 +21,12 @@ RideWeather Pro is a multi-platform Apple ecosystem application (iOS, watchOS, a
   ```
 - A `No such module 'FitFileParser'` (or similar SPM module) error from SourceKit is an indexer artifact only — the SPM build resolves these packages and compiles fine.
 - Ride analysis (CdA, wind impact, weather correlation) is recomputed fresh on every import; results are not cached.
+- **Watch targets:** xcodebuild's simulator destination matching is intermittently broken on this machine (`Unable to find a destination` even for devices it just listed, with `DVTBuildVersion` warnings). Build watch targets directly instead:
+  ```sh
+  xcodebuild -project "RideWeather Pro.xcodeproj" -target "RideWeatherWatch Watch App" \
+    -sdk watchsimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
+  ```
+  (same for `RideWeatherComplicationsExtension`). Target-style builds write artifacts to `./build/` (git-ignored); delete it afterward.
 
 ## Architectural Guidelines
 
@@ -35,6 +41,25 @@ RideWeather Pro is a multi-platform Apple ecosystem application (iOS, watchOS, a
 1. **Runtime:** Deno / TypeScript.
 2. **Style:** Use modern TypeScript, explicit typing for request/response payloads, and standard Deno HTTP modules.
 3. **Secrets:** Never hardcode API keys. Rely on Supabase Vault or environment variables (`Deno.env.get`).
+
+## Domain Conventions
+
+### Heat Index
+- Always use the shared NWS calculator (`RideWeather Pro/Utilities/HeatIndexCalculator.swift`); the watch target keeps a °F-only copy (`RideWeatherWatch Watch App/HeatIndexCalculator.swift`) that must stay in sync. Never reimplement the formula locally — a private "simple" copy in ride analysis once understated a 105 °F heat index as 91 °F.
+- UI convention (app-wide): show the heat index **in place of** feels-like when it applies (≥ 80 °F NWS floor), tinted by the NWS category color (`Category.color`: yellow/orange/red/purple). Below the floor, show feels-like. Complications, watch app, ride analysis, and route forecast all follow this rule.
+- Cross-target payloads (watch summary, complications) carry `heatIndex` in display units plus `heatIndexSeverity` (stable rank 1–4).
+
+### Humidity Units
+Two conventions coexist — convert once at the boundary and never divide twice:
+- **0–1 fraction:** WeatherKit (`humidity`), `HistoricalWeatherPoint.humidity`, `PowerRouteSegment.averageHumidity`, `PowerPhysicsEngine.calculateAirDensity(relativeHumidity:)`.
+- **Percent (0–100):** OpenWeather API, `DisplayWeatherModel.humidity` (Int), `HeatIndexCalculator.reading(humidity:)` / `heatIndexF(relativeHumidity:)`.
+
+### Cross-Device Settings Sync
+- App groups do **not** sync between iPhone and Watch; settings travel in the WCSession application context (`PhoneSessionManager`) and are re-stored in the watch-side app group.
+- Wire values must be stable tokens (e.g. `WeatherProvider.syncToken`: `"apple"`/`"openweather"`), never derived from display `rawValue`s — `"Apple Weather".lowercased()` once silently switched the watch to the wrong provider.
+
+### Ride Analysis Weather
+- Weather sampling prefers the head unit's recorded ambient temperature (FIT `temperature` field, Strava `temp` stream) over WeatherKit's gridded historical values, which can lag actual surface heating by several degrees; WeatherKit remains the fallback and the source for wind/humidity/pressure.
 
 ## Coding Standards
 1. **Naming:** Use standard Swift `camelCase` for variables/functions and `PascalCase` for types/classes/structs. Use descriptive names over abbreviations.

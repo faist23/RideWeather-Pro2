@@ -1,5 +1,42 @@
 # TODOS
 
+## Heat Index Accuracy & Coverage (July 2026)
+
+### ~~Complications: heat index replaces feels-like~~ DONE
+Smart Ride Stats and Ride Weather complications show "HI" (NWS-severity-colored where families render color) in place of "FL"/"Feels" when the heat index applies. Widget-side `SharedWeatherSummary`/`ForecastHour` now decode the `heatIndex`/`heatIndexSeverity` fields the watch app already wrote.
+
+---
+
+### ~~Ride analysis: broken heat index math~~ DONE
+Deleted the private `calculateSimpleHeatIndex` (humidity double-divided to ~0, never escalated to Rothfusz — reported 91°F when true HI was 105°F). Analysis now uses the shared NWS `HeatIndexCalculator`; air density also gets the correct 0–1 humidity fraction.
+
+---
+
+### ~~Ride analysis: inaccurate temperatures~~ DONE
+Weather samples prefer the head unit's recorded temperature (FIT `temperature` field, Strava `temp` stream; median within ±5 min, implausible values rejected) over WeatherKit's gridded historical temps, which ran ~6°F cool on a hot morning. WeatherKit remains fallback + source for wind/humidity/pressure.
+
+---
+
+### ~~Ride analysis UI: show heat index~~ DONE
+"Conditions During Ride" card gains a Peak Heat Index stat and per-point "HI" readings in the Weather Timeline, colored by NWS band, plus category riding advice.
+
+---
+
+### ~~Pacing plan: heat degradation + readiness bug~~ DONE
+PacingEngine degrades segment power targets 0.5% per °F of heat index above 75°F (cap 25%), ramping half→full weight over the first hour of hot exposure; adds a heat warning with NWS category. Also fixed `readinessAdjustedPower` being computed but never applied.
+
+---
+
+### ~~Watch app: wrong weather provider~~ DONE
+Phone synced `"apple weather"` (lowercased display rawValue); watch matched on `"apple"` and silently fetched OpenWeather. Producers now send `WeatherProvider.syncToken`; watch readers contains-match so the stale stored value resolves immediately.
+
+---
+
+### ~~Route forecast: heat index on graph, map pins, detail sheet~~ DONE
+Scrub graph plots one thermal series (HI where it applies, feels-like otherwise) so the popover matches the line; heat-territory points colored by NWS band; y-axis scales to the swapped series. Map annotations and the detail sheet chip follow the same rule.
+
+---
+
 ## Watch App — Post Location Fix
 
 ### ~~WeatherDetailView: Location Unavailable state~~ DONE
