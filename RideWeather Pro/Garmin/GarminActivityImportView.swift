@@ -194,6 +194,7 @@ struct GarminActivityImportView: View {
         var gpsPoints: [GPSPoint] = []
         var powerData: [PowerDataPoint] = []
         var heartRateData: [HeartRateDataPoint] = []
+        var temperatureData: [TemperatureDataPoint] = []
         
         if let samples = activity.samples {
             var cumulativeDistance: Double = 0
@@ -229,6 +230,11 @@ struct GarminActivityImportView: View {
                 if let hr = sample.heartRate, hr > 0 {
                     heartRateData.append(HeartRateDataPoint(timestamp: timestamp, bpm: hr))
                 }
+
+                // Head unit ambient temperature (°C)
+                if let temp = sample.airTemperatureCelcius {
+                    temperatureData.append(TemperatureDataPoint(timestamp: timestamp, celsius: temp))
+                }
             }
         }
         
@@ -240,6 +246,7 @@ struct GarminActivityImportView: View {
             gpsPoints: gpsPoints,
             powerData: powerData,
             heartRateData: heartRateData,
+            temperatureData: temperatureData,
             averagePower: activity.averagePowerInWatts,
             normalizedPower: activity.normalizedPowerInWatts,
             averageHeartRate: activity.averageHeartRateInBeatsPerMinute,
@@ -345,6 +352,7 @@ struct ImportedRideData {
     let gpsPoints: [GPSPoint]
     let powerData: [PowerDataPoint]
     let heartRateData: [HeartRateDataPoint]
+    let temperatureData: [TemperatureDataPoint]
     let averagePower: Double?
     let normalizedPower: Double?
     let averageHeartRate: Int?
@@ -371,4 +379,10 @@ struct PowerDataPoint {
 struct HeartRateDataPoint {
     let timestamp: Date
     let bpm: Int
+}
+
+struct TemperatureDataPoint {
+    let timestamp: Date
+    /// Ambient temperature recorded by the head unit, °C.
+    let celsius: Double
 }

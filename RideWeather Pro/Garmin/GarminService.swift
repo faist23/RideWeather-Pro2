@@ -1550,6 +1550,8 @@ struct GarminActivitySample: Codable {
     let power: Double?
     let speed: Double?
     let cadence: Int?
+    /// Ambient temperature from the head unit, °C. Garmin's API misspells the key.
+    let airTemperatureCelcius: Double?
 }
 
 

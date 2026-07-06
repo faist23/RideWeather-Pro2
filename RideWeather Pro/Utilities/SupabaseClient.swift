@@ -896,7 +896,17 @@ extension WellnessDataService {
                     // Count valid data
                     if lat != nil && lon != nil { samplesWithGPS += 1 }
                     if let p = power, p > 0 { samplesWithPower += 1 }
-                    
+
+                    // Head unit ambient temperature (Garmin may send as Int or Double)
+                    let temperature: Double?
+                    if let tempDouble = sampleDict["airTemperatureCelcius"] as? Double {
+                        temperature = tempDouble
+                    } else if let tempInt = sampleDict["airTemperatureCelcius"] as? Int {
+                        temperature = Double(tempInt)
+                    } else {
+                        temperature = nil
+                    }
+
                     samples.append(GarminActivitySample(
                         startTimeInSeconds: timestamp,
                         latitude: lat,
@@ -905,7 +915,8 @@ extension WellnessDataService {
                         heartRate: sampleDict["heartRate"] as? Int,
                         power: power,
                         speed: sampleDict["speedMetersPerSecond"] as? Double,
-                        cadence: sampleDict["bikeCadenceInRPM"] as? Int
+                        cadence: sampleDict["bikeCadenceInRPM"] as? Int,
+                        airTemperatureCelcius: temperature
                     ))
                 }
                 

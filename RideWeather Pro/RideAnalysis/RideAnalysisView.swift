@@ -2291,29 +2291,37 @@ extension RideAnalysisViewModel {
         var dataPoints: [FITDataPoint] = []
         
         // Create a map of timestamps to combine data from different sources
-        var timeMap: [Date: (power: Double?, hr: Int?, gps: GPSPoint?)] = [:]
-        
+        var timeMap: [Date: (power: Double?, hr: Int?, gps: GPSPoint?, tempC: Double?)] = [:]
+
         // Add power data
         for powerPoint in rideData.powerData {
             timeMap[powerPoint.timestamp] = (
                 power: powerPoint.watts,
                 hr: timeMap[powerPoint.timestamp]?.hr,
-                gps: timeMap[powerPoint.timestamp]?.gps
+                gps: timeMap[powerPoint.timestamp]?.gps,
+                tempC: timeMap[powerPoint.timestamp]?.tempC
             )
         }
-        
+
         // Add heart rate data
         for hrPoint in rideData.heartRateData {
-            var existing = timeMap[hrPoint.timestamp] ?? (nil, nil, nil)
+            var existing = timeMap[hrPoint.timestamp] ?? (nil, nil, nil, nil)
             existing.hr = hrPoint.bpm
             timeMap[hrPoint.timestamp] = existing
         }
-        
+
         // Add GPS data
         for gpsPoint in rideData.gpsPoints {
-            var existing = timeMap[gpsPoint.timestamp] ?? (nil, nil, nil)
+            var existing = timeMap[gpsPoint.timestamp] ?? (nil, nil, nil, nil)
             existing.gps = gpsPoint
             timeMap[gpsPoint.timestamp] = existing
+        }
+
+        // Add head unit temperature data
+        for tempPoint in rideData.temperatureData {
+            var existing = timeMap[tempPoint.timestamp] ?? (nil, nil, nil, nil)
+            existing.tempC = tempPoint.celsius
+            timeMap[tempPoint.timestamp] = existing
         }
         
         // Convert to FITDataPoint array sorted by time
@@ -2336,7 +2344,8 @@ extension RideAnalysisViewModel {
                 speed: data.gps?.speed,
                 distance: data.gps?.distance,
                 altitude: data.gps?.elevation,
-                position: coordinate
+                position: coordinate,
+                temperature: data.tempC
             ))
         }
         
