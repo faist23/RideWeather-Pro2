@@ -24,10 +24,20 @@ struct ModernWeatherAnnotationView: View {
                     .font(.headline.weight(.bold))
                     .foregroundStyle(.primary)
 
-                // Feels Like
-                  Text("Feels like \(Int(weatherPoint.weather.feelsLike))\(viewModel.settings.units.tempSymbol)")
-                      .font(.caption2)
-                      .foregroundStyle(.secondary)
+                // Heat index when it applies (>=80 °F), feels-like otherwise
+                if let heatIndex = HeatIndexCalculator.reading(
+                    temperature: weatherPoint.weather.temp,
+                    humidity: weatherPoint.weather.humidity,
+                    units: viewModel.settings.units
+                ) {
+                    Text("HI \(Int(heatIndex.value.rounded()))\(viewModel.settings.units.tempSymbol)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(heatIndex.category.color)
+                } else {
+                    Text("Feels like \(Int(weatherPoint.weather.feelsLike))\(viewModel.settings.units.tempSymbol)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
 
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.up")
@@ -82,12 +92,25 @@ struct WeatherDetailSheet: View {
                     
                     // Quick Info Chips
                     HStack(spacing: 16) {
-                        ChipView(
-                            icon: "thermometer",
-                            label: "Feels Like",
-                            value: "\(Int(weatherPoint.weather.feelsLike))\(viewModel.settings.units.tempSymbol)"
-                        )
-                        
+                        if let heatIndex = HeatIndexCalculator.reading(
+                            temperature: weatherPoint.weather.temp,
+                            humidity: weatherPoint.weather.humidity,
+                            units: viewModel.settings.units
+                        ) {
+                            ChipView(
+                                icon: "thermometer.sun.fill",
+                                label: "Heat Index",
+                                value: "\(Int(heatIndex.value.rounded()))\(viewModel.settings.units.tempSymbol)",
+                                iconColor: heatIndex.category.color
+                            )
+                        } else {
+                            ChipView(
+                                icon: "thermometer",
+                                label: "Feels Like",
+                                value: "\(Int(weatherPoint.weather.feelsLike))\(viewModel.settings.units.tempSymbol)"
+                            )
+                        }
+
                         ChipView(
                             icon: "wind",
                             label: "Wind",
@@ -136,12 +159,13 @@ struct ChipView: View {
     let label: String
     let value: String
     var rotation: Double? = nil
-    
+    var iconColor: Color = .blue
+
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: icon)
                 .rotationEffect(.degrees(rotation ?? 0))
-                .foregroundStyle(.blue)
+                .foregroundStyle(iconColor)
             
             Text(label)
                 .font(.caption2.weight(.medium))

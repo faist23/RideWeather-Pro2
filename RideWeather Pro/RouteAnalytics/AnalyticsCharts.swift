@@ -17,6 +17,13 @@ struct ChartableWeatherPoint: Identifiable {
     let chanceOfRain: Double
     var elevation: Double?
     let grade: Double?
+    /// NWS heat index in display units; nil when below the 80 °F floor.
+    var heatIndex: Double? = nil
+    var heatIndexCategory: HeatIndexCalculator.Category? = nil
+
+    /// The value the thermal line plots and the scrub popover reads:
+    /// heat index when it applies, feels-like otherwise.
+    var thermal: Double { heatIndex ?? feelsLike }
 }
 
 struct InteractiveWeatherChart: View {
@@ -39,10 +46,10 @@ struct InteractiveWeatherChart: View {
     }
 
     private var weatherYDomain: ClosedRange<Double> {
-        let maxFeelsLike = chartData.map(\.feelsLike).max() ?? 100
+        let maxThermal = chartData.map(\.thermal).max() ?? 100
         let maxWind = chartData.map(\.wind).max() ?? 40
         let maxRain = chartData.map(\.chanceOfRain).max() ?? 100
-        let upperBound = max(maxFeelsLike, maxWind, maxRain, 50) * 1.1
+        let upperBound = max(maxThermal, maxWind, maxRain, 50) * 1.1
         return 0...upperBound
     }
     
@@ -109,15 +116,25 @@ struct InteractiveWeatherChart: View {
     }
     
     private var foregroundChartView: some View {
-        Chart {
-            // Feels Like Line
-            let validTempData = chartData.filter { !$0.feelsLike.isNaN && !$0.feelsLike.isInfinite }
+        let validTempData = chartData.filter { !$0.thermal.isNaN && !$0.thermal.isInfinite }
+        let heatPoints = validTempData.filter { $0.heatIndexCategory != nil }
+
+        return Chart {
+            // Thermal Line: heat index where it applies, feels-like otherwise
             ForEach(validTempData) { LineMark(x: .value("Distance", $0.distance),
-                                              y: .value("Feels Like", $0.feelsLike))
+                                              y: .value("Thermal", $0.thermal))
                 .foregroundStyle(.orange)
                 .lineStyle(StrokeStyle(lineWidth: 3.0))
                 .symbol(.circle)
                 .symbolSize(50)
+            }
+
+            // Recolor the points that are in heat index territory by NWS band
+            ForEach(heatPoints) { point in
+                PointMark(x: .value("Distance", point.distance),
+                          y: .value("Thermal", point.thermal))
+                .foregroundStyle(point.heatIndexCategory?.color ?? .orange)
+                .symbolSize(70)
             }
 
             // Wind Area
@@ -279,6 +296,7 @@ struct InteractiveWeatherChart: View {
     
     private func mapToChartable(weatherPoint: RouteWeatherPoint, distanceConverter: (Double) -> Double) -> ChartableWeatherPoint {
         let weather = weatherPoint.weather
+        let heatIndex = HeatIndexCalculator.reading(temperature: weather.temp, humidity: weather.humidity, units: units)
         return ChartableWeatherPoint(
             distance: distanceConverter(weatherPoint.distance),
             temp: weather.temp,
@@ -288,7 +306,9 @@ struct InteractiveWeatherChart: View {
             humidity: Double(weather.humidity),
             chanceOfRain: weather.pop * 100,
             elevation: nil,
-            grade: nil
+            grade: nil,
+            heatIndex: heatIndex?.value,
+            heatIndexCategory: heatIndex?.category
         )
     }
 
@@ -331,8 +351,13 @@ struct InteractiveWeatherChart: View {
                     Text("\(Int(point.temp))°").font(.subheadline.weight(.semibold)).foregroundStyle(.white)
                 }
                 HStack(spacing: 8) {
-                    Image(systemName: "thermometer.sun.fill").foregroundStyle(.orange).frame(width: 16)
-                    Text("Feels \(Int(point.feelsLike))°").font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                    if let heatIndex = point.heatIndex, let category = point.heatIndexCategory {
+                        Image(systemName: "thermometer.sun.fill").foregroundStyle(category.color).frame(width: 16)
+                        Text("HI \(Int(heatIndex))°").font(.subheadline.weight(.semibold)).foregroundStyle(category.color)
+                    } else {
+                        Image(systemName: "thermometer.sun.fill").foregroundStyle(.orange).frame(width: 16)
+                        Text("Feels \(Int(point.feelsLike))°").font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                    }
                 }
                 HStack(spacing: 8) {
                     Image(systemName: "wind").foregroundStyle(.cyan).frame(width: 16)
