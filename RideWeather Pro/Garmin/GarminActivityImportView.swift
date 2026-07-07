@@ -162,9 +162,11 @@ struct GarminActivityImportView: View {
             do {
                 // Fetch full activity details with GPS samples
                 let activityDetail = try await garminService.fetchActivityDetails(activityId: activity.activityId)
-                
-                // Convert to your app's format
-                let rideData = convertToRideData(activityDetail)
+
+                // Convert to your app's format. The picked summary carries the
+                // rider's latest rename; the details row keeps Garmin's
+                // auto-generated name forever, so prefer the summary.
+                let rideData = convertToRideData(activityDetail, preferredName: activity.activityName)
                 
                 // Import into ride analysis
                 await rideViewModel.importRideData(rideData)
@@ -190,7 +192,7 @@ struct GarminActivityImportView: View {
         }
     }
     
-    private func convertToRideData(_ activity: GarminActivityDetail) -> ImportedRideData {
+    private func convertToRideData(_ activity: GarminActivityDetail, preferredName: String? = nil) -> ImportedRideData {
         var gpsPoints: [GPSPoint] = []
         var powerData: [PowerDataPoint] = []
         var heartRateData: [HeartRateDataPoint] = []
@@ -239,7 +241,7 @@ struct GarminActivityImportView: View {
         }
         
         return ImportedRideData(
-            activityName: activity.activityName ?? "Garmin Ride",
+            activityName: preferredName ?? activity.activityName ?? "Garmin Ride",
             startTime: Date(timeIntervalSince1970: TimeInterval(activity.startTimeInSeconds)),
             duration: TimeInterval(activity.durationInSeconds),
             distance: activity.distanceInMeters ?? 0,

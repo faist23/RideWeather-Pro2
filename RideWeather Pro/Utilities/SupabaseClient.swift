@@ -686,22 +686,25 @@ extension WellnessDataService {
             print("   Retrieved \(activitiesResponse.count) 'activities'")
             print("   Retrieved \(manualResponse.count) 'manuallyUpdatedActivities'")
             
-            // 3. Combine unique activities (prefer manual updates if duplicates exist)
-            // Using a dictionary keyed by activityId to deduplicate
-            var combinedActivities: [Int: GarminWellnessRow] = [:]
-            
-            // Add standard first
-            for row in activitiesResponse {
-                if let dict = row.data.dictionary, let id = dict["activityId"] as? Int {
-                    combinedActivities[id] = row
+            // 3. Combine unique activities keyed by activityId. Within each
+            // type the newest sync must win — several manual-update rows can
+            // exist for one activity (one per rename), and a blind overwrite
+            // while iterating the newest-first response left the OLDEST
+            // rename on top. Manual updates then take priority over the
+            // original push regardless of its sync time.
+            func newestPerActivity(_ rows: [GarminWellnessRow]) -> [Int: GarminWellnessRow] {
+                var result: [Int: GarminWellnessRow] = [:]
+                for row in rows {
+                    guard let id = row.data.dictionary?["activityId"] as? Int else { continue }
+                    if let existing = result[id], existing.syncedAt >= row.syncedAt { continue }
+                    result[id] = row
                 }
+                return result
             }
-            
-            // Overwrite/Add manual (assuming manual is newer/better data)
-            for row in manualResponse {
-                if let dict = row.data.dictionary, let id = dict["activityId"] as? Int {
-                    combinedActivities[id] = row
-                }
+
+            var combinedActivities = newestPerActivity(activitiesResponse)
+            for (id, row) in newestPerActivity(manualResponse) {
+                combinedActivities[id] = row
             }
             
             let allRows = Array(combinedActivities.values).sorted {
