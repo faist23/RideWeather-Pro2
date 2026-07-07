@@ -79,8 +79,8 @@ class PacingPlanComparisonEngine {
         
         guard actualPower > 0 && plannedPower > 0 else { return 0 }
         
-        // Different calculation based on terrain
-        if gradient > 0.03 { // Climb
+        // Different calculation based on terrain (gradient is in percent)
+        if gradient > 3 { // Climb
             // On climbs, power is roughly linear with speed
             let powerRatio = plannedPower / actualPower
             let speedImprovement = pow(powerRatio, 0.33) // Physics approximation
@@ -91,7 +91,7 @@ class PacingPlanComparisonEngine {
             
             return duration - plannedTime // Positive = time lost
             
-        } else if gradient < -0.03 { // Descent
+        } else if gradient < -3 { // Descent
             // On descents, power matters less - mostly aero
             // Small time difference
             return duration * 0.02 * (actualPower - plannedPower) / plannedPower
@@ -137,40 +137,6 @@ class PacingPlanComparisonEngine {
         if abs(deviation) < 25 { return .needsWork }
         return .poor
     }
-    
-    private func formatSegmentName(
-        type: TerrainSegment.TerrainType,
-        distance: Double,
-        gradient: Double,
-        locationMiles: Double,
-        locationKm: Double,
-        duration: TimeInterval,
-        context: SegmentContext
-    ) -> String {
-        // Format distance
-        let distanceStr = distance > 1000 ?
-            String(format: "%.1fkm", distance / 1000) :
-            "\(Int(distance))m"
-        
-        // Format gradient
-        let gradeStr = String(format: "%.1f%%", abs(gradient) * 100)
-        
-        // Format duration
-        let durationMins = Int(duration / 60)
-        let durationSecs = Int(duration.truncatingRemainder(dividingBy: 60))
-        let durationStr = durationMins > 0 ?
-            "\(durationMins):\(String(format: "%02d", durationSecs))" :
-            "\(durationSecs)s"
-        
-        // Build location string
-        let location = "Mile \(String(format: "%.1f", locationMiles))"
-        
-        // Add context flag if there's an issue
-        let contextFlag = context.issues.isEmpty ? "" : " ⚠️"
-        
-        return "\(location) • \(type.emoji) \(type.rawValue) • \(distanceStr) at \(gradeStr) • \(durationStr)\(contextFlag)"
-    }
-    
     
     private func identifyTimeOpportunities(
         plannedSegments: [PacedSegment],
@@ -349,8 +315,9 @@ class PacingPlanComparisonEngine {
     ) -> Double {
         switch terrainType {
         case .climb:
-            if gradient > 0.08 { return ftp * 0.95 }
-            if gradient > 0.05 { return ftp * 0.85 }
+            // gradient is in percent
+            if gradient > 8 { return ftp * 0.95 }
+            if gradient > 5 { return ftp * 0.85 }
             return ftp * 0.80
         case .flat, .rolling:
             return ftp * 0.75
@@ -369,28 +336,37 @@ class PacingPlanComparisonEngine {
         duration: TimeInterval,
         context: SegmentContext
     ) -> String {
-        // Format distance
-        let distanceStr = distance > 1000 ?
-            String(format: "%.1fkm", distance / 1000) :
-            "\(Int(distance))m"
-        
-        // Format gradient
-        let gradeStr = String(format: "%.1f%%", abs(gradient) * 100)
-        
-        // Format duration
+        let units = UserDefaultsManager.shared.loadSettings().units
+
+        // Location and distance in the user's units
+        let location: String
+        let distanceStr: String
+        if units == .metric {
+            location = String(format: "Km %.1f", locationKm)
+            distanceStr = distance >= 1000 ?
+                String(format: "%.1f km", distance / 1000) :
+                "\(Int(distance)) m"
+        } else {
+            location = String(format: "Mile %.1f", locationMiles)
+            let miles = distance / 1609.34
+            distanceStr = miles >= 0.2 ?
+                String(format: "%.1f mi", miles) :
+                "\(Int(distance * 3.28084)) ft"
+        }
+
+        // Grade only where it means something to a rider; gradient is already percent
+        let gradeStr = type == .flat ? "" : String(format: " at %.1f%%", abs(gradient))
+
+        // Duration as m:ss (or seconds when under a minute)
         let durationMins = Int(duration / 60)
         let durationSecs = Int(duration.truncatingRemainder(dividingBy: 60))
         let durationStr = durationMins > 0 ?
-            "\(durationMins):\(String(format: "%02d", durationSecs)) min" :
+            "\(durationMins):\(String(format: "%02d", durationSecs))" :
             "\(durationSecs)s"
-        
-        // 🔥 Build location string
-        let location = "Mile \(String(format: "%.1f", locationMiles))"
-        
-        // 🔥 Add context flag if there's an issue
+
         let contextFlag = context.issues.isEmpty ? "" : " ⚠️"
-        
-        return "\(location) • \(type.emoji) \(type.rawValue) • \(distanceStr) at \(gradeStr) • \(durationStr)\(contextFlag)"
+
+        return "\(location) • \(type.emoji) \(type.rawValue) • \(distanceStr)\(gradeStr) • \(durationStr)\(contextFlag)"
     }
 
     // MARK: - Metrics Calculation

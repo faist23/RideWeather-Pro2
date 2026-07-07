@@ -59,7 +59,11 @@ Two conventions coexist — convert once at the boundary and never divide twice:
 - Wire values must be stable tokens (e.g. `WeatherProvider.syncToken`: `"apple"`/`"openweather"`), never derived from display `rawValue`s — `"Apple Weather".lowercased()` once silently switched the watch to the wrong provider.
 
 ### Ride Analysis Weather
-- Weather sampling prefers the head unit's recorded ambient temperature (FIT `temperature` field, Strava `temp` stream) over WeatherKit's gridded historical values, which can lag actual surface heating by several degrees; WeatherKit remains the fallback and the source for wind/humidity/pressure.
+- Weather sampling prefers the head unit's recorded ambient temperature (FIT `temperature` field, Strava `temp` stream, Garmin `airTemperatureCelcius` sample field — misspelled upstream) over WeatherKit's gridded historical values, which can lag actual surface heating by several degrees; WeatherKit remains the fallback and the source for wind/humidity/pressure.
+
+### Gradient Units
+- `TerrainSegment.gradient` (ride analysis and pacing comparison) is a **percent** (e.g. `13.4` for a 13.4% grade), never a 0–1 fraction. Display it without multiplying by 100, and write comparison thresholds in percent (`> 3`, not `> 0.03`) — a double-scaled display once showed a 13.4% grade as "1336.2%", and fraction-style thresholds silently sent every segment through the climb-physics branch.
+- Route pacing (`PacingEngine`) grades are 0–1 fractions and are multiplied by 100 at display; don't move values between the two pipelines without converting.
 
 ## Coding Standards
 1. **Naming:** Use standard Swift `camelCase` for variables/functions and `PascalCase` for types/classes/structs. Use descriptive names over abbreviations.

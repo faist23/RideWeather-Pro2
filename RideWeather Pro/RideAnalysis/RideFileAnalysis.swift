@@ -879,7 +879,7 @@ class RideFileAnalyzer {
                 // Merge if: same type, similar grade, and combined not too long
                 let shouldMerge =
                 current.type == next.type &&
-                abs(current.gradient - next.gradient) < 0.02 &&  // Within 2%
+                abs(current.gradient - next.gradient) < 2.0 &&  // gradient is in percent: within 2 points
                 (currentGroup.reduce(0.0) { $0 + $1.duration } + next.duration) < 600  // Max 10min
                 
                 if shouldMerge {
@@ -1112,7 +1112,7 @@ class RideFileAnalyzer {
                 title: "\(segment.type.emoji) Segment Opportunity",
                 description: """
                 Location: Mile \(String(format: "%.1f", locationMiles))
-                \(segment.type.rawValue): \(Int(segment.distance/1609.34 * 5280))ft at \(String(format: "%.1f", segment.gradient*100))%
+                \(segment.type.rawValue): \(Int(segment.distance/1609.34 * 5280))ft at \(String(format: "%.1f", segment.gradient))%
                 Duration: \(durationMins):\(String(format: "%02d", durationSecs))
                 You averaged: \(Int(segment.averagePower))W
                 Optimal would be: \(Int(segment.optimalPowerForTime))W
@@ -1226,14 +1226,21 @@ class RideFileAnalyzer {
         let avgPower = powers.reduce(0, +) / Double(powers.count)
         let normalizedPower = calculateNormalizedPower(powers: powers)
         
-        let startAlt = segmentPoints.first?.altitude ?? 0
-        let endAlt = segmentPoints.last?.altitude ?? 0
-        let elevationChange = endAlt - startAlt
-        
         let startDist = segmentPoints.first?.distance ?? 0
         let endDist = segmentPoints.last?.distance ?? 0
         let distance = endDist - startDist
-        
+
+        // Gradient from smoothed non-nil altitudes; a nil or spiky endpoint
+        // must not fabricate hundreds of meters of elevation change.
+        let altitudes = segmentPoints.compactMap { $0.altitude }
+        let elevationChange: Double
+        if altitudes.count >= 2 {
+            let smoothed = smoothAltitudeData(altitudes, windowSize: 5)
+            elevationChange = (smoothed.last ?? 0) - (smoothed.first ?? 0)
+        } else {
+            elevationChange = 0
+        }
+
         let gradient = distance > 0 ? (elevationChange / distance) * 100 : 0
         let duration = Double(endIndex - startIndex) // Assuming 1Hz data
         
