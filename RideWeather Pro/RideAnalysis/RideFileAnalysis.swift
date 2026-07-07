@@ -23,6 +23,27 @@ struct GraphableDataPoint: Codable, Identifiable {
     }
 }
 
+/// Distance-indexed performance sample (every ~100 m of course) used to
+/// compare course position against a pacing plan's predicted times.
+/// `movingTimeSeconds` is the moving time elapsed when the rider reached
+/// `distanceMeters`; `power` is the average over the interval since the
+/// previous sample.
+struct RoutePerformancePoint: Codable, Identifiable {
+    let id: UUID
+    let distanceMeters: Double
+    let movingTimeSeconds: TimeInterval
+    let altitude: Double?
+    let power: Double?
+
+    init(distanceMeters: Double, movingTimeSeconds: TimeInterval, altitude: Double?, power: Double?) {
+        self.id = UUID()
+        self.distanceMeters = distanceMeters
+        self.movingTimeSeconds = movingTimeSeconds
+        self.altitude = altitude
+        self.power = power
+    }
+}
+
 struct RideAnalysis: Codable, Identifiable {
     let id: UUID
     let date: Date
@@ -89,7 +110,12 @@ struct RideAnalysis: Codable, Identifiable {
     var averageAirDensity: Double?
     var heatPenaltyPercentage: Double?
     var historicalWeatherPoints: [HistoricalWeatherPoint]?
-    
+
+    /// Distance-indexed stream for course-position comparisons (pacing gap
+    /// chart). Nil for analyses saved before this field existed; re-importing
+    /// the ride populates it.
+    var routePerformanceData: [RoutePerformancePoint]? = nil
+
     init(id: UUID = UUID(), date: Date, rideName: String, duration: TimeInterval,
          distance: Double, metadata: RideMetadata?, averagePower: Double, normalizedPower: Double,
          intensityFactor: Double, trainingStressScore: Double, variabilityIndex: Double,
@@ -570,7 +596,7 @@ class RideFileAnalyzer {
             weatherImpact: weatherImpact
         )
         
-        return RideAnalysis(
+        var analysis = RideAnalysis(
             date: dataPoints.first?.timestamp ?? Date(),
             rideName: "Ride Analysis",
             duration: movingTime,
@@ -611,6 +637,55 @@ class RideFileAnalyzer {
             heatPenaltyPercentage: weatherImpact?.heatPenalty,
             historicalWeatherPoints: historicalPoints
         )
+        analysis.routePerformanceData = generateRoutePerformanceData(dataPoints: movingPoints)
+        return analysis
+    }
+
+    /// Downsamples the moving points into a distance-indexed stream
+    /// (every `intervalMeters` of course) for pacing-plan gap charts.
+    /// Returns nil when the ride has too little distance data to chart.
+    private func generateRoutePerformanceData(
+        dataPoints: [FITDataPoint],
+        intervalMeters: Double = 100
+    ) -> [RoutePerformancePoint]? {
+        guard let firstDist = dataPoints.first(where: { $0.distance != nil })?.distance else { return nil }
+
+        var result: [RoutePerformancePoint] = []
+        var nextThreshold = firstDist
+        var movingSeconds: TimeInterval = 0
+        var lastTimestamp: Date?
+        var powerSum: Double = 0
+        var powerCount = 0
+
+        for point in dataPoints {
+            if let last = lastTimestamp {
+                let dt = point.timestamp.timeIntervalSince(last)
+                // Points are pre-filtered to moving; a large gap is a stop,
+                // so count it as a single recording interval instead.
+                movingSeconds += (dt > 0 && dt <= 10) ? dt : 1
+            }
+            lastTimestamp = point.timestamp
+
+            if let power = point.power {
+                powerSum += power
+                powerCount += 1
+            }
+
+            guard let distance = point.distance else { continue }
+            if distance >= nextThreshold {
+                result.append(RoutePerformancePoint(
+                    distanceMeters: distance - firstDist,
+                    movingTimeSeconds: movingSeconds,
+                    altitude: point.altitude,
+                    power: powerCount > 0 ? powerSum / Double(powerCount) : nil
+                ))
+                nextThreshold = distance + intervalMeters
+                powerSum = 0
+                powerCount = 0
+            }
+        }
+
+        return result.count >= 10 ? result : nil
     }
     
     // Extract GPS points at regular intervals for route fingerprinting

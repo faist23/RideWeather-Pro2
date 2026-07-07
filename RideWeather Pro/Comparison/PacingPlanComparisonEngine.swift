@@ -48,8 +48,67 @@ class PacingPlanComparisonEngine {
             performanceGrade: grade,
             totalPotentialTimeSavings: totalTimeSavings,
             strengths: strengths,
-            improvements: improvements
+            improvements: improvements,
+            performanceCurve: buildPerformanceCurve(
+                plannedSegments: pacingPlan.segments,
+                actualRide: actualRide
+            )
         )
+    }
+
+    /// Aligns the ride's distance-indexed stream with the plan's predicted
+    /// cumulative times to produce the gap curve for the scrubbing chart.
+    /// Both sides are normalized to fraction-of-course so recorded GPS
+    /// distance drift doesn't fabricate a gap near the finish.
+    private func buildPerformanceCurve(
+        plannedSegments: [PacedSegment],
+        actualRide: RideAnalysis
+    ) -> [PacingPlanComparison.PerformancePoint]? {
+        guard let stream = actualRide.routePerformanceData,
+              stream.count >= 10,
+              let actualTotal = stream.last?.distanceMeters,
+              actualTotal > 0,
+              !plannedSegments.isEmpty else { return nil }
+
+        // Planned cumulative distance/time knots for interpolation
+        var plannedCumDist: [Double] = [0]
+        var plannedCumTime: [Double] = [0]
+        for segment in plannedSegments {
+            plannedCumDist.append(plannedCumDist.last! + segment.originalSegment.distanceMeters)
+            plannedCumTime.append(plannedCumTime.last! + segment.estimatedTime)
+        }
+        guard let plannedTotal = plannedCumDist.last, plannedTotal > 0 else { return nil }
+
+        func plannedTime(atCourseFraction fraction: Double) -> TimeInterval {
+            let d = fraction * plannedTotal
+            var i = 1
+            while i < plannedCumDist.count - 1 && plannedCumDist[i] < d { i += 1 }
+            let d0 = plannedCumDist[i - 1], d1 = plannedCumDist[i]
+            let t0 = plannedCumTime[i - 1], t1 = plannedCumTime[i]
+            guard d1 > d0 else { return t1 }
+            return t0 + (d - d0) / (d1 - d0) * (t1 - t0)
+        }
+
+        func targetPower(atCourseFraction fraction: Double) -> Double? {
+            let d = fraction * plannedTotal
+            var cumulative = 0.0
+            for segment in plannedSegments {
+                cumulative += segment.originalSegment.distanceMeters
+                if d <= cumulative { return segment.targetPower }
+            }
+            return plannedSegments.last?.targetPower
+        }
+
+        return stream.map { point in
+            let fraction = min(1, max(0, point.distanceMeters / actualTotal))
+            return PacingPlanComparison.PerformancePoint(
+                distanceMeters: point.distanceMeters,
+                altitude: point.altitude,
+                gapSeconds: point.movingTimeSeconds - plannedTime(atCourseFraction: fraction),
+                actualPower: point.power,
+                targetPower: targetPower(atCourseFraction: fraction)
+            )
+        }
     }
     
     private func findMatchingPlannedSegment(

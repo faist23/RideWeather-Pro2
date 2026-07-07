@@ -18,7 +18,12 @@ struct PacingComparisonView: View {
                     
                     // Quick stats
                     quickStats
-                    
+
+                    // Scrubbable course-position gap chart
+                    if let curve = comparison.performanceCurve, curve.count >= 10 {
+                        PacingGapChartView(curve: curve)
+                    }
+
                     // Segment results
                     if !comparison.segmentResults.isEmpty {
                         segmentResultsSection

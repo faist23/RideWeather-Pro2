@@ -40,13 +40,18 @@ struct PacingPlanComparison: Codable, Identifiable {
     // Insights
     let strengths: [String]
     let improvements: [String]
-    
+
+    /// Distance-indexed gap curve for the scrubbing chart. Nil when the ride
+    /// predates `RideAnalysis.routePerformanceData` (re-import to populate).
+    let performanceCurve: [PerformancePoint]?
+
     init(id: UUID = UUID(), date: Date = Date(), routeName: String,
          plannedTime: TimeInterval, actualTime: TimeInterval,
          plannedPower: Double, actualPower: Double,
          segmentResults: [SegmentResult], powerEfficiency: Double,
          performanceGrade: PerformanceGrade, totalPotentialTimeSavings: TimeInterval,
-         strengths: [String], improvements: [String]) {
+         strengths: [String], improvements: [String],
+         performanceCurve: [PerformancePoint]? = nil) {
         self.id = id
         self.date = date
         self.routeName = routeName
@@ -62,8 +67,30 @@ struct PacingPlanComparison: Codable, Identifiable {
         self.totalPotentialTimeSavings = totalPotentialTimeSavings
         self.strengths = strengths
         self.improvements = improvements
+        self.performanceCurve = performanceCurve
     }
-    
+
+    /// One sample of the ride-vs-plan gap at a course position.
+    /// `gapSeconds` > 0 means the rider was behind the plan at that point.
+    struct PerformancePoint: Codable, Identifiable {
+        let id: UUID
+        let distanceMeters: Double
+        let altitude: Double?          // meters
+        let gapSeconds: TimeInterval
+        let actualPower: Double?
+        let targetPower: Double?
+
+        init(distanceMeters: Double, altitude: Double?, gapSeconds: TimeInterval,
+             actualPower: Double?, targetPower: Double?) {
+            self.id = UUID()
+            self.distanceMeters = distanceMeters
+            self.altitude = altitude
+            self.gapSeconds = gapSeconds
+            self.actualPower = actualPower
+            self.targetPower = targetPower
+        }
+    }
+
     struct SegmentResult: Codable, Identifiable {
         let id: UUID
         let segmentIndex: Int
