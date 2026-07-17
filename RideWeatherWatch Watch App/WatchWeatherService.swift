@@ -28,13 +28,24 @@ class WatchWeatherService {
         let providerString = defaults?.string(forKey: "appSettings.weatherProvider") ?? "apple"
         let isImperial = (defaults?.string(forKey: "appSettings.units") ?? "imperial") == "imperial"
 
+        // AirNow AQI fetches concurrently with the weather; nil (no coverage,
+        // failure) just hides the row and never blocks the weather.
+        async let airQuality = WatchAirQuality.fetchCurrentAQI(for: coordinate)
+
         // Contains-match: older phone builds synced the display string
         // ("apple weather"), not the "apple" token.
+        var result: (data: WatchWeatherData, alerts: [WeatherAlert], hourly: [ForecastHour], nextHourSummary: String?)
         if providerString.contains("apple") {
-            return try await fetchAppleWeather(for: coordinate, isImperial: isImperial)
+            result = try await fetchAppleWeather(for: coordinate, isImperial: isImperial)
         } else {
-            return try await fetchOpenWeather(for: coordinate, isImperial: isImperial)
+            result = try await fetchOpenWeather(for: coordinate, isImperial: isImperial)
         }
+
+        if let airQuality = await airQuality {
+            result.data.aqi = airQuality.value
+            result.data.aqiSeverity = airQuality.severityRank
+        }
+        return result
     }
 
     /// Heat index in the display unit plus its severity rank; the NWS
@@ -324,4 +335,7 @@ struct WatchWeatherData: Codable {
     // NWS heat index in the same unit as `temperature`, with severity rank
     var heatIndex: Int? = nil
     var heatIndexSeverity: Int? = nil
+    // Official EPA AQI (AirNow) with WatchAirQuality.Category severity rank
+    var aqi: Int? = nil
+    var aqiSeverity: Int? = nil
 }

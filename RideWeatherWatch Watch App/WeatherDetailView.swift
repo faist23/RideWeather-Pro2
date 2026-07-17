@@ -180,6 +180,31 @@ struct WeatherDetailView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
 
+                        // Official EPA AQI (AirNow) — the category color
+                        // carries the warning at Unhealthy and above
+                        if let aqi = weather.aqi,
+                           let severity = weather.aqiSeverity,
+                           let category = WatchAirQuality.Category(severityRank: severity) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "aqi.medium")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(category.color)
+
+                                Text("AQI \(aqi)")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(.white)
+
+                                Spacer()
+
+                                Text(category.label)
+                                    .font(.system(size: 9, weight: .black))
+                                    .foregroundStyle(category.color)
+                            }
+                            .padding(8)
+                            .background(category.color.opacity(0.2))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+
                         if let forecasts = weather.hourlyForecast?.prefix(8), !forecasts.isEmpty {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("NEXT 8 HOURS")

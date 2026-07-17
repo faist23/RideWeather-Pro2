@@ -261,6 +261,10 @@ struct SharedWeatherSummary: Codable {
     // rank (1–4, see HeatIndexCalculator.Category); nil when it doesn't apply
     var heatIndex: Int? = nil
     var heatIndexSeverity: Int? = nil
+    // Official EPA AQI (AirNow) with its severity rank (1–6, see the watch's
+    // WatchAirQuality.Category); nil when AirNow has no coverage
+    var aqi: Int? = nil
+    var aqiSeverity: Int? = nil
 }
 
 struct ForecastHour: Codable, Identifiable {
