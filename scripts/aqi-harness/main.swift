@@ -220,5 +220,13 @@ let liveLow = CurrentAirQuality(aqi: 64, category: .moderate, dominantPollutant:
 assert(!liveLow.showsWarningBanner && liveLow.source == .openWeatherModel)
 print("pass C2 CurrentAirQuality threshold/source")
 
+
+// C3: cross-target severity ranks are 1–6 (rawValue+1), matching the watch's
+// WatchAirQuality.Category(severityRank:) decoding.
+assert(EPAAirQualityCalculator.Category.good.severityRank == 1)
+assert(EPAAirQualityCalculator.Category.unhealthy.severityRank == 4)
+assert(EPAAirQualityCalculator.Category.hazardous.severityRank == 6)
+print("pass C3 severity ranks 1-6")
+
 if failures > 0 { print("\(failures) FAILURES"); exit(1) }
 print("ALL PASS")

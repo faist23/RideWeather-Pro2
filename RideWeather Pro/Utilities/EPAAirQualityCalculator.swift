@@ -59,6 +59,11 @@ enum EPAAirQualityCalculator {
             lhs.rawValue < rhs.rawValue
         }
 
+        /// Stable rank (1–6) for cross-target payloads (watch summary) — the
+        /// watch's `WatchAirQuality.Category` decodes these same values. Not
+        /// the raw value: `good` is rawValue 0 here but rank 1 on the wire.
+        var severityRank: Int { rawValue + 1 }
+
         var displayName: String {
             switch self {
             case .good: return "Good"

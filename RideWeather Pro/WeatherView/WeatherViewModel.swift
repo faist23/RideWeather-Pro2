@@ -621,6 +621,18 @@ class WeatherViewModel: ObservableObject {
         )
         guard !Task.isCancelled else { return }
         currentAirQuality = result
+        refreshSummaryAirQuality(with: result)
+    }
+
+    /// Patches the saved watch/widget summary with the freshly resolved AQI.
+    /// The summary is written during weather processing, before the AirNow
+    /// fetch resolves, so the initial write carries the previous value (or
+    /// nil on first launch); this keeps the cross-target payload current.
+    private func refreshSummaryAirQuality(with airQuality: CurrentAirQuality?) {
+        guard var summary = UserDefaultsManager.shared.loadWeatherSummary() else { return }
+        summary.aqi = airQuality?.aqi
+        summary.aqiSeverity = airQuality?.category.severityRank
+        UserDefaultsManager.shared.saveWeatherSummary(summary)
     }
 
     private func generateAdaptiveSamplePoints(from points: [CLLocationCoordinate2D]) -> [CLLocationCoordinate2D] {
@@ -792,9 +804,13 @@ class WeatherViewModel: ObservableObject {
             hourlyForecast: summaryHourly,
             nextHourSummary: displayWeather?.nextHourSummary,
             heatIndex: currentHeatIndex.map { Int($0.value.rounded()) },
-            heatIndexSeverity: currentHeatIndex.map { $0.category.severityRank }
+            heatIndexSeverity: currentHeatIndex.map { $0.category.severityRank },
+            // Best effort at write time — the AirNow fetch resolves later and
+            // patches the saved summary via refreshSummaryAirQuality(with:).
+            aqi: currentAirQuality?.aqi,
+            aqiSeverity: currentAirQuality?.category.severityRank
         )
-        
+
         UserDefaultsManager.shared.saveWeatherSummary(summary)
     }
     
