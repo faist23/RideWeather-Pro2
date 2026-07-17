@@ -178,8 +178,10 @@ enum EPAAirQualityCalculator {
         Breakpoint(cLow: 425, cHigh: 604, iLow: 301, iHigh: 500),
     ]
 
-    // O₃, ppm. 8-hour table through 300; 1-hour rows above (documented
-    // approximation for instantaneous readings).
+    // O₃, ppm. 8-hour table through 300. The 301–500 row is NOT the EPA
+    // 1-hour row (0.405–0.604): it is stitched from 0.201 for continuity
+    // with the 8-hour table, which overstates hazard for extreme readings —
+    // conservative in the safe direction for a go/no-go riding signal.
     private static let o3Breakpoints = [
         Breakpoint(cLow: 0.000, cHigh: 0.054, iLow: 0, iHigh: 50),
         Breakpoint(cLow: 0.055, cHigh: 0.070, iLow: 51, iHigh: 100),
@@ -199,7 +201,7 @@ enum EPAAirQualityCalculator {
         Breakpoint(cLow: 1250, cHigh: 2049, iLow: 301, iHigh: 500),
     ]
 
-    // SO₂, ppb (1-hour; 24-hour rows above 300).
+    // SO₂, ppb (1-hour through 200; 24-hour rows from 201 up).
     private static let so2Breakpoints = [
         Breakpoint(cLow: 0, cHigh: 35, iLow: 0, iHigh: 50),
         Breakpoint(cLow: 36, cHigh: 75, iLow: 51, iHigh: 100),
