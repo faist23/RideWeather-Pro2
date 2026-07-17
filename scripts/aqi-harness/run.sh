@@ -7,5 +7,6 @@ cd "$(dirname "$0")"
 REPO_ROOT="$(cd ../.. && pwd)"
 swiftc -o /tmp/aqi-harness-test main.swift \
   "$REPO_ROOT/RideWeather Pro/Utilities/EPAAirQualityCalculator.swift" \
-  "$REPO_ROOT/RideWeather Pro/AirNowService.swift"
+  "$REPO_ROOT/RideWeather Pro/AirNowService.swift" \
+  "$REPO_ROOT/RideWeather Pro/WeatherView/RouteSampling.swift"
 /tmp/aqi-harness-test

@@ -90,7 +90,6 @@ class WeatherViewModel: ObservableObject {
     private let weatherRepo = WeatherRepository()
     private let locationManager = LocationManager()
     private let hapticsManager = HapticsManager.shared
-    private let backgroundProcessor = RouteProcessor()
     private let cityNameResolver = CityNameResolver()
     private var cancellables = Set<AnyCancellable>()
     
@@ -521,23 +520,33 @@ class WeatherViewModel: ObservableObject {
         weatherDataForRoute = []
         routeAirQuality = nil
         
-        let keyPointCoordinates = generateAdaptiveSamplePoints(from: self.routePoints)
-        print("✅ Index-based sampling generated \(keyPointCoordinates.count) key points to fetch.")
-        
+        // Index-based sampling with exact along-route distances; scaled to
+        // the provider's measured total when we have one so the analysis
+        // total matches what Strava/Garmin state for the route.
+        let samples = RouteSampler.samplePoints(
+            from: self.routePoints,
+            authoritativeTotal: authoritativeRouteDistanceMeters
+        )
+        print("✅ Index-based sampling generated \(samples.count) key points to fetch.")
+
         processingStatus = "Analyzing terrain and elevation..."
         await Task.yield()
-        
+
         let adjustedSpeed = calculateAdjustedSpeed(baseSpeed: averageSpeedMetersPerSecond)
-        
+
         processingStatus = "Calculating arrival times..."
         await Task.yield()
-        
-        let pointsWithETAs = await backgroundProcessor.calculateETAs(
-            for: keyPointCoordinates,
-            from: routePoints,
-            rideDate: rideDate,
-            avgSpeed: adjustedSpeed
-        )
+
+        let pointsWithETAs: [(coordinate: CLLocationCoordinate2D, distance: Double, eta: Date)]
+        if adjustedSpeed > 0 {
+            pointsWithETAs = samples.map { sample in
+                (coordinate: sample.coordinate,
+                 distance: sample.distance,
+                 eta: rideDate.addingTimeInterval(sample.distance / adjustedSpeed))
+            }
+        } else {
+            pointsWithETAs = []
+        }
         
         var fetchedPoints: [RouteWeatherPoint] = []
         var lastSuccessfulWeather: DisplayWeatherModel? = nil
@@ -645,36 +654,6 @@ class WeatherViewModel: ObservableObject {
         UserDefaultsManager.shared.saveWeatherSummary(summary)
     }
 
-    private func generateAdaptiveSamplePoints(from points: [CLLocationCoordinate2D]) -> [CLLocationCoordinate2D] {
-        let targetFetchCount = 8
-        
-        guard points.count > targetFetchCount else {
-            return points
-        }
-        
-        var keyPoints = [CLLocationCoordinate2D]()
-        let step = Double(points.count - 1) / Double(targetFetchCount - 1)
-        
-        for i in 0..<targetFetchCount {
-            let index = Int(round(Double(i) * step))
-            if index < points.count {
-                keyPoints.append(points[index])
-            }
-        }
-        
-        var uniquePoints = [CLLocationCoordinate2D]()
-        var seenCoords = Set<HashableCoordinate>()
-        for point in keyPoints {
-            let hashablePoint = HashableCoordinate(point)
-            if !seenCoords.contains(hashablePoint) {
-                uniquePoints.append(point)
-                seenCoords.insert(hashablePoint)
-            }
-        }
-        
-        return uniquePoints
-    }
-    
     private func calculateAdjustedSpeed(baseSpeed: Double) -> Double {
         var adjustedSpeed = baseSpeed
         if settings.considerElevation, let analysis = self.elevationAnalysis, analysis.hasActualData {
@@ -960,16 +939,6 @@ class WeatherViewModel: ObservableObject {
         let directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
         let index = Int((degrees + 22.5) / 45.0) & 7
         return directions[index]
-    }
-}
-
-fileprivate struct HashableCoordinate: Hashable {
-    let latitude: CLLocationDegrees
-    let longitude: CLLocationDegrees
-    
-    init(_ coordinate: CLLocationCoordinate2D) {
-        self.latitude = coordinate.latitude
-        self.longitude = coordinate.longitude
     }
 }
 

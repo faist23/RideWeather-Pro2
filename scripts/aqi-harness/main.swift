@@ -2,6 +2,7 @@
 // Compile together with the app's calculator file via swiftc.
 
 import Foundation
+import CoreLocation
 
 var failures = 0
 
@@ -267,6 +268,93 @@ expectSelect("B4 obs -1 filtered",
         windowStart: makeDate(2026, 7, 17, 13), windowEnd: makeDate(2026, 7, 17, 14),
         now: now0717, calendar: nyCal),
     aqi: 40, pollutant: .ozone)
+
+
+// MARK: - RouteSampler fixtures (loop-route distance bug, 2026-07-17)
+
+// Rectangular loop, ~200 points, start == end EXACTLY (Strava saved loop
+// routes repeat the start coordinate at the finish — the old coordinate-
+// dedupe deleted that finish sample and capped a 42-mile loop at ~36).
+func rectangularLoop(pointsPerSide: Int) -> [CLLocationCoordinate2D] {
+    let lat0 = 39.9, lon0 = -83.2
+    let dLat = 0.05, dLon = 0.05
+    var pts: [CLLocationCoordinate2D] = []
+    let corners = [(lat0, lon0), (lat0 + dLat, lon0), (lat0 + dLat, lon0 + dLon), (lat0, lon0 + dLon), (lat0, lon0)]
+    for c in 0..<4 {
+        let (aLat, aLon) = corners[c]
+        let (bLat, bLon) = corners[c + 1]
+        for i in 0..<pointsPerSide {
+            let t = Double(i) / Double(pointsPerSide)
+            pts.append(CLLocationCoordinate2D(latitude: aLat + (bLat - aLat) * t,
+                                              longitude: aLon + (bLon - aLon) * t))
+        }
+    }
+    pts.append(CLLocationCoordinate2D(latitude: lat0, longitude: lon0)) // exact start repeat
+    return pts
+}
+
+func chordLength(_ pts: [CLLocationCoordinate2D]) -> Double {
+    var total = 0.0
+    for i in 1..<pts.count {
+        total += CLLocation(latitude: pts[i].latitude, longitude: pts[i].longitude)
+            .distance(from: CLLocation(latitude: pts[i-1].latitude, longitude: pts[i-1].longitude))
+    }
+    return total
+}
+
+let loop = rectangularLoop(pointsPerSide: 50)
+let loopLength = chordLength(loop)
+
+// R1: loop keeps its finish — 8 samples, last at the FULL length, and the
+// last sample's coordinate is the (repeated) start coordinate.
+let rs1 = RouteSampler.samplePoints(from: loop)
+if rs1.count == 8,
+   let first = rs1.first, let last = rs1.last,
+   first.distance == 0,
+   abs(last.distance - loopLength) < 1.0,
+   last.coordinate.latitude == loop[0].latitude,
+   last.coordinate.longitude == loop[0].longitude {
+    print("pass R1 loop keeps finish: last at \(Int(last.distance))m of \(Int(loopLength))m")
+} else {
+    print("FAIL R1 loop keeps finish: \(rs1.count) samples, last \(String(describing: rs1.last?.distance)) vs \(loopLength)")
+    failures += 1
+}
+
+// R2: distances strictly increase along the samples.
+let rs2 = RouteSampler.samplePoints(from: loop)
+if zip(rs2, rs2.dropFirst()).allSatisfy({ $0.distance < $1.distance }) {
+    print("pass R2 monotonic distances")
+} else {
+    print("FAIL R2 monotonic distances"); failures += 1
+}
+
+// R3: authoritative scaling — the provider's measured total wins exactly.
+let authoritative = loopLength * 1.05
+let rs3 = RouteSampler.samplePoints(from: loop, authoritativeTotal: authoritative)
+if let last = rs3.last, abs(last.distance - authoritative) < 0.001 {
+    print("pass R3 authoritative scaling")
+} else {
+    print("FAIL R3 authoritative scaling: \(String(describing: rs3.last?.distance)) vs \(authoritative)")
+    failures += 1
+}
+
+// R4: short routes pass through un-sampled (all points, exact distances).
+let short = Array(loop.prefix(5))
+let rs4 = RouteSampler.samplePoints(from: short)
+if rs4.count == 5, rs4[0].distance == 0, abs(rs4[4].distance - chordLength(short)) < 0.5 {
+    print("pass R4 short route passthrough")
+} else {
+    print("FAIL R4 short route passthrough: \(rs4.count)"); failures += 1
+}
+
+// R5: degenerate inputs.
+if RouteSampler.samplePoints(from: []).isEmpty,
+   RouteSampler.samplePoints(from: [loop[0]]).count == 1,
+   RouteSampler.samplePoints(from: [loop[0]]).first?.distance == 0 {
+    print("pass R5 degenerate inputs")
+} else {
+    print("FAIL R5 degenerate inputs"); failures += 1
+}
 
 if failures > 0 { print("\(failures) FAILURES"); exit(1) }
 print("ALL PASS")
