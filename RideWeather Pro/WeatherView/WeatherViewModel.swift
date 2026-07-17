@@ -42,6 +42,7 @@ class WeatherViewModel: ObservableObject {
     @Published var routePoints: [CLLocationCoordinate2D] = []
     @Published var authoritativeRouteDistanceMeters: Double? = nil
     @Published var weatherDataForRoute: [RouteWeatherPoint] = []
+    @Published var routeAirQuality: RouteAirQualitySummary? = nil
     @Published var averageSpeedInput: String = "16.5"
     @Published var locationName: String = "Loading location..."
     @Published var uiState: UIState = .loading
@@ -248,8 +249,9 @@ class WeatherViewModel: ObservableObject {
             // This ensures we see "Working" the whole time, not a progress bar.
             uiState = .loading
             processingStatus = "Reading file..."
-            
+
             weatherDataForRoute = []
+            routeAirQuality = nil
             routePoints = []
             elevationAnalysis = nil
             authoritativeRouteDistanceMeters = nil
@@ -511,6 +513,7 @@ class WeatherViewModel: ObservableObject {
         uiState = .loading
         processingStatus = "Calculating route waypoints..."
         weatherDataForRoute = []
+        routeAirQuality = nil
         
         let keyPointCoordinates = generateAdaptiveSamplePoints(from: self.routePoints)
         print("✅ Index-based sampling generated \(keyPointCoordinates.count) key points to fetch.")
@@ -571,10 +574,72 @@ class WeatherViewModel: ObservableObject {
         self.weatherDataForRoute = fetchedPoints.sorted { $0.distance < $1.distance }
         self.processingStatus = ""
         self.uiState = .loaded
-        
+
+        await updateRouteAirQuality()
+
         await runDepartureTimeOptimization()
     }
-    
+
+    /// Fetches the pollution forecast at the route start and publishes the
+    /// worst-hour EPA AQI over the ride window (departure → last point ETA).
+    /// Air quality is regional, so one fetch covers the route; failures never
+    /// block the forecast (summary just stays nil).
+    private func updateRouteAirQuality() async {
+        routeAirQuality = nil
+        guard let startCoordinate = routePoints.first ?? weatherDataForRoute.first?.coordinate,
+              let finishETA = weatherDataForRoute.last?.eta else { return }
+
+        do {
+            let forecast = try await weatherRepo.fetchAirPollutionForecast(
+                lat: startCoordinate.latitude,
+                lon: startCoordinate.longitude
+            )
+
+            // Pad by half an hour each side so the hourly entries bracketing
+            // departure and finish are included.
+            let windowStart = rideDate.addingTimeInterval(-1800).timeIntervalSince1970
+            let windowEnd = finishETA.addingTimeInterval(1800).timeIntervalSince1970
+            var entries = forecast.list.filter { $0.dt >= windowStart && $0.dt <= windowEnd }
+
+            if entries.isEmpty {
+                // Short ride inside a single forecast hour: use the nearest
+                // entry if the ride is within the forecast horizon at all.
+                let departure = rideDate.timeIntervalSince1970
+                if let nearest = forecast.list.min(by: { abs($0.dt - departure) < abs($1.dt - departure) }),
+                   abs(nearest.dt - departure) <= 3600 {
+                    entries = [nearest]
+                } else {
+                    // Ride is beyond the ~4-day pollution forecast horizon —
+                    // show nothing rather than stale current conditions.
+                    return
+                }
+            }
+
+            let readings = entries.map { entry in
+                EPAAirQualityCalculator.reading(
+                    pm25: entry.components.pm2_5,
+                    pm10: entry.components.pm10,
+                    o3: entry.components.o3,
+                    no2: entry.components.no2,
+                    so2: entry.components.so2,
+                    co: entry.components.co
+                )
+            }
+
+            guard let worst = readings.max(by: { $0.aqi < $1.aqi }) else { return }
+
+            routeAirQuality = RouteAirQualitySummary(
+                aqi: worst.aqi,
+                category: worst.category,
+                dominantPollutant: worst.dominantPollutant,
+                windowStart: rideDate,
+                windowEnd: finishETA
+            )
+        } catch {
+            print("⚠️ Route air quality unavailable: \(error)")
+        }
+    }
+
     private func generateAdaptiveSamplePoints(from points: [CLLocationCoordinate2D]) -> [CLLocationCoordinate2D] {
         let targetFetchCount = 8
         
@@ -941,6 +1006,7 @@ extension WeatherViewModel {
     func clearRoute() {
         routePoints.removeAll()
         weatherDataForRoute.removeAll()
+        routeAirQuality = nil
         enhancedRoutePoints.removeAll()
         routeIntelligenceResult = nil
         lastImportedFileName = ""
