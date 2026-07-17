@@ -81,7 +81,12 @@ struct WeatherRepository {
     func fetchAirPollution(lat: Double, lon: Double) async throws -> AirPollutionResponse {
         return try await service.fetchAirPollution(lat: lat, lon: lon)
     }
-    
+
+    // Air pollution forecast - delegates to service layer
+    func fetchAirPollutionForecast(lat: Double, lon: Double) async throws -> AirPollutionResponse {
+        return try await service.fetchAirPollutionForecast(lat: lat, lon: lon)
+    }
+
     // Fetch complete weather data including air pollution
     func fetchCompleteWeatherData(for location: CLLocation, units: String) async throws -> CompleteWeatherData {
         let settings = UserDefaultsManager.shared.loadSettings()

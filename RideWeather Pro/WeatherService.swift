@@ -165,26 +165,49 @@ class WeatherService {
     
     func fetchAirPollution(lat: Double, lon: Double) async throws -> AirPollutionResponse {
         let cacheKey = "air_pollution_\(lat)_\(lon)"
-        
+
         // Check cache first
         if let cachedData = await getCachedAirPollution(key: cacheKey),
            !cachedData.isExpired(maxAge: 3600) { // 1 hour cache
             return cachedData.airPollution
         }
-        
+
         guard let url = URL(string: "\(baseWeatherURL)/air_pollution?lat=\(lat)&lon=\(lon)&appid=\(apiKey)") else {
             throw URLError(.badURL)
         }
-        
+
         let response: AirPollutionResponse = try await fetchData(from: url)
-        
+
         // Cache the result
         await cacheAirPollution(key: cacheKey, airPollution: response)
-        
+
         return response
     }
-    
-    
+
+    /// Hourly air-pollution forecast (~4 days out). Same response shape as
+    /// the current-conditions endpoint, with one entry per forecast hour.
+    func fetchAirPollutionForecast(lat: Double, lon: Double) async throws -> AirPollutionResponse {
+        let cacheKey = "air_pollution_forecast_\(lat)_\(lon)"
+
+        // Check cache first
+        if let cachedData = await getCachedAirPollution(key: cacheKey),
+           !cachedData.isExpired(maxAge: 3600) { // 1 hour cache
+            return cachedData.airPollution
+        }
+
+        guard let url = URL(string: "\(baseWeatherURL)/air_pollution/forecast?lat=\(lat)&lon=\(lon)&appid=\(apiKey)") else {
+            throw URLError(.badURL)
+        }
+
+        let response: AirPollutionResponse = try await fetchData(from: url)
+
+        // Cache the result
+        await cacheAirPollution(key: cacheKey, airPollution: response)
+
+        return response
+    }
+
+
     // Batch fetch for route weather points (more efficient)
     func fetchWeatherForPoints(_ points: [(lat: Double, lon: Double, units: String)]) async throws -> [OneCallResponse] {
         let maxConcurrentRequests = 5
