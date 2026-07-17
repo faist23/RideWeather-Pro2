@@ -337,8 +337,7 @@ class WeatherViewModel: ObservableObject {
             )
             await processWeatherData(current: completeData.current, forecast: completeData.forecast)
             self.enhancedInsights = completeData.enhancedInsights
-            let fallbackComponents = completeData.airPollution.list.first?.components
-            Task { await self.updateCurrentAirQuality(location: location, fallbackComponents: fallbackComponents) }
+            scheduleCurrentAirQualityUpdate(location: location, fallbackComponents: completeData.airPollution.list.first?.components)
 
             // Fetch daily separately (Option B)
             do {
@@ -378,8 +377,7 @@ class WeatherViewModel: ObservableObject {
             )
             await processWeatherData(current: completeData.current, forecast: completeData.forecast)
             self.enhancedInsights = completeData.enhancedInsights
-            let currentAQFallback = completeData.airPollution.list.first?.components
-            Task { await self.updateCurrentAirQuality(location: location, fallbackComponents: currentAQFallback) }
+            scheduleCurrentAirQualityUpdate(location: location, fallbackComponents: completeData.airPollution.list.first?.components)
             try await fetchExtendedHourlyData()
             
             // Fetch daily separately
@@ -692,16 +690,31 @@ class WeatherViewModel: ObservableObject {
         }
     }
 
+    private var currentAirQualityTask: Task<Void, Never>? = nil
+
+    /// Kicks off a current-conditions AQI refresh, cancelling any in-flight
+    /// one so a slow older response can never overwrite a newer result
+    /// (pull-to-refresh racing the toolbar refresh, or a location change
+    /// mid-request).
+    private func scheduleCurrentAirQualityUpdate(location: CLLocation, fallbackComponents: PollutionComponents?) {
+        currentAirQualityTask?.cancel()
+        currentAirQualityTask = Task { [weak self] in
+            await self?.updateCurrentAirQuality(location: location, fallbackComponents: fallbackComponents)
+        }
+    }
+
     /// Current-conditions AQI for the Live Weather screen: official AirNow
     /// observations first, falling back to the OpenWeather components already
     /// fetched with the current conditions. Failures never surface — the
-    /// value just stays at its previous state (or nil).
+    /// value just stays at its previous state (or nil). A cancelled refresh
+    /// writes nothing.
     private func updateCurrentAirQuality(location: CLLocation, fallbackComponents: PollutionComponents?) async {
         do {
             let observations = try await weatherRepo.fetchAirNowObservations(
                 lat: location.coordinate.latitude,
                 lon: location.coordinate.longitude
             )
+            guard !Task.isCancelled else { return }
             // Reusing the route selector with no forecasts and a zero-length
             // window at `now` reduces it to "max of current observations".
             let now = Date()
@@ -721,9 +734,11 @@ class WeatherViewModel: ObservableObject {
                 return
             }
         } catch {
+            if Task.isCancelled { return }
             print("⚠️ AirNow current observations unavailable: \(error)")
         }
 
+        guard !Task.isCancelled else { return }
         guard let components = fallbackComponents else {
             currentAirQuality = nil
             return

@@ -96,6 +96,11 @@ enum EPAAirQualityCalculator {
         }
     }
 
+    /// EPA AQI floor at which the app shows a warning banner (Unhealthy,
+    /// ≥ 151). Shared by the route summary and current-conditions reading so
+    /// the two surfaces can never disagree about when to warn.
+    static let warningBannerFloor = 151
+
     // MARK: - Computation
 
     /// EPA AQI from OpenWeather-style concentrations, all in µg/m³.
@@ -243,8 +248,8 @@ struct RouteAirQualitySummary: Equatable {
     let windowEnd: Date
     var source: AirQualitySource = .openWeatherModel
 
-    /// Warning banner appears at Unhealthy (EPA ≥ 151) or worse.
-    var showsWarningBanner: Bool { aqi >= 151 }
+    /// Warning banner appears at Unhealthy or worse.
+    var showsWarningBanner: Bool { aqi >= EPAAirQualityCalculator.warningBannerFloor }
 }
 
 /// Current-conditions air quality at the user's location (Live Weather),
@@ -256,6 +261,6 @@ struct CurrentAirQuality: Equatable {
     let dominantPollutant: EPAAirQualityCalculator.Pollutant
     var source: AirQualitySource = .openWeatherModel
 
-    /// Warning banner appears at Unhealthy (EPA ≥ 151) or worse.
-    var showsWarningBanner: Bool { aqi >= 151 }
+    /// Warning banner appears at Unhealthy or worse.
+    var showsWarningBanner: Bool { aqi >= EPAAirQualityCalculator.warningBannerFloor }
 }

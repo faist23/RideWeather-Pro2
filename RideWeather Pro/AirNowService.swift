@@ -104,7 +104,7 @@ final class AirNowService {
     /// Current per-pollutant NowCast observations for the nearest reporting
     /// area (25-mile search radius). Empty when no US reporting area is near.
     func fetchCurrentObservations(lat: Double, lon: Double) async throws -> [AirNowObservation] {
-        let cacheKey = "airnow_current_\(lat)_\(lon)" as NSString
+        let cacheKey = Self.cacheKey("airnow_current", lat, lon)
         if let cached = cache.object(forKey: cacheKey),
            !cached.isExpired(maxAge: cacheMaxAge),
            let observations = cached.observations {
@@ -123,7 +123,7 @@ final class AirNowService {
     /// Daily per-pollutant AQI forecast (~6 days) for the nearest reporting
     /// area. Entries with `aqi == -1` carry no forecast value.
     func fetchForecast(lat: Double, lon: Double) async throws -> [AirNowForecastEntry] {
-        let cacheKey = "airnow_forecast_\(lat)_\(lon)" as NSString
+        let cacheKey = Self.cacheKey("airnow_forecast", lat, lon)
         if let cached = cache.object(forKey: cacheKey),
            !cached.isExpired(maxAge: cacheMaxAge),
            let forecasts = cached.forecasts {
@@ -140,6 +140,14 @@ final class AirNowService {
     }
 
     // MARK: - Private helpers
+
+    /// Cache keys round coordinates to ~1 km so jittering GPS fixes hit the
+    /// same entry — AirNow resolves to a 25-mile reporting area anyway, and
+    /// full-precision keys would make live-location callers miss on every
+    /// refresh.
+    private static func cacheKey(_ prefix: String, _ lat: Double, _ lon: Double) -> NSString {
+        return String(format: "%@_%.2f_%.2f", prefix, lat, lon) as NSString
+    }
 
     private func fetchJSON<T: Decodable>(from url: URL) async throws -> T {
         let (data, response) = try await urlSession.data(from: url)

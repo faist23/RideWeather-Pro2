@@ -30,21 +30,15 @@ struct WeatherInsightsCard: View {
                     
                     // Official EPA number (AirNow-first) when available; the
                     // provider's coarse 1–5 label is the loading/fallback text.
-                    if let currentAQ = viewModel.currentAirQuality {
-                        InsightItem(
-                            title: "Air Quality",
-                            value: "\(currentAQ.aqi) • \(currentAQ.category.displayName)",
-                            icon: "leaf.fill",
-                            color: currentAQ.category.color
-                        )
-                    } else {
-                        InsightItem(
-                            title: "Air Quality",
-                            value: insights.airQualityLevel,
-                            icon: "leaf.fill",
-                            color: insights.airQualityColor
-                        )
-                    }
+                    let airQualityDisplay = viewModel.currentAirQuality.map {
+                        (value: "\($0.aqi) • \($0.category.displayName)", color: $0.category.color)
+                    } ?? (value: insights.airQualityLevel, color: insights.airQualityColor)
+                    InsightItem(
+                        title: "Air Quality",
+                        value: airQualityDisplay.value,
+                        icon: "leaf.fill",
+                        color: airQualityDisplay.color
+                    )
                     
                     InsightItem(
                         title: "Visibility",
