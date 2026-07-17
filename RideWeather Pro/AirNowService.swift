@@ -193,6 +193,11 @@ enum AirNowRouteAQISelector {
         windowStart: Date,
         windowEnd: Date,
         now: Date = Date(),
+        // Deliberate approximation: window dates use the device calendar,
+        // while DateForecast is the reporting area's local date. Rides are
+        // planned near the user so these almost always agree; a distant-
+        // timezone route at worst matches an adjacent day's daily forecast
+        // or falls through to the OpenWeather fallback.
         calendar: Calendar = .current
     ) -> (aqi: Int, dominantPollutant: EPAAirQualityCalculator.Pollutant)? {
         let start = min(windowStart, windowEnd)
@@ -204,6 +209,9 @@ enum AirNowRouteAQISelector {
         formatter.timeZone = calendar.timeZone
         formatter.dateFormat = "yyyy-MM-dd"
 
+        // Seeding end's day is load-bearing: stepping from a late `start` in
+        // whole days can overshoot an early-morning `end` (e.g. 22:00 → 02:00
+        // overnight), so the loop alone would miss the final calendar day.
         var windowDayStrings: Set<String> = [formatter.string(from: end)]
         var cursor = start
         while cursor <= end {
