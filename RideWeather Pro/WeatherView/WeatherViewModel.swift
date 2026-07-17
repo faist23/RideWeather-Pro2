@@ -583,111 +583,19 @@ class WeatherViewModel: ObservableObject {
         await runDepartureTimeOptimization()
     }
 
-    /// Route air quality: official AirNow (US EPA station) data first, with
-    /// the OpenWeather model pipeline as fallback — model products can
-    /// understate smoke events by an order of magnitude. Failures never
-    /// block the route forecast (summary just stays nil).
+    /// Route air quality for the planned ride window, sourced by
+    /// `AirQualityManager` (AirNow first, OpenWeather model fallback).
+    /// Failures never block the route forecast (summary just stays nil).
     private func updateRouteAirQuality() async {
         routeAirQuality = nil
         guard let startCoordinate = routePoints.first ?? weatherDataForRoute.first?.coordinate,
               let finishETA = weatherDataForRoute.last?.eta else { return }
 
-        if let airNowSummary = await airNowRouteAirQuality(coordinate: startCoordinate, finishETA: finishETA) {
-            routeAirQuality = airNowSummary
-            return
-        }
-        routeAirQuality = await openWeatherRouteAirQuality(coordinate: startCoordinate, finishETA: finishETA)
-    }
-
-    /// Worst official AirNow AQI over the ride window, or nil when AirNow
-    /// has no coverage (non-US, outage, or ride beyond its daily forecast).
-    private func airNowRouteAirQuality(coordinate: CLLocationCoordinate2D, finishETA: Date) async -> RouteAirQualitySummary? {
-        do {
-            async let observationsFetch = weatherRepo.fetchAirNowObservations(
-                lat: coordinate.latitude,
-                lon: coordinate.longitude
-            )
-            async let forecastFetch = weatherRepo.fetchAirNowForecast(
-                lat: coordinate.latitude,
-                lon: coordinate.longitude
-            )
-            let (observations, forecasts) = try await (observationsFetch, forecastFetch)
-
-            guard let selected = AirNowRouteAQISelector.select(
-                observations: observations,
-                forecasts: forecasts,
-                windowStart: rideDate,
-                windowEnd: finishETA
-            ) else { return nil }
-
-            return RouteAirQualitySummary(
-                aqi: selected.aqi,
-                category: EPAAirQualityCalculator.Category(aqi: selected.aqi),
-                dominantPollutant: selected.dominantPollutant,
-                windowStart: rideDate,
-                windowEnd: finishETA,
-                source: .airNow
-            )
-        } catch {
-            print("⚠️ AirNow unavailable, using OpenWeather fallback: \(error)")
-            return nil
-        }
-    }
-
-    /// Fallback: worst-hour EPA AQI computed from OpenWeather's modeled
-    /// pollution forecast at the route start (understates smoke events).
-    private func openWeatherRouteAirQuality(coordinate: CLLocationCoordinate2D, finishETA: Date) async -> RouteAirQualitySummary? {
-        do {
-            let forecast = try await weatherRepo.fetchAirPollutionForecast(
-                lat: coordinate.latitude,
-                lon: coordinate.longitude
-            )
-
-            // Pad by half an hour each side so the hourly entries bracketing
-            // departure and finish are included.
-            let windowStart = rideDate.addingTimeInterval(-1800).timeIntervalSince1970
-            let windowEnd = finishETA.addingTimeInterval(1800).timeIntervalSince1970
-            var entries = forecast.list.filter { $0.dt >= windowStart && $0.dt <= windowEnd }
-
-            if entries.isEmpty {
-                // Short ride inside a single forecast hour: use the nearest
-                // entry if the ride is within the forecast horizon at all.
-                let departure = rideDate.timeIntervalSince1970
-                if let nearest = forecast.list.min(by: { abs($0.dt - departure) < abs($1.dt - departure) }),
-                   abs(nearest.dt - departure) <= 3600 {
-                    entries = [nearest]
-                } else {
-                    // Ride is beyond the ~4-day pollution forecast horizon —
-                    // show nothing rather than stale current conditions.
-                    return nil
-                }
-            }
-
-            let readings = entries.map { entry in
-                EPAAirQualityCalculator.reading(
-                    pm25: entry.components.pm2_5,
-                    pm10: entry.components.pm10,
-                    o3: entry.components.o3,
-                    no2: entry.components.no2,
-                    so2: entry.components.so2,
-                    co: entry.components.co
-                )
-            }
-
-            guard let worst = readings.max(by: { $0.aqi < $1.aqi }) else { return nil }
-
-            return RouteAirQualitySummary(
-                aqi: worst.aqi,
-                category: worst.category,
-                dominantPollutant: worst.dominantPollutant,
-                windowStart: rideDate,
-                windowEnd: finishETA,
-                source: .openWeatherModel
-            )
-        } catch {
-            print("⚠️ Route air quality unavailable: \(error)")
-            return nil
-        }
+        routeAirQuality = await AirQualityManager.shared.routeAirQuality(
+            startCoordinate: startCoordinate,
+            windowStart: rideDate,
+            windowEnd: finishETA
+        )
     }
 
     private var currentAirQualityTask: Task<Void, Never>? = nil
@@ -703,60 +611,16 @@ class WeatherViewModel: ObservableObject {
         }
     }
 
-    /// Current-conditions AQI for the Live Weather screen: official AirNow
-    /// observations first, falling back to the OpenWeather components already
-    /// fetched with the current conditions. Failures never surface — the
-    /// value just stays at its previous state (or nil). A cancelled refresh
-    /// writes nothing.
+    /// Current-conditions AQI for the Live Weather screen, sourced by
+    /// `AirQualityManager`. A cancelled refresh publishes nothing, so a slow
+    /// stale response can never overwrite a newer result.
     private func updateCurrentAirQuality(location: CLLocation, fallbackComponents: PollutionComponents?) async {
-        do {
-            let observations = try await weatherRepo.fetchAirNowObservations(
-                lat: location.coordinate.latitude,
-                lon: location.coordinate.longitude
-            )
-            guard !Task.isCancelled else { return }
-            // Reusing the route selector with no forecasts and a zero-length
-            // window at `now` reduces it to "max of current observations".
-            let now = Date()
-            if let selected = AirNowRouteAQISelector.select(
-                observations: observations,
-                forecasts: [],
-                windowStart: now,
-                windowEnd: now,
-                now: now
-            ) {
-                currentAirQuality = CurrentAirQuality(
-                    aqi: selected.aqi,
-                    category: EPAAirQualityCalculator.Category(aqi: selected.aqi),
-                    dominantPollutant: selected.dominantPollutant,
-                    source: .airNow
-                )
-                return
-            }
-        } catch {
-            if Task.isCancelled { return }
-            print("⚠️ AirNow current observations unavailable: \(error)")
-        }
-
+        let result = await AirQualityManager.shared.currentAirQuality(
+            location: location,
+            fallbackComponents: fallbackComponents
+        )
         guard !Task.isCancelled else { return }
-        guard let components = fallbackComponents else {
-            currentAirQuality = nil
-            return
-        }
-        let reading = EPAAirQualityCalculator.reading(
-            pm25: components.pm2_5,
-            pm10: components.pm10,
-            o3: components.o3,
-            no2: components.no2,
-            so2: components.so2,
-            co: components.co
-        )
-        currentAirQuality = CurrentAirQuality(
-            aqi: reading.aqi,
-            category: reading.category,
-            dominantPollutant: reading.dominantPollutant,
-            source: .openWeatherModel
-        )
+        currentAirQuality = result
     }
 
     private func generateAdaptiveSamplePoints(from points: [CLLocationCoordinate2D]) -> [CLLocationCoordinate2D] {
