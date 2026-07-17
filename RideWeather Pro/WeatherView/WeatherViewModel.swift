@@ -44,6 +44,9 @@ class WeatherViewModel: ObservableObject {
     @Published var weatherDataForRoute: [RouteWeatherPoint] = []
     @Published var routeAirQuality: RouteAirQualitySummary? = nil
     @Published var currentAirQuality: CurrentAirQuality? = nil
+    /// Official AQI per displayed forecast hour (keys are `HourlyForecast.date`
+    /// values); hourly cards show a warning chip when a value crosses the floor.
+    @Published var hourlyAirQuality: [Date: CurrentAirQuality] = [:]
     @Published var averageSpeedInput: String = "16.5"
     @Published var locationName: String = "Loading location..."
     @Published var uiState: UIState = .loading
@@ -622,6 +625,13 @@ class WeatherViewModel: ObservableObject {
         guard !Task.isCancelled else { return }
         currentAirQuality = result
         refreshSummaryAirQuality(with: result)
+
+        let hourly = await AirQualityManager.shared.hourlyAirQuality(
+            hours: hourlyForecast.map(\.date),
+            coordinate: location.coordinate
+        )
+        guard !Task.isCancelled else { return }
+        hourlyAirQuality = hourly
     }
 
     /// Patches the saved watch/widget summary with the freshly resolved AQI.

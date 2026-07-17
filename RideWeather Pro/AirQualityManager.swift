@@ -162,6 +162,49 @@ final class AirQualityManager {
         )
     }
 
+    /// Per-hour official AQI for a set of display hours (the Live Weather
+    /// 8-hour cards): each hour gets the date-matched AirNow daily forecast
+    /// value, plus current observations when the hour starts within 3 hours —
+    /// the same rules as the route selector, one zero-length window per hour.
+    /// Hours AirNow can't cover are simply absent (no model fallback here:
+    /// hiding a chip is better than a falsely reassuring model value).
+    func hourlyAirQuality(hours: [Date], coordinate: CLLocationCoordinate2D) async -> [Date: CurrentAirQuality] {
+        guard !hours.isEmpty else { return [:] }
+        do {
+            async let observationsFetch = weatherRepo.fetchAirNowObservations(
+                lat: coordinate.latitude,
+                lon: coordinate.longitude
+            )
+            async let forecastFetch = weatherRepo.fetchAirNowForecast(
+                lat: coordinate.latitude,
+                lon: coordinate.longitude
+            )
+            let (observations, forecasts) = try await (observationsFetch, forecastFetch)
+
+            let now = Date()
+            var result: [Date: CurrentAirQuality] = [:]
+            for hour in hours {
+                guard let selected = AirNowRouteAQISelector.select(
+                    observations: observations,
+                    forecasts: forecasts,
+                    windowStart: hour,
+                    windowEnd: hour,
+                    now: now
+                ) else { continue }
+                result[hour] = CurrentAirQuality(
+                    aqi: selected.aqi,
+                    category: EPAAirQualityCalculator.Category(aqi: selected.aqi),
+                    dominantPollutant: selected.dominantPollutant,
+                    source: .airNow
+                )
+            }
+            return result
+        } catch {
+            print("⚠️ AirNow hourly AQI unavailable: \(error)")
+            return [:]
+        }
+    }
+
     // MARK: - Shared
 
     private func reading(from components: PollutionComponents) -> EPAAirQualityCalculator.Reading {

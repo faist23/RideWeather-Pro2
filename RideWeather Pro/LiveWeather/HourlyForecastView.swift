@@ -74,6 +74,18 @@ struct HourlyForecastCard: View {
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(heatIndex.category.color)
                 }
+
+                // Official AQI, warning zone only (≥ 151); those category
+                // colors (red / EPA purple / EPA maroon) all carry white text
+                if let airQuality = viewModel.hourlyAirQuality[hour.date],
+                   airQuality.showsWarningBanner {
+                    Text("AQI \(airQuality.aqi)")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(airQuality.category.color, in: Capsule())
+                }
             }
             
             HStack(spacing: 2) {
