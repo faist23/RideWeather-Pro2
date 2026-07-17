@@ -224,6 +224,14 @@ enum EPAAirQualityCalculator {
 
 // MARK: - Route summary
 
+/// Where a route air-quality summary came from: official EPA AirNow station
+/// data, or the OpenWeather model pipeline (fallback — known to understate
+/// smoke events).
+enum AirQualitySource: Equatable {
+    case airNow
+    case openWeatherModel
+}
+
 /// Worst-hour EPA air quality over a planned ride's time window.
 struct RouteAirQualitySummary: Equatable {
     let aqi: Int
@@ -231,6 +239,7 @@ struct RouteAirQualitySummary: Equatable {
     let dominantPollutant: EPAAirQualityCalculator.Pollutant
     let windowStart: Date
     let windowEnd: Date
+    var source: AirQualitySource = .openWeatherModel
 
     /// Warning banner appears at Unhealthy (EPA ≥ 151) or worse.
     var showsWarningBanner: Bool { aqi >= 151 }
