@@ -2,16 +2,18 @@
 //  AirQualityViews.swift
 //  RideWeather Pro
 //
-//  Route-forecast air quality UI: hazard banner + always-on summary chip.
+//  Air quality UI shared by the route forecast and Live Weather:
+//  hazard banner + always-on summary chip.
 //
 
 import SwiftUI
 
-/// Full-width warning banner shown when the ride window's AQI is
-/// Unhealthy (≥ 151) or worse. Category colors at this level (red, purple,
-/// EPA maroon) all carry white text.
+/// Full-width warning banner shown when the AQI is Unhealthy (≥ 151) or
+/// worse. Category colors at this level (red, EPA purple, EPA maroon) all
+/// carry white text.
 struct AirQualityWarningBanner: View {
-    let summary: RouteAirQualitySummary
+    let aqi: Int
+    let category: EPAAirQualityCalculator.Category
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -19,11 +21,11 @@ struct AirQualityWarningBanner: View {
                 .font(.title3)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Air Quality: \(summary.aqi) – \(summary.category.displayName)")
+                Text("Air Quality: \(aqi) – \(category.displayName)")
                     .font(.headline)
                     .fontWeight(.semibold)
 
-                Text(summary.category.riderGuidance)
+                Text(category.riderGuidance)
                     .font(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -33,7 +35,7 @@ struct AirQualityWarningBanner: View {
         .foregroundStyle(.white)
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(summary.category.color, in: RoundedRectangle(cornerRadius: 16))
+        .background(category.color, in: RoundedRectangle(cornerRadius: 16))
     }
 }
 

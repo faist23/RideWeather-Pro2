@@ -28,12 +28,23 @@ struct WeatherInsightsCard: View {
                         color: insights.uvColor
                     )
                     
-                    InsightItem(
-                        title: "Air Quality",
-                        value: insights.airQualityLevel,
-                        icon: "leaf.fill",
-                        color: insights.airQualityColor
-                    )
+                    // Official EPA number (AirNow-first) when available; the
+                    // provider's coarse 1–5 label is the loading/fallback text.
+                    if let currentAQ = viewModel.currentAirQuality {
+                        InsightItem(
+                            title: "Air Quality",
+                            value: "\(currentAQ.aqi) • \(currentAQ.category.displayName)",
+                            icon: "leaf.fill",
+                            color: currentAQ.category.color
+                        )
+                    } else {
+                        InsightItem(
+                            title: "Air Quality",
+                            value: insights.airQualityLevel,
+                            icon: "leaf.fill",
+                            color: insights.airQualityColor
+                        )
+                    }
                     
                     InsightItem(
                         title: "Visibility",

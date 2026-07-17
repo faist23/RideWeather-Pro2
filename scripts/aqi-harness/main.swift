@@ -201,5 +201,24 @@ let airNowSource = RouteAirQualitySummary(aqi: 296, category: .veryUnhealthy, do
 assert(airNowSource.source == .airNow)
 print("pass S8 source field")
 
+
+// C1: current-conditions reuse — empty forecasts + zero-length window at
+// `now` reduces the selector to "max of current observations".
+let nowC1 = makeDate(2026, 7, 17, 12)
+expectSelect("C1 current conditions via selector",
+    AirNowRouteAQISelector.select(
+        observations: [obs("PM2.5", 236), obs("O3", 47), obs("PM10", -1)],
+        forecasts: [],
+        windowStart: nowC1, windowEnd: nowC1,
+        now: nowC1, calendar: nyCal),
+    aqi: 236, pollutant: .pm25)
+
+// C2: CurrentAirQuality banner threshold and source default.
+let liveHigh = CurrentAirQuality(aqi: 236, category: .veryUnhealthy, dominantPollutant: .pm25, source: .airNow)
+assert(liveHigh.showsWarningBanner && liveHigh.source == .airNow)
+let liveLow = CurrentAirQuality(aqi: 64, category: .moderate, dominantPollutant: .pm25)
+assert(!liveLow.showsWarningBanner && liveLow.source == .openWeatherModel)
+print("pass C2 CurrentAirQuality threshold/source")
+
 if failures > 0 { print("\(failures) FAILURES"); exit(1) }
 print("ALL PASS")

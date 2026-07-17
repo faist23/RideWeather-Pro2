@@ -43,6 +43,7 @@ class WeatherViewModel: ObservableObject {
     @Published var authoritativeRouteDistanceMeters: Double? = nil
     @Published var weatherDataForRoute: [RouteWeatherPoint] = []
     @Published var routeAirQuality: RouteAirQualitySummary? = nil
+    @Published var currentAirQuality: CurrentAirQuality? = nil
     @Published var averageSpeedInput: String = "16.5"
     @Published var locationName: String = "Loading location..."
     @Published var uiState: UIState = .loading
@@ -336,7 +337,9 @@ class WeatherViewModel: ObservableObject {
             )
             await processWeatherData(current: completeData.current, forecast: completeData.forecast)
             self.enhancedInsights = completeData.enhancedInsights
-            
+            let fallbackComponents = completeData.airPollution.list.first?.components
+            Task { await self.updateCurrentAirQuality(location: location, fallbackComponents: fallbackComponents) }
+
             // Fetch daily separately (Option B)
             do {
                 let dailyItems = try await weatherRepo.fetchDailyForecast(for: location, units: settings.units.rawValue)
@@ -375,6 +378,8 @@ class WeatherViewModel: ObservableObject {
             )
             await processWeatherData(current: completeData.current, forecast: completeData.forecast)
             self.enhancedInsights = completeData.enhancedInsights
+            let currentAQFallback = completeData.airPollution.list.first?.components
+            Task { await self.updateCurrentAirQuality(location: location, fallbackComponents: currentAQFallback) }
             try await fetchExtendedHourlyData()
             
             // Fetch daily separately
@@ -685,6 +690,58 @@ class WeatherViewModel: ObservableObject {
             print("⚠️ Route air quality unavailable: \(error)")
             return nil
         }
+    }
+
+    /// Current-conditions AQI for the Live Weather screen: official AirNow
+    /// observations first, falling back to the OpenWeather components already
+    /// fetched with the current conditions. Failures never surface — the
+    /// value just stays at its previous state (or nil).
+    private func updateCurrentAirQuality(location: CLLocation, fallbackComponents: PollutionComponents?) async {
+        do {
+            let observations = try await weatherRepo.fetchAirNowObservations(
+                lat: location.coordinate.latitude,
+                lon: location.coordinate.longitude
+            )
+            // Reusing the route selector with no forecasts and a zero-length
+            // window at `now` reduces it to "max of current observations".
+            let now = Date()
+            if let selected = AirNowRouteAQISelector.select(
+                observations: observations,
+                forecasts: [],
+                windowStart: now,
+                windowEnd: now,
+                now: now
+            ) {
+                currentAirQuality = CurrentAirQuality(
+                    aqi: selected.aqi,
+                    category: EPAAirQualityCalculator.Category(aqi: selected.aqi),
+                    dominantPollutant: selected.dominantPollutant,
+                    source: .airNow
+                )
+                return
+            }
+        } catch {
+            print("⚠️ AirNow current observations unavailable: \(error)")
+        }
+
+        guard let components = fallbackComponents else {
+            currentAirQuality = nil
+            return
+        }
+        let reading = EPAAirQualityCalculator.reading(
+            pm25: components.pm2_5,
+            pm10: components.pm10,
+            o3: components.o3,
+            no2: components.no2,
+            so2: components.so2,
+            co: components.co
+        )
+        currentAirQuality = CurrentAirQuality(
+            aqi: reading.aqi,
+            category: reading.category,
+            dominantPollutant: reading.dominantPollutant,
+            source: .openWeatherModel
+        )
     }
 
     private func generateAdaptiveSamplePoints(from points: [CLLocationCoordinate2D]) -> [CLLocationCoordinate2D] {

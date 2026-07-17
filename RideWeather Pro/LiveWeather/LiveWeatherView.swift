@@ -42,6 +42,12 @@ struct LiveWeatherView: View {
                             .offset(y: scrollOffset > 0 ? -scrollOffset * 0.7 : 0)
                             .opacity(1 - (scrollOffset / 200).clamped(to: 0...1))
                         
+                        // Air quality warning (official AirNow) — Unhealthy or worse
+                        if let airQuality = viewModel.currentAirQuality, airQuality.showsWarningBanner {
+                            AirQualityWarningBanner(aqi: airQuality.aqi, category: airQuality.category)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+
                         // Weather Alerts Carousel
                         if !viewModel.weatherAlerts.isEmpty {
                             VStack(spacing: 8) {

@@ -178,7 +178,7 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
             ScrollView {
                 LazyVStack(spacing: 20) {
                     if let airQuality = viewModel.routeAirQuality, airQuality.showsWarningBanner {
-                        AirQualityWarningBanner(summary: airQuality)
+                        AirQualityWarningBanner(aqi: airQuality.aqi, category: airQuality.category)
                     }
 
                     RouteInfoCardView(viewModel: viewModel)

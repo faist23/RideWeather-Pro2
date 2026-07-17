@@ -76,7 +76,9 @@ enum EPAAirQualityCalculator {
             case .moderate: return .yellow
             case .unhealthySensitive: return .orange
             case .unhealthy: return .red
-            case .veryUnhealthy: return .purple
+            // EPA's official Very Unhealthy purple (#8F3F97) — the iOS system
+            // .purple is far lighter/pinker and fails contrast under white text.
+            case .veryUnhealthy: return Color(red: 143/255, green: 63/255, blue: 151/255)
             case .hazardous: return Color(red: 126/255, green: 0/255, blue: 35/255) // EPA maroon
             }
         }
@@ -239,6 +241,19 @@ struct RouteAirQualitySummary: Equatable {
     let dominantPollutant: EPAAirQualityCalculator.Pollutant
     let windowStart: Date
     let windowEnd: Date
+    var source: AirQualitySource = .openWeatherModel
+
+    /// Warning banner appears at Unhealthy (EPA ≥ 151) or worse.
+    var showsWarningBanner: Bool { aqi >= 151 }
+}
+
+/// Current-conditions air quality at the user's location (Live Weather),
+/// AirNow-first with the OpenWeather model as fallback — same sourcing rules
+/// as the route summary, without a ride window.
+struct CurrentAirQuality: Equatable {
+    let aqi: Int
+    let category: EPAAirQualityCalculator.Category
+    let dominantPollutant: EPAAirQualityCalculator.Pollutant
     var source: AirQualitySource = .openWeatherModel
 
     /// Warning banner appears at Unhealthy (EPA ≥ 151) or worse.
