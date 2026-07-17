@@ -87,6 +87,15 @@ struct WeatherRepository {
         return try await service.fetchAirPollutionForecast(lat: lat, lon: lon)
     }
 
+    // AirNow (official US EPA station data) - delegates to service layer
+    func fetchAirNowObservations(lat: Double, lon: Double) async throws -> [AirNowObservation] {
+        return try await AirNowService.shared.fetchCurrentObservations(lat: lat, lon: lon)
+    }
+
+    func fetchAirNowForecast(lat: Double, lon: Double) async throws -> [AirNowForecastEntry] {
+        return try await AirNowService.shared.fetchForecast(lat: lat, lon: lon)
+    }
+
     // Fetch complete weather data including air pollution
     func fetchCompleteWeatherData(for location: CLLocation, units: String) async throws -> CompleteWeatherData {
         let settings = UserDefaultsManager.shared.loadSettings()

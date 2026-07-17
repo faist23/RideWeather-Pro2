@@ -580,19 +580,64 @@ class WeatherViewModel: ObservableObject {
         await runDepartureTimeOptimization()
     }
 
-    /// Fetches the pollution forecast at the route start and publishes the
-    /// worst-hour EPA AQI over the ride window (departure → last point ETA).
-    /// Air quality is regional, so one fetch covers the route; failures never
-    /// block the forecast (summary just stays nil).
+    /// Route air quality: official AirNow (US EPA station) data first, with
+    /// the OpenWeather model pipeline as fallback — model products can
+    /// understate smoke events by an order of magnitude. Failures never
+    /// block the route forecast (summary just stays nil).
     private func updateRouteAirQuality() async {
         routeAirQuality = nil
         guard let startCoordinate = routePoints.first ?? weatherDataForRoute.first?.coordinate,
               let finishETA = weatherDataForRoute.last?.eta else { return }
 
+        if let airNowSummary = await airNowRouteAirQuality(coordinate: startCoordinate, finishETA: finishETA) {
+            routeAirQuality = airNowSummary
+            return
+        }
+        routeAirQuality = await openWeatherRouteAirQuality(coordinate: startCoordinate, finishETA: finishETA)
+    }
+
+    /// Worst official AirNow AQI over the ride window, or nil when AirNow
+    /// has no coverage (non-US, outage, or ride beyond its daily forecast).
+    private func airNowRouteAirQuality(coordinate: CLLocationCoordinate2D, finishETA: Date) async -> RouteAirQualitySummary? {
+        do {
+            async let observationsFetch = weatherRepo.fetchAirNowObservations(
+                lat: coordinate.latitude,
+                lon: coordinate.longitude
+            )
+            async let forecastFetch = weatherRepo.fetchAirNowForecast(
+                lat: coordinate.latitude,
+                lon: coordinate.longitude
+            )
+            let (observations, forecasts) = try await (observationsFetch, forecastFetch)
+
+            guard let selected = AirNowRouteAQISelector.select(
+                observations: observations,
+                forecasts: forecasts,
+                windowStart: rideDate,
+                windowEnd: finishETA
+            ) else { return nil }
+
+            return RouteAirQualitySummary(
+                aqi: selected.aqi,
+                category: EPAAirQualityCalculator.Category(aqi: selected.aqi),
+                dominantPollutant: selected.dominantPollutant,
+                windowStart: rideDate,
+                windowEnd: finishETA,
+                source: .airNow
+            )
+        } catch {
+            print("⚠️ AirNow unavailable, using OpenWeather fallback: \(error)")
+            return nil
+        }
+    }
+
+    /// Fallback: worst-hour EPA AQI computed from OpenWeather's modeled
+    /// pollution forecast at the route start (understates smoke events).
+    private func openWeatherRouteAirQuality(coordinate: CLLocationCoordinate2D, finishETA: Date) async -> RouteAirQualitySummary? {
         do {
             let forecast = try await weatherRepo.fetchAirPollutionForecast(
-                lat: startCoordinate.latitude,
-                lon: startCoordinate.longitude
+                lat: coordinate.latitude,
+                lon: coordinate.longitude
             )
 
             // Pad by half an hour each side so the hourly entries bracketing
@@ -611,7 +656,7 @@ class WeatherViewModel: ObservableObject {
                 } else {
                     // Ride is beyond the ~4-day pollution forecast horizon —
                     // show nothing rather than stale current conditions.
-                    return
+                    return nil
                 }
             }
 
@@ -626,17 +671,19 @@ class WeatherViewModel: ObservableObject {
                 )
             }
 
-            guard let worst = readings.max(by: { $0.aqi < $1.aqi }) else { return }
+            guard let worst = readings.max(by: { $0.aqi < $1.aqi }) else { return nil }
 
-            routeAirQuality = RouteAirQualitySummary(
+            return RouteAirQualitySummary(
                 aqi: worst.aqi,
                 category: worst.category,
                 dominantPollutant: worst.dominantPollutant,
                 windowStart: rideDate,
-                windowEnd: finishETA
+                windowEnd: finishETA,
+                source: .openWeatherModel
             )
         } catch {
             print("⚠️ Route air quality unavailable: \(error)")
+            return nil
         }
     }
 
