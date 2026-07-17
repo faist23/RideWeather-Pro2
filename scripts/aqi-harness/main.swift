@@ -228,5 +228,45 @@ assert(EPAAirQualityCalculator.Category.unhealthy.severityRank == 4)
 assert(EPAAirQualityCalculator.Category.hazardous.severityRank == 6)
 print("pass C3 severity ranks 1-6")
 
+
+// B1: observation-inclusion boundary — start exactly at now+3h includes
+// observations; one minute past excludes them (nil with no forecasts).
+expectSelect("B1a boundary inclusive at now+3h",
+    AirNowRouteAQISelector.select(
+        observations: [obs("PM2.5", 200)], forecasts: [],
+        windowStart: makeDate(2026, 7, 17, 15), windowEnd: makeDate(2026, 7, 17, 16),
+        now: now0717, calendar: nyCal),
+    aqi: 200, pollutant: .pm25)
+expectSelect("B1b boundary exclusive past now+3h",
+    AirNowRouteAQISelector.select(
+        observations: [obs("PM2.5", 200)], forecasts: [],
+        windowStart: makeDate(2026, 7, 17, 15, 1), windowEnd: makeDate(2026, 7, 17, 16),
+        now: now0717, calendar: nyCal),
+    aqi: nil, pollutant: nil)
+
+// B2: reversed window normalizes via min/max.
+expectSelect("B2 reversed window",
+    AirNowRouteAQISelector.select(
+        observations: [], forecasts: [fcst("2026-07-19", "PM2.5", 90)],
+        windowStart: makeDate(2026, 7, 19, 11), windowEnd: makeDate(2026, 7, 19, 8),
+        now: now0717, calendar: nyCal),
+    aqi: 90, pollutant: .pm25)
+
+// B3: unknown ParameterName still counts toward the AQI (label defaults pm25).
+expectSelect("B3 unknown parameter counts",
+    AirNowRouteAQISelector.select(
+        observations: [obs("UNKNOWN", 250)], forecasts: [],
+        windowStart: makeDate(2026, 7, 17, 13), windowEnd: makeDate(2026, 7, 17, 14),
+        now: now0717, calendar: nyCal),
+    aqi: 250, pollutant: .pm25)
+
+// B4: observation-side AQI = -1 filtering.
+expectSelect("B4 obs -1 filtered",
+    AirNowRouteAQISelector.select(
+        observations: [obs("PM2.5", -1), obs("O3", 40)], forecasts: [],
+        windowStart: makeDate(2026, 7, 17, 13), windowEnd: makeDate(2026, 7, 17, 14),
+        now: now0717, calendar: nyCal),
+    aqi: 40, pollutant: .ozone)
+
 if failures > 0 { print("\(failures) FAILURES"); exit(1) }
 print("ALL PASS")
