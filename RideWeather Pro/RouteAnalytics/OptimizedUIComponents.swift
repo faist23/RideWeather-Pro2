@@ -177,11 +177,19 @@ struct OptimizedUnifiedRouteAnalyticsDashboard: View {
             
             ScrollView {
                 LazyVStack(spacing: 20) {
+                    if let airQuality = viewModel.routeAirQuality, airQuality.showsWarningBanner {
+                        AirQualityWarningBanner(summary: airQuality)
+                    }
+
                     RouteInfoCardView(viewModel: viewModel)
-                    
+
                     // Allows users to quickly check if their start time works with daylight
                     SunTimesRow(daylight: analysis.daylightAnalysis)
-                    
+
+                    if let airQuality = viewModel.routeAirQuality {
+                        AirQualityChipRow(summary: airQuality)
+                    }
+
                     RouteSummaryCard.forForecast(viewModel: viewModel)
                     
                     OptimizedOverallScoreCard(analysis: analysis, settings: viewModel.settings)
