@@ -2560,38 +2560,36 @@ class FITFileParser {
 // MARK: - Analysis Storage Manager
 
 class AnalysisStorageManager {
-    private let userDefaults = UserDefaults.standard
-    private let storageKey = "savedRideAnalyses"
-    
+    // Shared across all instances so the one-time UserDefaults migration
+    // runs once per launch (~5 MB blobs exceed the 4 MB defaults limit)
+    private static let analysisStorage = JSONFileStorage<RideAnalysis>(
+        fileName: "savedRideAnalyses.json",
+        legacyUserDefaultsKey: "savedRideAnalyses",
+        label: "Ride Analyses"
+    )
+
     func saveAnalysis(_ analysis: RideAnalysis) {
         var analyses = loadAllAnalyses()
         analyses.append(analysis)
-        
-        // Keep only last 50 analyses
+
+        // Keep only the 50 most recent analyses (sort oldest-first so
+        // suffix keeps the newest — loadAllAnalyses returns newest-first)
         if analyses.count > 50 {
-            analyses = Array(analyses.suffix(50))
+            analyses = Array(analyses.sorted { $0.date < $1.date }.suffix(50))
         }
-        
-        if let encoded = try? JSONEncoder().encode(analyses) {
-            userDefaults.set(encoded, forKey: storageKey)
-        }
+
+        Self.analysisStorage.save(analyses)
     }
-    
+
     func loadAllAnalyses() -> [RideAnalysis] {
-        guard let data = userDefaults.data(forKey: storageKey),
-              let analyses = try? JSONDecoder().decode([RideAnalysis].self, from: data) else {
-            return []
-        }
-        return analyses.sorted { $0.date > $1.date }
+        return Self.analysisStorage.load().sorted { $0.date > $1.date }
     }
-    
+
     func deleteAnalysis(_ analysis: RideAnalysis) {
         var analyses = loadAllAnalyses()
         analyses.removeAll { $0.id == analysis.id }
-        
-        if let encoded = try? JSONEncoder().encode(analyses) {
-            userDefaults.set(encoded, forKey: storageKey)
-        }
+
+        Self.analysisStorage.save(analyses)
     }
     
 /*    func getAnalysisTrend(limit: Int = 10) -> [TrendDataPoint] {

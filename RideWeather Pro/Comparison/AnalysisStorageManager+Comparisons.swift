@@ -9,37 +9,36 @@ import SwiftUI
 import Foundation
 
 extension AnalysisStorageManager {
-    
-    private var comparisonStorageKey: String { "savedPacingComparisons" }
-    
+
+    // Shared across all instances so the one-time UserDefaults migration
+    // runs once per launch
+    private static let comparisonStorage = JSONFileStorage<PacingPlanComparison>(
+        fileName: "savedPacingComparisons.json",
+        legacyUserDefaultsKey: "savedPacingComparisons",
+        label: "Pacing Comparisons"
+    )
+
     func saveComparison(_ comparison: PacingPlanComparison) {
         var comparisons = loadAllComparisons()
         comparisons.append(comparison)
-        
-        // Keep only last 30 comparisons
+
+        // Keep only the 30 most recent comparisons (sort oldest-first so
+        // suffix keeps the newest — loadAllComparisons returns newest-first)
         if comparisons.count > 30 {
-            comparisons = Array(comparisons.suffix(30))
+            comparisons = Array(comparisons.sorted { $0.date < $1.date }.suffix(30))
         }
-        
-        if let encoded = try? JSONEncoder().encode(comparisons) {
-            UserDefaults.standard.set(encoded, forKey: comparisonStorageKey)
-        }
+
+        Self.comparisonStorage.save(comparisons)
     }
-    
+
     func loadAllComparisons() -> [PacingPlanComparison] {
-        guard let data = UserDefaults.standard.data(forKey: comparisonStorageKey),
-              let comparisons = try? JSONDecoder().decode([PacingPlanComparison].self, from: data) else {
-            return []
-        }
-        return comparisons.sorted { $0.date > $1.date }
+        return Self.comparisonStorage.load().sorted { $0.date > $1.date }
     }
-    
+
     func deleteComparison(_ comparison: PacingPlanComparison) {
         var comparisons = loadAllComparisons()
         comparisons.removeAll { $0.id == comparison.id }
-        
-        if let encoded = try? JSONEncoder().encode(comparisons) {
-            UserDefaults.standard.set(encoded, forKey: comparisonStorageKey)
-        }
+
+        Self.comparisonStorage.save(comparisons)
     }
 }

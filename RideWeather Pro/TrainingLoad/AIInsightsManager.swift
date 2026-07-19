@@ -2,7 +2,8 @@
 //  AIInsightsManager.swift
 //  RideWeather Pro
 //
-//  AI-powered training insights using Claude API
+//  AI-powered training insights via the ai-insight Supabase Edge Function,
+//  which holds the Anthropic API key server-side.
 //  Easy to disable/remove: Just set isEnabled = false
 //
 
@@ -10,28 +11,10 @@
 import Foundation
 import SwiftUI
 import Combine
+import Supabase
 
 @MainActor
 class AIInsightsManager: ObservableObject {
-    
-    // MARK: - Configuration
-    private var anthropicConfig: [String: String]?
-
-    private var apiKey: String {
-        let key = configValue(forKey: "AIKey") ?? "INVALID_API"
-        
-        if key == "INVALID_API" {
-            print("🤖 AI Insights: ❌ No valid API key found")
-        } else {
-            print("🤖 AI Insights: ✅ API key loaded: \(key.prefix(15))...")
-        }
-        
-        return key
-    }
-    
-    private func configValue(forKey key: String) -> String? {
-        return anthropicConfig?[key]
-    }
 
     // MARK: - Kill Switch
     /// Set this to false to completely disable AI insights without removing code
@@ -54,36 +37,9 @@ class AIInsightsManager: ObservableObject {
     private let requestCountKey = "aiRequestCount"
     
     init() {
-        loadConfig() // Load the plist first
         loadCachedData()
     }
 
-    private func loadConfig() {
-         // Check if file exists
-        guard let path = Bundle.main.path(forResource: "AnthropicConfig", ofType: "plist") else {
-            print("🤖 AI Insights: ❌ AnthropicConfig.plist not found in bundle")
-            print("🤖 AI Insights: 📁 Bundle path: \(Bundle.main.bundlePath)")
-            anthropicConfig = [:]
-            return
-        }
-         // Try to load as NSDictionary
-        guard let config = NSDictionary(contentsOfFile: path) as? [String: String] else {
-            print("🤖 AI Insights: ❌ Failed to parse plist as [String: String]")
-            
-            // Try to see what's actually in the file
-            if NSDictionary(contentsOfFile: path) != nil {
-                print("🤖 AI Insights: ❌ Failed to parse plist structure")
-            }
-            
-            anthropicConfig = [:]
-            return
-        }
-        
-        self.anthropicConfig = config
- //       print("🤖 AI Insights: ✅ Loaded config: \(config)")
- //       print("🤖 AI Insights: 🔑 Keys in plist: \(config.keys)")
-    }
-    
     // MARK: - Public Methods
     
     /// Generate AI insight when there's a meaningful pattern or anomaly
@@ -178,17 +134,13 @@ class AIInsightsManager: ObservableObject {
         
         do {
             let prompt = buildPrompt(summary: summary, readiness: readiness, recentLoads: recentLoads)
-            
-            let response = try await callClaudeAPI(prompt: prompt)
-            
-            // Parse the response
-            if let insight = parseInsightResponse(response) {
-                currentInsight = insight
-                lastAnalysisDate = Date()
-                cacheInsight(insight)
-                print("🤖 AI Insights: Generated new insight")
-            }
-            
+
+            let insight = try await fetchInsight(prompt: prompt)
+            currentInsight = insight
+            lastAnalysisDate = Date()
+            cacheInsight(insight)
+            print("🤖 AI Insights: Generated new insight")
+
         } catch {
             print("🤖 AI Insights Error: \(error.localizedDescription)")
         }
@@ -285,89 +237,44 @@ class AIInsightsManager: ObservableObject {
         return prompt
     }
     
-    private func callClaudeAPI(prompt: String) async throws -> String {
-        guard let url = URL(string: "https://api.anthropic.com/v1/messages") else {
-            throw AIInsightError.networkError
+    /// Requests an insight from the ai-insight edge function. The function
+    /// holds the Anthropic API key server-side and enforces the response
+    /// schema via structured outputs, so the payload always decodes.
+    private func fetchInsight(prompt: String) async throws -> AIInsight {
+        let envelope: InsightEnvelope
+        do {
+            envelope = try await SupabaseManager.shared.client.functions.invoke(
+                "ai-insight",
+                options: FunctionInvokeOptions(body: InsightRequestPayload(prompt: prompt))
+            )
+        } catch let FunctionsError.httpError(code, data) {
+            let message = String(data: data, encoding: .utf8) ?? ""
+            throw AIInsightError.apiError("HTTP \(code) \(message)")
         }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        request.setValue(self.apiKey, forHTTPHeaderField: "x-api-key")
-        
-        let body: [String: Any] = [
-            "model": "claude-sonnet-4-20250514",
-            "max_tokens": 1000,
-            "messages": [
-                ["role": "user", "content": prompt]
-            ]
-        ]
-        
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-       
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AIInsightError.networkError
-        }
-        
-        guard (200...299).contains(httpResponse.statusCode) else {
-            if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let error = errorJson["error"] as? [String: Any],
-               let message = error["message"] as? String {
-                throw AIInsightError.apiError(message)
-            }
-            throw AIInsightError.apiError("HTTP \(httpResponse.statusCode)")
-        }
-        
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let contentArray = json["content"] as? [[String: Any]],
-              let firstContent = contentArray.first,
-              let text = firstContent["text"] as? String else {
-            throw AIInsightError.invalidResponse
-        }
-        
-        // Track usage
-        if let usage = json["usage"] as? [String: Int] {
-            let inputTokens = usage["input_tokens"] ?? 0
-            let outputTokens = usage["output_tokens"] ?? 0
-            
-            let cost = Double(inputTokens) * costPerInputToken + Double(outputTokens) * costPerOutputToken
-            totalCost += cost
-            requestCount += 1
-            
-            userDefaults.set(totalCost, forKey: costKey)
-            userDefaults.set(requestCount, forKey: requestCountKey)
-            
-            print("🤖 AI Insights: Request cost $\(String(format: "%.4f", cost)) (Total: $\(String(format: "%.2f", totalCost)), \(requestCount) requests)")
-        }
-        
-        return text
-    }
-    
-    private func parseInsightResponse(_ response: String) -> AIInsight? {
-        // Remove any markdown formatting if present
-        let cleanedResponse = response
-            .replacingOccurrences(of: "```json", with: "")
-            .replacingOccurrences(of: "```", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        guard let data = cleanedResponse.data(using: .utf8),
-              let json = try? JSONDecoder().decode(AIInsightResponse.self, from: data) else {
-            print("🤖 AI Insights: Failed to parse response")
-            return nil
-        }
-        
+
+        trackUsage(inputTokens: envelope.usage.inputTokens, outputTokens: envelope.usage.outputTokens)
+
+        let insight = envelope.insight
         return AIInsight(
-            priority: AIInsight.Priority(rawValue: json.priority) ?? .info,
-            title: json.title,
-            insight: json.insight,
-            explanation: json.explanation,
-            recommendation: json.recommendation,
-            confidence: json.confidence,
+            priority: AIInsight.Priority(rawValue: insight.priority) ?? .info,
+            title: insight.title,
+            insight: insight.insight,
+            explanation: insight.explanation,
+            recommendation: insight.recommendation,
+            confidence: insight.confidence,
             generatedAt: Date()
         )
+    }
+
+    private func trackUsage(inputTokens: Int, outputTokens: Int) {
+        let cost = Double(inputTokens) * costPerInputToken + Double(outputTokens) * costPerOutputToken
+        totalCost += cost
+        requestCount += 1
+
+        userDefaults.set(totalCost, forKey: costKey)
+        userDefaults.set(requestCount, forKey: requestCountKey)
+
+        print("🤖 AI Insights: Request cost $\(String(format: "%.4f", cost)) (Total: $\(String(format: "%.2f", totalCost)), \(requestCount) requests)")
     }
     
     // MARK: - Caching
@@ -448,19 +355,33 @@ private struct AIInsightResponse: Codable {
     let confidence: String
 }
 
-enum AIInsightError: Error {
-    case invalidResponse
-    case networkError
+private struct InsightRequestPayload: Encodable {
+    let prompt: String
+}
+
+/// Response envelope from the ai-insight edge function
+private struct InsightEnvelope: Decodable {
+    let insight: AIInsightResponse
+    let usage: Usage
+
+    struct Usage: Decodable {
+        let inputTokens: Int
+        let outputTokens: Int
+
+        enum CodingKeys: String, CodingKey {
+            case inputTokens = "input_tokens"
+            case outputTokens = "output_tokens"
+        }
+    }
+}
+
+enum AIInsightError: LocalizedError {
     case apiError(String)
-    
-    var localizedDescription: String {
+
+    var errorDescription: String? {
         switch self {
-        case .invalidResponse:
-            return "Invalid API response"
-        case .networkError:
-            return "Network error"
         case .apiError(let message):
-            return "API error: \(message)"
+            return "AI insight request failed: \(message)"
         }
     }
 }
@@ -517,15 +438,12 @@ extension AIInsightsManager {
                 wellnessMetrics: wellnessMetrics
             )
             
-            let response = try await callClaudeAPI(prompt: prompt)
-            
-            if let insight = parseInsightResponse(response) {
-                currentInsight = insight
-                lastAnalysisDate = Date()
-                cacheInsight(insight)
-                print("🤖 AI Insights: Generated wellness-enhanced insight")
-            }
-            
+            let insight = try await fetchInsight(prompt: prompt)
+            currentInsight = insight
+            lastAnalysisDate = Date()
+            cacheInsight(insight)
+            print("🤖 AI Insights: Generated wellness-enhanced insight")
+
         } catch {
             print("🤖 AI Insights Error: \(error.localizedDescription)")
         }

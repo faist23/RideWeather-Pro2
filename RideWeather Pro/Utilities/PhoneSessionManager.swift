@@ -22,6 +22,24 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
     
     // Queue for serializing access
     private let syncQueue = DispatchQueue(label: "com.ridepro.phonesession", qos: .userInitiated)
+
+    // Pending debounced push (only touched on syncQueue)
+    private var pendingPush: DispatchWorkItem?
+
+    /// Coalesces bursts of update calls into a single context push.
+    /// updateApplicationContext replaces the previous context anyway, so
+    /// sending mid-burst is wasted encoding work — during app launch the
+    /// managers fire a dozen updates within a couple of seconds.
+    /// Must be called from syncQueue.
+    private func schedulePush() {
+        pendingPush?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.pendingPush = nil
+            self?.pushFullContext()
+        }
+        pendingPush = work
+        syncQueue.asyncAfter(deadline: .now() + 1.5, execute: work)
+    }
     
     override private init() {
         super.init()
@@ -38,7 +56,7 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
         syncQueue.async { [weak self] in
             self?.trainingLoadSummary = summary
             print("📱 Cached TrainingLoadSummary: TSB=\(summary.currentTSB)")
-            self?.pushFullContext()
+            self?.schedulePush()
         }
     }
     
@@ -48,7 +66,7 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
             self?.wellnessSummary = summary
             self?.currentWellness = current
             print("📱 Cached WellnessSummary")
-            self?.pushFullContext()
+            self?.schedulePush()
         }
     }
     
@@ -57,7 +75,7 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
         syncQueue.async { [weak self] in
             self?.readinessData = readiness
             print("📱 Cached Readiness: \(readiness.readinessScore)")
-            self?.pushFullContext()
+            self?.schedulePush()
         }
     }
     
@@ -66,7 +84,7 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
         syncQueue.async { [weak self] in
             self?.recoveryStatus = recovery
             print("📱 Cached Recovery: \(recovery.recoveryPercent)%")
-            self?.pushFullContext()
+            self?.schedulePush()
         }
     }
     
@@ -91,7 +109,7 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
                 
                 // Now push on background queue
                 self?.syncQueue.async {
-                    self?.pushFullContext()
+                    self?.schedulePush()
                 }
             }
         }
@@ -101,7 +119,7 @@ class PhoneSessionManager: NSObject, WCSessionDelegate {
     func updateAlert(_ alert: WeatherAlert?) {
         syncQueue.async { [weak self] in
             self?.currentAlert = alert
-            self?.pushFullContext()
+            self?.schedulePush()
         }
     }
     

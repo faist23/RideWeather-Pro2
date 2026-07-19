@@ -41,13 +41,26 @@ RideWeather Pro is a multi-platform Apple ecosystem application (iOS, watchOS, a
 1. **Runtime:** Deno / TypeScript.
 2. **Style:** Use modern TypeScript, explicit typing for request/response payloads, and standard Deno HTTP modules.
 3. **Secrets:** Never hardcode API keys. Rely on Supabase Vault or environment variables (`Deno.env.get`).
+4. **AI insights:** The app never calls api.anthropic.com directly — `AIInsightsManager` goes through the `ai-insight` edge function (model/schema pinned server-side; key in the `ANTHROPIC_API_KEY` secret).
+5. **Deploy:** CLI is authenticated and linked — `supabase functions deploy <name>`; secrets via `supabase secrets set KEY=value` (takes effect without redeploy).
 
 ## Domain Conventions
+
+### Large-Blob Persistence
+Never store large Codable arrays in UserDefaults — iOS rejects defaults domains ≥ 4 MB (savedRideAnalyses once hit 4.9 MB). Use the file-backed stores: `JSONFileStorage` (generic, handles one-time UserDefaults migration), `TrainingLoadStorage`, `WellnessStorage`. Hold them as `static let` so migration runs once per launch.
 
 ### Heat Index
 - Always use the shared NWS calculator (`RideWeather Pro/Utilities/HeatIndexCalculator.swift`); the watch target keeps a °F-only copy (`RideWeatherWatch Watch App/HeatIndexCalculator.swift`) that must stay in sync. Never reimplement the formula locally — a private "simple" copy in ride analysis once understated a 105 °F heat index as 91 °F.
 - UI convention (app-wide): show the heat index **in place of** feels-like when it applies (≥ 80 °F NWS floor), tinted by the NWS category color (`Category.color`: yellow/orange/red/purple). Below the floor, show feels-like. Complications, watch app, ride analysis, and route forecast all follow this rule.
 - Cross-target payloads (watch summary, complications) carry `heatIndex` in display units plus `heatIndexSeverity` (stable rank 1–4).
+
+### Air Quality
+- **Sourcing:** official EPA **AirNow** station data first, OpenWeather pollution model as fallback — model products understate smoke events by an order of magnitude (a real AQI-434 episode read as 64 from OpenWeather's model). Never "fix" anything by trusting model AQI more. All sourcing logic lives in `AirQualityManager` (`RideWeather Pro/AirQualityManager.swift`); don't re-add it to view models.
+- **EPA math:** `EPAAirQualityCalculator` (US EPA 0–500 scale, 2024 PM2.5 breakpoints, µg/m³→ppm/ppb gas conversion). The watch keeps a copy of the category bands/colors (`RideWeatherWatch Watch App/WatchAirQuality.swift`) that must stay in sync — same convention as the watch `HeatIndexCalculator`.
+- **Wire format:** cross-target payloads (`SharedWeatherSummary`, three must-match copies: watch, complications, phone) carry `aqi` plus `aqiSeverity` as a **stable rank 1–6** (`Category.severityRank` = rawValue + 1 — never send the rawValue, `good` is 0 locally but 1 on the wire).
+- **UI convention:** show the real EPA number at every level; warning treatment (banner/chips) only at Unhealthy+ via the shared `EPAAirQualityCalculator.warningBannerFloor` (151) — never a literal threshold. Category colors are the official EPA hues; `veryUnhealthy`/`hazardous` use dark EPA purple/maroon (iOS system `.purple` is too light for white text).
+- **Tests:** the AQ regression suite is `scripts/aqi-harness/run.sh` (standalone swiftc — there is no iOS test target). Run it whenever touching `EPAAirQualityCalculator` or `AirNowRouteAQISelector`.
+- **Keys:** AirNow API key in `AirNow.plist` (`AirNowApiKey`), one copy each in the phone and watch folders; the plists are gitignored-but-tracked like the other config plists.
 
 ### Humidity Units
 Two conventions coexist — convert once at the boundary and never divide twice:
@@ -75,6 +88,6 @@ Two conventions coexist — convert once at the boundary and never divide twice:
 
 ## Workflow Rules
 1. **Strict Platform Matching:** If the user states they like how a feature works on one platform (e.g., iOS) and requests that another platform (e.g., watchOS) match it, **do not alter the platform the user said they liked.** Only modify the target platform to match the requested behavior.
-2. **Do not modify `.pbxproj` directly:** If new files need to be added, explicitly mention that they must be added to the Xcode project manually by the user, or rely on Xcode's automatic tracking if the project format supports it.
+2. **Do not modify `.pbxproj` directly.** The project uses synced folder groups (`PBXFileSystemSynchronizedRootGroup`), so new files created under `RideWeather Pro/` (or the watch/complications folders) are added to their target automatically — no manual Xcode step needed.
 3. **Dependencies:** Do not introduce new Swift Package Manager dependencies or CocoaPods without explicit permission.
 4. **Testing:** When modifying logic in the `RouteAnalytics`, `RideAnalysis`, or `RoutePacing` engines, ensure edge cases are accounted for, as these directly affect rider safety and performance calculations.

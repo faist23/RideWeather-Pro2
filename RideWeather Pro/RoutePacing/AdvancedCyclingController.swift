@@ -348,9 +348,15 @@ extension AdvancedCyclingController {
 }
 
 extension AdvancedCyclingController {
-    
-    private var planStorageKey: String { "savedPacingPlans" }
-    
+
+    // Shared across all instances so the one-time UserDefaults migration
+    // runs once per launch (~4 MB blob exceeds the 4 MB defaults limit)
+    private static let planStorage = JSONFileStorage<StoredPacingPlan>(
+        fileName: "savedPacingPlans.json",
+        legacyUserDefaultsKey: "savedPacingPlans",
+        label: "Pacing Plans"
+    )
+
     // Save plan after generation
     func savePacingPlan(_ plan: PacingPlan, routeName: String) {
         // Append strategy abbreviation to route name
@@ -372,34 +378,27 @@ extension AdvancedCyclingController {
         
         var plans = loadSavedPlans()
         plans.append(planWrapper)
-        
-        // Keep last 20 plans
+
+        // Keep the 20 most recent plans (sort oldest-first so suffix
+        // keeps the newest — loadSavedPlans returns newest-first)
         if plans.count > 20 {
-            plans = Array(plans.suffix(20))
+            plans = Array(plans.sorted { $0.createdDate < $1.createdDate }.suffix(20))
         }
-        
-        if let encoded = try? JSONEncoder().encode(plans) {
-            UserDefaults.standard.set(encoded, forKey: planStorageKey)
-        }
-        
+
+        Self.planStorage.save(plans)
+
         print("✅ Pacing plan saved: \(routeName)")
     }
-    
+
     func loadSavedPlans() -> [StoredPacingPlan] {
-        guard let data = UserDefaults.standard.data(forKey: planStorageKey),
-              let plans = try? JSONDecoder().decode([StoredPacingPlan].self, from: data) else {
-            return []
-        }
-        return plans.sorted { $0.createdDate > $1.createdDate }
+        return Self.planStorage.load().sorted { $0.createdDate > $1.createdDate }
     }
-    
+
     func deletePlan(_ plan: StoredPacingPlan) {
         var plans = loadSavedPlans()
         plans.removeAll { $0.id == plan.id }
-        
-        if let encoded = try? JSONEncoder().encode(plans) {
-            UserDefaults.standard.set(encoded, forKey: planStorageKey)
-        }
+
+        Self.planStorage.save(plans)
     }
 }
 
