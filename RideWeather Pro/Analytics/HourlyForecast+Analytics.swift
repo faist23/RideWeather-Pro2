@@ -33,12 +33,23 @@ extension HourlyForecast {
 // MARK: - Unit-Aware Analytics Extensions
 extension HourlyForecast {
     
-    /// Enhanced cycling comfort calculation including ideal temp, UV Index and Air Quality
+    /// Enhanced cycling comfort: temperature (heat-index aware), wind, rain,
+    /// UV, and official EPA air quality — with a hard cap when air is
+    /// officially Unhealthy (≥ 151) or worse, so a hazardous-air day can
+    /// never score "comfortable" on sunshine alone.
+    /// `aqi` is the US EPA AQI (0–500), not OpenWeather's coarse 1–5 index.
     func enhancedCyclingComfort(using units: UnitSystem, idealTemp: Double, uvIndex: Double?, aqi: Int?) -> Double {
-        // Temperature score (40% weight) - NOW more granular
+        // Temperature score (40% weight). When the NWS heat index applies
+        // (≥ 80 °F), score against it instead of the dry temperature —
+        // matching the app-wide "heat index in place of feels-like" rule.
         let currentTemp = units == .metric ? tempC : tempF
-        let tempDiff = abs(currentTemp - idealTemp)
-        
+        let scoringTemp = HeatIndexCalculator.reading(
+            temperature: currentTemp,
+            humidity: humidity,
+            units: units
+        )?.value ?? currentTemp
+        let tempDiff = abs(scoringTemp - idealTemp)
+
         // Apply a penalty of 3 points for every degree of difference from the ideal
         let tempPenalty = tempDiff * 3.0
         let tempScore = max(0.0, (100.0 - tempPenalty) / 100.0)
@@ -77,25 +88,35 @@ extension HourlyForecast {
             }
         }
         
-        // Air Quality score (10% weight)
+        // Air Quality score (10% weight) — official EPA AQI categories
         var aqScore: Double = 1.0
         if let airQuality = aqi {
-            switch airQuality {
-            case 1: aqScore = 1.0 // Good
-            case 2: aqScore = 0.8 // Fair
-            case 3: aqScore = 0.6 // Moderate
-            case 4: aqScore = 0.4 // Poor
-            case 5: aqScore = 0.2 // Very Poor
-            default: aqScore = 0.7
+            switch EPAAirQualityCalculator.Category(aqi: airQuality) {
+            case .good: aqScore = 1.0
+            case .moderate: aqScore = 0.85
+            case .unhealthySensitive: aqScore = 0.6
+            case .unhealthy: aqScore = 0.35
+            case .veryUnhealthy: aqScore = 0.15
+            case .hazardous: aqScore = 0.0
             }
         }
-        
-        let weightedScore = (tempScore * 0.40) +
+
+        var weightedScore = (tempScore * 0.40) +
                            (windScore * 0.25) +
                            (rainScore * 0.15) +
                            (uvScore * 0.10) +
                            (aqScore * 0.10)
-        
+
+        // Hard cap: officially bad air bounds the score no matter how
+        // pleasant the rest of the weather is.
+        if let airQuality = aqi {
+            if airQuality >= 301 {
+                weightedScore = min(weightedScore, 0.15)
+            } else if airQuality >= EPAAirQualityCalculator.warningBannerFloor {
+                weightedScore = min(weightedScore, 0.40)
+            }
+        }
+
         return max(0.0, min(1.0, weightedScore))
     }
     

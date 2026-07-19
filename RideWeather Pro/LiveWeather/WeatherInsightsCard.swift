@@ -118,11 +118,11 @@ struct WeatherInsightsCard: View {
             windDeg: weather.windDeg,
             humidity: weather.humidity,
             uvIndex: insights?.uvIndex,
-            aqi: insights?.airQuality
+            aqi: viewModel.currentAirQuality?.aqi
         )
-        
-//        return forecastForCalculation.enhancedCyclingComfort(using: viewModel.settings.units, uvIndex: insights?.uvIndex, aqi: insights?.airQuality)
-        return forecastForCalculation.enhancedCyclingComfort(using: viewModel.settings.units, idealTemp: viewModel.settings.idealTemperature, uvIndex: insights?.uvIndex, aqi: insights?.airQuality)
+
+        // Official EPA AQI (AirNow-first), not the provider's 1–5 index
+        return forecastForCalculation.enhancedCyclingComfort(using: viewModel.settings.units, idealTemp: viewModel.settings.idealTemperature, uvIndex: insights?.uvIndex, aqi: viewModel.currentAirQuality?.aqi)
     }
     
     // Converts the numeric comfort score into a descriptive label.

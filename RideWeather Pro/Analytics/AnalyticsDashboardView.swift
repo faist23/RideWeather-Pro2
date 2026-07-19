@@ -71,7 +71,14 @@ struct AnalyticsDashboardView: View {
     
     // MARK: - Computed Properties
     private var filteredData: [HourlyForecast] {
-        let sortedData = hourlyData.sorted { $0.date < $1.date }
+        // Analytics look forward only: drop hours already in the past (the
+        // in-progress hour survives via the half-hour grace). Apple's hourly
+        // feed includes earlier hours of the current day, which once made
+        // "best hour to start" recommend a time that had already gone by.
+        let cutoff = Date().addingTimeInterval(-1800)
+        let sortedData = hourlyData
+            .filter { $0.date >= cutoff }
+            .sorted { $0.date < $1.date }
         return Array(sortedData.prefix(timeRange.hours))
     }
     

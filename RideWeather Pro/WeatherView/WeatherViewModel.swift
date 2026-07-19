@@ -468,12 +468,14 @@ class WeatherViewModel: ObservableObject {
             units: settings.units.rawValue
         )
         
-        let currentAQI = self.enhancedInsights?.airQuality
-        self.allHourlyData = fetchedData.map { forecast in
-            var mutableForecast = forecast
-            mutableForecast.aqi = currentAQI
-            return mutableForecast
-        }
+        self.allHourlyData = fetchedData
+        applyHourlyAirQuality()
+
+        // The per-hour AirNow values were computed for whichever hours were
+        // known at the last refresh — cover the freshly fetched range too
+        // (cached AirNow fetches, so this is cheap).
+        let coordinate = location.coordinate
+        Task { await self.refreshHourlyAirQuality(coordinate: coordinate) }
     }
     
     func runDepartureTimeOptimization() async {
@@ -634,13 +636,36 @@ class WeatherViewModel: ObservableObject {
         guard !Task.isCancelled else { return }
         currentAirQuality = result
         refreshSummaryAirQuality(with: result)
+        await refreshHourlyAirQuality(coordinate: location.coordinate)
+    }
 
+    /// Computes per-hour official AQI for every displayed forecast hour
+    /// (8-hour cards + extended analytics range) and stamps it onto the hour
+    /// models so comfort scoring and analytics read EPA values.
+    private func refreshHourlyAirQuality(coordinate: CLLocationCoordinate2D) async {
+        let hourDates = Set(hourlyForecast.map(\.date)).union(allHourlyData.map(\.date))
         let hourly = await AirQualityManager.shared.hourlyAirQuality(
-            hours: hourlyForecast.map(\.date),
-            coordinate: location.coordinate
+            hours: Array(hourDates),
+            coordinate: coordinate
         )
         guard !Task.isCancelled else { return }
         hourlyAirQuality = hourly
+        applyHourlyAirQuality()
+    }
+
+    /// `HourlyForecast.aqi` carries the US EPA AQI (0–500): the hour's own
+    /// AirNow value when known, else the current reading.
+    private func applyHourlyAirQuality() {
+        let fallback = currentAirQuality?.aqi
+        func stamped(_ hours: [HourlyForecast]) -> [HourlyForecast] {
+            hours.map { hour in
+                var updated = hour
+                updated.aqi = hourlyAirQuality[hour.date]?.aqi ?? fallback
+                return updated
+            }
+        }
+        hourlyForecast = stamped(hourlyForecast)
+        allHourlyData = stamped(allHourlyData)
     }
 
     /// Patches the saved watch/widget summary with the freshly resolved AQI.

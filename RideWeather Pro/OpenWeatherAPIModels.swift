@@ -45,7 +45,7 @@ struct HourlyForecast: Identifiable, Equatable {
     let windSpeed: Double
     let windDeg: Int
     let uvIndex: Double?
-    var aqi: Int? // mutable property for Air Quality Index
+    var aqi: Int? // US EPA AQI (0–500), stamped from AirNow after fetch — NOT OpenWeather's 1–5 index
 
     var windDirection: String {
         switch windDeg {
