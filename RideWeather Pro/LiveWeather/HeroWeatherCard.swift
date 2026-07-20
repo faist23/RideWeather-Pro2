@@ -85,6 +85,8 @@ struct HeroWeatherCard: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { showingAQIExplanation = true }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint("Shows what the Air Quality Index means")
                 }
             }
 
