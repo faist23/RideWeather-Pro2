@@ -12,6 +12,7 @@ struct HeroWeatherCard: View {
     let weather: DisplayWeatherModel
     @EnvironmentObject var viewModel: WeatherViewModel
     @State private var animateTemp = false
+    @State private var showingAQIExplanation = false
 
     private var showsAQI: Bool {
         viewModel.currentAirQuality.map { $0.category > .good } ?? false
@@ -77,6 +78,13 @@ struct HeroWeatherCard: View {
                         value: "\(airQuality.aqi)",
                         color: airQuality.category.color
                     )
+                    .overlay(alignment: .topTrailing) {
+                        Image(systemName: "info.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { showingAQIExplanation = true }
                 }
             }
 
@@ -87,6 +95,9 @@ struct HeroWeatherCard: View {
             ) {
                 HeatIndexBanner(reading: heatIndex)
             }
+        }
+        .sheet(isPresented: $showingAQIExplanation) {
+            AQIExplanationView(current: viewModel.currentAirQuality)
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
