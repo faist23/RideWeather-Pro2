@@ -35,7 +35,8 @@ RideWeather Pro is a multi-platform Apple ecosystem application (iOS, watchOS, a
 2. **Modern Concurrency:** Use `async/await`, `Task`, and `actor` for all asynchronous operations and data race safety. Avoid completion handlers.
 3. **MVVM Pattern:** Keep Views as declarative as possible. Place business logic, state mutation, and API calls inside corresponding ViewModels.
 4. **Services & Managers:** Use centralized managers (e.g., `LocationManager`, `WellnessManager`, `GarminService`) for cross-cutting concerns, hardware APIs, and third-party API communication. Inject these into ViewModels or Views via Environment where appropriate.
-5. **Platform Preprocessor Macros:** When writing code shared between iOS and watchOS, use `#if os(iOS)` and `#if os(watchOS)` appropriately to prevent compilation errors.
+5. **Single shared `WeatherViewModel`:** `RideWeatherProApp` owns the one `WeatherViewModel` (`@StateObject`) and injects it app-wide via `.environmentObject`. Child views (`MainView`, tabs, cards) must consume it with `@EnvironmentObject` — never declare their own `@StateObject private var viewModel = WeatherViewModel()`. A second instance spins up a duplicate `LocationManager` and duplicate concurrent weather/AirNow fetches, which once left current-conditions AQI intermittently nil on the instance bound to the UI (only appearing after a manual refresh).
+6. **Platform Preprocessor Macros:** When writing code shared between iOS and watchOS, use `#if os(iOS)` and `#if os(watchOS)` appropriately to prevent compilation errors.
 
 ### Supabase Edge Functions
 1. **Runtime:** Deno / TypeScript.
