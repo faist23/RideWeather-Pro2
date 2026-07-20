@@ -9,12 +9,12 @@ import MapKit
 import CoreLocation
 
 struct MainView: View {
-    @StateObject private var viewModel = WeatherViewModel()
-    
+    @EnvironmentObject var viewModel: WeatherViewModel // Inherited from App
+
     @State private var selectedTab = 0
     @State private var lastLiveWeatherTap = Date()
     @State private var lastFitnessTap = Date()  // Track fitness tab taps
-    
+
     @EnvironmentObject var wahooService: WahooService // Inherited from App
     @EnvironmentObject var healthManager: HealthKitManager  // Access HealthKit
     @EnvironmentObject var garminService: GarminService    // Access Garmin
