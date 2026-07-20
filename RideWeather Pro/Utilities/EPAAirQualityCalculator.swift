@@ -36,7 +36,7 @@ enum EPAAirQualityCalculator {
     }
 
     /// EPA AQI categories with the standard EPA color convention.
-    enum Category: Int, Comparable {
+    enum Category: Int, Comparable, CaseIterable {
         case good
         case moderate
         case unhealthySensitive
@@ -97,6 +97,20 @@ enum EPAAirQualityCalculator {
             case .unhealthy: return "Consider rescheduling — cut intensity and duration."
             case .veryUnhealthy: return "Rescheduling strongly recommended — health risk for all riders."
             case .hazardous: return "Outdoor exercise not advised."
+            }
+        }
+
+        /// Numeric AQI band for this category, mirroring `init(aqi:)`'s
+        /// thresholds. Used by the explanation-sheet legend so the ranges
+        /// can never drift from the category boundaries.
+        var rangeDescription: String {
+            switch self {
+            case .good: return "0–50"
+            case .moderate: return "51–100"
+            case .unhealthySensitive: return "101–150"
+            case .unhealthy: return "151–200"
+            case .veryUnhealthy: return "201–300"
+            case .hazardous: return "301–500"
             }
         }
     }

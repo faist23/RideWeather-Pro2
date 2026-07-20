@@ -356,5 +356,28 @@ if RouteSampler.samplePoints(from: []).isEmpty,
     print("FAIL R5 degenerate inputs"); failures += 1
 }
 
+// Category legend metadata (drives the AQI explanation sheet).
+let allCategories = EPAAirQualityCalculator.Category.allCases
+if allCategories == [.good, .moderate, .unhealthySensitive, .unhealthy, .veryUnhealthy, .hazardous] {
+    print("pass C1 category order (\(allCategories.count) cases)")
+} else {
+    print("FAIL C1 category order: \(allCategories)"); failures += 1
+}
+
+let expectedRanges: [(EPAAirQualityCalculator.Category, String)] = [
+    (.good, "0–50"),
+    (.moderate, "51–100"),
+    (.unhealthySensitive, "101–150"),
+    (.unhealthy, "151–200"),
+    (.veryUnhealthy, "201–300"),
+    (.hazardous, "301–500"),
+]
+var rangeFailures = 0
+for (cat, expected) in expectedRanges where cat.rangeDescription != expected {
+    print("FAIL C2 range \(cat): \(cat.rangeDescription) vs \(expected)")
+    rangeFailures += 1
+}
+if rangeFailures == 0 { print("pass C2 category ranges") } else { failures += rangeFailures }
+
 if failures > 0 { print("\(failures) FAILURES"); exit(1) }
 print("ALL PASS")
