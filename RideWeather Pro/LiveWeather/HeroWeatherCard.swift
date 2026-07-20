@@ -12,7 +12,11 @@ struct HeroWeatherCard: View {
     let weather: DisplayWeatherModel
     @EnvironmentObject var viewModel: WeatherViewModel
     @State private var animateTemp = false
-    
+
+    private var showsAQI: Bool {
+        viewModel.currentAirQuality.map { $0.category > .good } ?? false
+    }
+
     var body: some View {
         VStack(spacing: 16) {
             HStack(alignment: .top, spacing: 16) {
@@ -41,7 +45,7 @@ struct HeroWeatherCard: View {
                 }
             }
             
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 12) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: showsAQI ? 4 : 3), spacing: 12) {
                 WeatherDetailItem(
                     icon: "thermometer",
                     label: "Feels Like",
@@ -63,6 +67,15 @@ struct HeroWeatherCard: View {
                         label: "Humidity",
                         value: "\(weather.humidity)%",
                         color: .blue
+                    )
+                }
+
+                if showsAQI, let airQuality = viewModel.currentAirQuality {
+                    WeatherDetailItem(
+                        icon: "aqi.medium",
+                        label: "AQI",
+                        value: "\(airQuality.aqi)",
+                        color: airQuality.category.color
                     )
                 }
             }
