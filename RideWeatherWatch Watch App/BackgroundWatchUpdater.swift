@@ -59,6 +59,12 @@ class BackgroundWatchUpdater: NSObject {
         await updateSteps()
         let success = await updateWeather()
 
+        // Reload once, unconditionally: today's step count must reach the
+        // complication even when the weather fetch fails, so this can't live
+        // behind updateWeather's success path (that once left steps frozen on
+        // yesterday's count all day whenever weather was down).
+        WidgetCenter.shared.reloadAllTimelines()
+
         // If this run failed, reschedule with back-off on top of the optimistic
         // one already queued (the later one wins on watchOS).
         if !success {
@@ -103,7 +109,8 @@ class BackgroundWatchUpdater: NSObject {
 
             WatchSessionManager.shared.weatherSummary = prunedSummary
             WatchSessionManager.shared.updateWeatherAlerts(result.alerts)
-            WidgetCenter.shared.reloadAllTimelines()
+            // Timeline reload happens once in handleBackgroundTask, after steps,
+            // so it fires regardless of whether this weather fetch succeeded.
 
             print("✅ Background: All systems synced.")
             return true

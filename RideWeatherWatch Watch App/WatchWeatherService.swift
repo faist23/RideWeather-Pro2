@@ -14,7 +14,20 @@ class WatchWeatherService {
     
     private var openWeather: [String: String]?
     private let appleWeather = WeatherKit.WeatherService.shared
-    
+
+    /// Bounded session for OpenWeather (10 s request / 30 s resource). These
+    /// fetches are awaited inside the watchOS background-refresh path, where an
+    /// unbounded `URLSession.shared` (default 60 s) could overrun the tight
+    /// background execution budget and get the app throttled — starving the
+    /// complications (and today's step count, whose reload is gated behind the
+    /// weather fetch) of updates. Mirrors AirNowService / WatchAirQuality.
+    private let openWeatherSession: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 30
+        return URLSession(configuration: configuration)
+    }()
+
     private var apiKey: String {
         return configValue(forKey: "OpenWeatherApiKey") ?? "INVALID_API"
     }
@@ -122,10 +135,10 @@ class WatchWeatherService {
         let urlString = "https://api.openweathermap.org/data/3.0/onecall?lat=\(coordinate.latitude)&lon=\(coordinate.longitude)&exclude=minutely,hourly,current,daily&appid=\(apiKey)&units=imperial"
         
         guard let url = URL(string: urlString) else { return [] }
-        
-        let (data, _) = try await URLSession.shared.data(from: url)
+
+        let (data, _) = try await openWeatherSession.data(from: url)
         let response = try JSONDecoder().decode(WatchOneCallResponse.self, from: data)
-        
+
         return response.alerts?.map { alertRaw in
             WeatherAlert(
                 message: alertRaw.event,
@@ -144,7 +157,7 @@ class WatchWeatherService {
             throw WatchWeatherError.invalidURL
         }
 
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await openWeatherSession.data(from: url)
         let response = try JSONDecoder().decode(WatchOneCallResponse.self, from: data)
 
         // OpenWeather returns wind in m/s for metric (mph for imperial);

@@ -89,6 +89,18 @@ enum WatchAirQuality {
 
     private static var cached: (value: Int, severityRank: Int, timestamp: Date)?
 
+    /// Bounded session mirroring the phone's `AirNowService` (10 s request /
+    /// 30 s resource). Critical on watchOS: this fetch is awaited inside the
+    /// background-refresh path, so an unbounded `URLSession.shared` (default
+    /// 60 s) could overrun the tight background execution budget and get the
+    /// app throttled, starving the complications of updates.
+    private static let session: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 30
+        return URLSession(configuration: configuration)
+    }()
+
     /// Max official AirNow AQI across current per-pollutant observations
     /// (25-mile reporting-area search), or nil when there is no key, no US
     /// coverage, or the request fails — the watch simply hides the row.
@@ -103,7 +115,7 @@ enum WatchAirQuality {
         }
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await session.data(from: url)
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
                 return nil
             }
