@@ -42,7 +42,7 @@ RideWeather Pro is a multi-platform Apple ecosystem application (iOS, watchOS, a
 1. **Runtime:** Deno / TypeScript.
 2. **Style:** Use modern TypeScript, explicit typing for request/response payloads, and standard Deno HTTP modules.
 3. **Secrets:** Never hardcode API keys. Rely on Supabase Vault or environment variables (`Deno.env.get`).
-4. **AI insights:** The app never calls api.anthropic.com directly — `AIInsightsManager` goes through the `ai-insight` edge function (model/schema pinned server-side; key in the `ANTHROPIC_API_KEY` secret).
+4. **AI insights:** `AIInsightsManager` calls `api.anthropic.com` directly; the key lives in the gitignored `AnthropicConfig.plist` (`AIKey`). The `ai-insight` edge function is deployed but abandoned — the functions gateway 401s (`UNAUTHORIZED_LEGACY_JWT`) every token this project can issue, including real user sessions, because the project still signs with the legacy HS256 secret and its JWKS is empty. Reviving it requires migrating the project's JWT signing keys first.
 5. **Deploy:** CLI is authenticated and linked — `supabase functions deploy <name>`; secrets via `supabase secrets set KEY=value` (takes effect without redeploy).
 
 ## Domain Conventions

@@ -2,8 +2,8 @@
 //  AIInsightsManager.swift
 //  RideWeather Pro
 //
-//  AI-powered training insights via the ai-insight Supabase Edge Function,
-//  which holds the Anthropic API key server-side.
+//  AI-powered training insights via a direct Anthropic Messages API call.
+//  The key is read from AnthropicConfig.plist (gitignored, key `AIKey`).
 //  Easy to disable/remove: Just set isEnabled = false
 //
 
@@ -11,7 +11,6 @@
 import Foundation
 import SwiftUI
 import Combine
-import Supabase
 
 @MainActor
 class AIInsightsManager: ObservableObject {
@@ -28,16 +27,47 @@ class AIInsightsManager: ObservableObject {
     @Published var requestCount: Int = 0
     
     // MARK: - Usage Tracking
-    private let costPerInputToken = 0.000003  // $3 per 1M tokens
-    private let costPerOutputToken = 0.000015 // $15 per 1M tokens
+    private let costPerInputToken = 0.000002  // $2 per 1M tokens (Sonnet 5)
+    private let costPerOutputToken = 0.000010 // $10 per 1M tokens (Sonnet 5)
     
     private let userDefaults = UserDefaults.standard
     private let insightKey = "cachedAIInsight"
     private let costKey = "totalAICost"
     private let requestCountKey = "aiRequestCount"
-    
+
+    // MARK: - Configuration
+    private static let messagesEndpoint = URL(string: "https://api.anthropic.com/v1/messages")!
+    private static let model = "claude-sonnet-5"
+
+    private var anthropicConfig: [String: String]?
+
+    private var apiKey: String? {
+        guard let key = anthropicConfig?["AIKey"], !key.isEmpty else { return nil }
+        return key
+    }
+
     init() {
+        loadConfig()
         loadCachedData()
+    }
+
+    /// Loads the Anthropic key from AnthropicConfig.plist. The plist is
+    /// gitignored like the other config plists, so a fresh checkout has to
+    /// recreate it before insights will work.
+    private func loadConfig() {
+        guard let path = Bundle.main.path(forResource: "AnthropicConfig", ofType: "plist") else {
+            print("🤖 AI Insights: ❌ AnthropicConfig.plist not found in bundle")
+            anthropicConfig = [:]
+            return
+        }
+
+        guard let config = NSDictionary(contentsOfFile: path) as? [String: String] else {
+            print("🤖 AI Insights: ❌ Failed to parse AnthropicConfig.plist as [String: String]")
+            anthropicConfig = [:]
+            return
+        }
+
+        anthropicConfig = config
     }
 
     // MARK: - Public Methods
@@ -237,24 +267,57 @@ class AIInsightsManager: ObservableObject {
         return prompt
     }
     
-    /// Requests an insight from the ai-insight edge function. The function
-    /// holds the Anthropic API key server-side and enforces the response
-    /// schema via structured outputs, so the payload always decodes.
+    /// Requests an insight straight from the Anthropic Messages API.
+    ///
+    /// `thinking` is explicitly disabled: Sonnet 5 thinks adaptively when the
+    /// parameter is omitted, which would eat the small `max_tokens` budget
+    /// before the JSON is written.
     private func fetchInsight(prompt: String) async throws -> AIInsight {
-        let envelope: InsightEnvelope
-        do {
-            envelope = try await SupabaseManager.shared.client.functions.invoke(
-                "ai-insight",
-                options: FunctionInvokeOptions(body: InsightRequestPayload(prompt: prompt))
-            )
-        } catch let FunctionsError.httpError(code, data) {
-            let message = String(data: data, encoding: .utf8) ?? ""
-            throw AIInsightError.apiError("HTTP \(code) \(message)")
+        guard let apiKey else {
+            throw AIInsightError.missingAPIKey
         }
 
-        trackUsage(inputTokens: envelope.usage.inputTokens, outputTokens: envelope.usage.outputTokens)
+        var request = URLRequest(url: Self.messagesEndpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
 
-        let insight = envelope.insight
+        let body: [String: Any] = [
+            "model": Self.model,
+            "max_tokens": 1024,
+            "thinking": ["type": "disabled"],
+            "messages": [["role": "user", "content": prompt]]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AIInsightError.apiError("No HTTP response")
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let message = (json?["error"] as? [String: Any])?["message"] as? String
+            throw AIInsightError.apiError(message ?? "HTTP \(httpResponse.statusCode)")
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let content = json["content"] as? [[String: Any]],
+              let text = content.first(where: { $0["type"] as? String == "text" })?["text"] as? String
+        else {
+            throw AIInsightError.invalidResponse
+        }
+
+        if let usage = json["usage"] as? [String: Any] {
+            trackUsage(
+                inputTokens: usage["input_tokens"] as? Int ?? 0,
+                outputTokens: usage["output_tokens"] as? Int ?? 0
+            )
+        }
+
+        let insight = try decodeInsightPayload(from: text)
         return AIInsight(
             priority: AIInsight.Priority(rawValue: insight.priority) ?? .info,
             title: insight.title,
@@ -264,6 +327,27 @@ class AIInsightsManager: ObservableObject {
             confidence: insight.confidence,
             generatedAt: Date()
         )
+    }
+
+    /// The model answers with a bare JSON object, but occasionally wraps it in
+    /// a ```json fence or a sentence. Pull out the outermost braces before
+    /// decoding so a stray wrapper doesn't cost the whole insight.
+    private func decodeInsightPayload(from text: String) throws -> AIInsightResponse {
+        guard let start = text.firstIndex(of: "{"),
+              let end = text.lastIndex(of: "}"),
+              start < end
+        else {
+            throw AIInsightError.invalidResponse
+        }
+
+        let json = String(text[start...end])
+        guard let data = json.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(AIInsightResponse.self, from: data)
+        else {
+            throw AIInsightError.invalidResponse
+        }
+
+        return payload
     }
 
     private func trackUsage(inputTokens: Int, outputTokens: Int) {
@@ -355,33 +439,19 @@ private struct AIInsightResponse: Codable {
     let confidence: String
 }
 
-private struct InsightRequestPayload: Encodable {
-    let prompt: String
-}
-
-/// Response envelope from the ai-insight edge function
-private struct InsightEnvelope: Decodable {
-    let insight: AIInsightResponse
-    let usage: Usage
-
-    struct Usage: Decodable {
-        let inputTokens: Int
-        let outputTokens: Int
-
-        enum CodingKeys: String, CodingKey {
-            case inputTokens = "input_tokens"
-            case outputTokens = "output_tokens"
-        }
-    }
-}
-
 enum AIInsightError: LocalizedError {
     case apiError(String)
+    case invalidResponse
+    case missingAPIKey
 
     var errorDescription: String? {
         switch self {
         case .apiError(let message):
             return "AI insight request failed: \(message)"
+        case .invalidResponse:
+            return "AI insight response could not be decoded"
+        case .missingAPIKey:
+            return "No Anthropic API key — add AnthropicConfig.plist with an AIKey entry"
         }
     }
 }
