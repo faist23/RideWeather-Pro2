@@ -1,5 +1,7 @@
 # AirNow Route Air Quality (with OpenWeather Fallback) — Design
 
+> **Update 2026-11-25:** AirNow retired the two endpoints below on 2026-09-30. The app now uses `/aq/observation/current/ziplatlong/` and `/aq/forecast/current/`, which return camelCase fields (`nowcastAQI`, `dateValid`, `categoryNumber`, …). The response shapes listed below are historical; see CLAUDE.md → Air Quality → Endpoints.
+
 **Date:** 2026-07-17
 **Status:** Approved
 **Builds on:** `2026-07-17-route-forecast-air-quality-design.md` (merged at `0f0890c`)

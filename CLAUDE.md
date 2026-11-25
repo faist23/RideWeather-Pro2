@@ -42,13 +42,13 @@ RideWeather Pro is a multi-platform Apple ecosystem application (iOS, watchOS, a
 1. **Runtime:** Deno / TypeScript.
 2. **Style:** Use modern TypeScript, explicit typing for request/response payloads, and standard Deno HTTP modules.
 3. **Secrets:** Never hardcode API keys. Rely on Supabase Vault or environment variables (`Deno.env.get`).
-4. **AI insights:** `AIInsightsManager` calls `api.anthropic.com` directly; the key lives in the gitignored `AnthropicConfig.plist` (`AIKey`). The `ai-insight` edge function is deployed but abandoned — the functions gateway 401s (`UNAUTHORIZED_LEGACY_JWT`) every token this project can issue, including real user sessions, because the project still signs with the legacy HS256 secret and its JWKS is empty. Reviving it requires migrating the project's JWT signing keys first.
+4. **AI insights:** `AIInsightsManager` calls `api.anthropic.com` directly; the key lives in the gitignored `AnthropicConfig.plist` (`AIKey`). Model `claude-sonnet-5-5` with structured JSON output (`output_config.format` + `insightSchema`), server-side fallback beta, and explicit `refusal`/`max_tokens` handling. A "credit balance is too low" error is the Console org's API balance, not app code — a Claude Code subscription doesn't fund it. The prompt's recent training must come from `AIInsightsManager.lastSevenDays(of:)`: callers pass the chart's `dailyLoads` (oldest-first over the whole period, plus projected days), so a `prefix(7)` silently sent the oldest week and never today. A changed training fingerprint bypasses the 6-hour re-analysis limit. The `ai-insight` edge function is deployed but abandoned — the functions gateway 401s (`UNAUTHORIZED_LEGACY_JWT`) every token this project can issue, including real user sessions, because the project still signs with the legacy HS256 secret and its JWKS is empty. Reviving it requires migrating the project's JWT signing keys first.
 5. **Deploy:** CLI is authenticated and linked — `supabase functions deploy <name>`; secrets via `supabase secrets set KEY=value` (takes effect without redeploy).
 
 ## Domain Conventions
 
 ### Large-Blob Persistence
-Never store large Codable arrays in UserDefaults — iOS rejects defaults domains ≥ 4 MB (savedRideAnalyses once hit 4.9 MB). Use the file-backed stores: `JSONFileStorage` (generic, handles one-time UserDefaults migration), `TrainingLoadStorage`, `WellnessStorage`. Hold them as `static let` so migration runs once per launch.
+Never store large Codable arrays in UserDefaults — iOS rejects defaults domains ≥ 4 MB (savedRideAnalyses once hit 4.9 MB). Use the file-backed stores: `JSONFileStorage` (generic, handles one-time UserDefaults migration of legacy *arrays*), `TrainingLoadStorage`, `WellnessStorage`, `AnalysisSourceStorage` (per-analysis source info; pruned via `AnalysisStorageManager` save/delete). Hold them as `static let` so migration runs once per launch.
 
 ### Heat Index
 - Always use the shared NWS calculator (`RideWeather Pro/Utilities/HeatIndexCalculator.swift`); the watch target keeps a °F-only copy (`RideWeatherWatch Watch App/HeatIndexCalculator.swift`) that must stay in sync. Never reimplement the formula locally — a private "simple" copy in ride analysis once understated a 105 °F heat index as 91 °F.
@@ -56,6 +56,7 @@ Never store large Codable arrays in UserDefaults — iOS rejects defaults domain
 - Cross-target payloads (watch summary, complications) carry `heatIndex` in display units plus `heatIndexSeverity` (stable rank 1–4).
 
 ### Air Quality
+- **Endpoints:** AirNow retired `observation/latLong/current` and `forecast/latLong` on 2026-09-30 (HTTP 410, which surfaces only as `NSURLError -1011`). Use `/aq/observation/current/ziplatlong/` (keys `nowcastAQI`, `parameterName`; nearest site per pollutant) and `/aq/forecast/current/` (keys `dateValid`, `aqi`, `categoryNumber`; many areas send `aqi: -1` with only a category). Phone `AirNowService` and watch `WatchAirQuality` must stay in sync. Migration notice: https://docs.airnowapi.org/docs/AirNowAPIUpdates2026June.pdf (per-service docs need an AirNow login).
 - **Sourcing:** official EPA **AirNow** station data first, OpenWeather pollution model as fallback — model products understate smoke events by an order of magnitude (a real AQI-434 episode read as 64 from OpenWeather's model). Never "fix" anything by trusting model AQI more. All sourcing logic lives in `AirQualityManager` (`RideWeather Pro/AirQualityManager.swift`); don't re-add it to view models.
 - **EPA math:** `EPAAirQualityCalculator` (US EPA 0–500 scale, 2024 PM2.5 breakpoints, µg/m³→ppm/ppb gas conversion). The watch keeps a copy of the category bands/colors (`RideWeatherWatch Watch App/WatchAirQuality.swift`) that must stay in sync — same convention as the watch `HeatIndexCalculator`.
 - **Wire format:** cross-target payloads (`SharedWeatherSummary`, three must-match copies: watch, complications, phone) carry `aqi` plus `aqiSeverity` as a **stable rank 1–6** (`Category.severityRank` = rawValue + 1 — never send the rawValue, `good` is 0 locally but 1 on the wire).
@@ -71,6 +72,7 @@ Two conventions coexist — convert once at the boundary and never divide twice:
 
 ### Cross-Device Settings Sync
 - App groups do **not** sync between iPhone and Watch; settings travel in the WCSession application context (`PhoneSessionManager`) and are re-stored in the watch-side app group.
+- `WeatherViewModel.settings` saves are debounced 500 ms (units/provider changes save immediately); `RideWeatherProApp` calls `flushPendingSettingsSave()` when the scene leaves `.active`. Any new early-exit path that could lose an edit must flush too.
 - Wire values must be stable tokens (e.g. `WeatherProvider.syncToken`: `"apple"`/`"openweather"`), never derived from display `rawValue`s — `"Apple Weather".lowercased()` once silently switched the watch to the wrong provider.
 
 ### Ride Analysis Weather
@@ -86,7 +88,8 @@ Two conventions coexist — convert once at the boundary and never divide twice:
 3. **File Structure:**
    - Ensure new SwiftUI views are placed in their respective feature folders (e.g., `LiveWeather/`, `RoutePacing/`).
    - Keep files focused. If a file exceeds 300-400 lines, consider breaking out sub-views or moving logic into a ViewModel/Helper.
-4. **Documentation:** Add brief documentation comments (`///`) to public methods, complex algorithms (like pacing and power physics engines), and model properties.
+4. **Swift Charts & SF Symbols:** calendar strides (`.stride(by: .hour)`) only work on `Date` axes; a `TimeInterval`/numeric axis needs a numeric stride or Charts logs "Axis values are incompatible with the data type". Check new SF Symbol names exist (`/System/Library/CoreServices/CoreGlyphs.bundle/Contents/Resources/name_availability.plist`) — invalid names render blank and only log at runtime.
+5. **Documentation:** Add brief documentation comments (`///`) to public methods, complex algorithms (like pacing and power physics engines), and model properties.
 
 ## Workflow Rules
 1. **Strict Platform Matching:** If the user states they like how a feature works on one platform (e.g., iOS) and requests that another platform (e.g., watchOS) match it, **do not alter the platform the user said they liked.** Only modify the target platform to match the requested behavior.

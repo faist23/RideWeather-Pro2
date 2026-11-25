@@ -56,3 +56,48 @@ Added `wind_deg` and `pop` to OpenWeather structs; mapped both paths (Apple Weat
 
 ### ~~Duplicate weather fetches on launch~~ DONE
 Removed `requestLocation()` from `locationManagerDidChangeAuthorization` (was firing on every init even when already authorized). Added `isFetchingWeather` in-flight guard to `updateWeather()`. Removed redundant `startUpdating()` from `onAppear` — `onChange(.active)` already fires on cold launch. Result: one fetch per foreground entry instead of 5+.
+
+---
+
+## Technical Audit (November 2026) — PR #4
+
+### ~~Route heat warnings: humidity double-scaled~~ DONE
+Pacing insights passed the 0–1 humidity fraction to the percent-based NWS calculator; dehydration risk now uses the shared `HeatIndexCalculator`.
+
+### ~~OAuth refresh disconnects on transient errors~~ DONE
+Strava/Garmin disconnect only on HTTP 400/401; network, 5xx, 429 and decode failures keep tokens.
+
+### ~~Live weather ignores movement~~ DONE
+Re-fetches after 1 km of movement; refresh uses the latest fix; in-flight fetches coalesce and stale results are dropped.
+
+### ~~AirNow endpoints retired (HTTP 410)~~ DONE
+Migrated phone and watch to `/aq/observation/current/ziplatlong/` and `/aq/forecast/current/`.
+
+### ~~AI insights skip today's workout~~ DONE
+Prompt used the oldest week of the chart period; now the last 7 days ending today, and a new workout bypasses the 6-hour limit. Also moved to Sonnet 5.5 with structured output.
+
+### ~~Ride analysis accuracy + storage~~ DONE
+Weighted segment merge, zero-power guard, moving time from FIT samples, source info moved to `analysisSources.json` and pruned.
+
+### ~~Settings saved on every change~~ DONE
+Debounced saves, flushed on background; units conversion now persisted.
+
+### ~~Console warnings~~ DONE
+Numeric stride on HR/power chart time axes; replaced invalid SF Symbols `exclamationmark.thermometer` and watch `cloud.slash`.
+
+### Verify on device
+- [ ] AI insight mentions today's ride
+- [ ] No AirNow `-1011` warnings; AQI shows source AirNow
+- [ ] No Charts axis / missing-symbol warnings
+
+### Open — security (needs decisions)
+- **Supabase `garmin_wellness` RLS:** confirm the anon key can't read/write it (`select * from pg_policies where tablename='garmin_wellness';`).
+- **Garmin webhook:** no caller authentication; follows URLs from the request body; logs health data. Also `config.toml` has `verify_jwt=true`, which doesn't match how the webhook is deployed.
+- **OAuth client secrets bundled in the app:** move token exchange/refresh to an edge function.
+- **AirNow API key committed** in `docs/superpowers/plans/2026-07-17-airnow-route-air-quality.md`; consider rotating it.
+
+### Open — performance and cleanup
+- Ride analysis runs on the main actor; move the heavy work off it.
+- AirNow forecasts that carry only a category (`aqi: -1`) are ignored; consider mapping the category to an AQI floor.
+- Watch AQI cache ignores location.
+- Dead `userFTP`/`userWeight` keys; `ObservableObject` → `@Observable` migration; stray `print`s; formatters created repeatedly; `URLSession` timeouts; very large files.
