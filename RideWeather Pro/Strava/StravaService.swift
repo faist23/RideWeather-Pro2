@@ -413,71 +413,54 @@ class StravaService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                 let validHttpResponse = response as? HTTPURLResponse // Use this name consistently now
                 // --- END CAPTURE ---
                 
+                // Only a rejected refresh token (400/401) means the user must
+                // re-authenticate. Network errors, 5xx and 429 are transient:
+                // keep the stored tokens so the next attempt can succeed.
                 if let error = error {
                     self.errorMessage = "Token refresh network failed: \(error.localizedDescription)"
-                    print("StravaService Error: \(self.errorMessage!)")
-                    self.disconnect()
+                    print("StravaService Error: \(error.localizedDescription) (keeping tokens)")
                     completion(.failure(error))
                     return
                 }
-                
-                // Use the captured validHttpResponse variable
-                guard let validHttpResponse = validHttpResponse, let data = data else { // Make sure to use the captured variable
+
+                guard let validHttpResponse = validHttpResponse, let data = data else {
                     self.errorMessage = "Invalid response during token refresh."
-                    print("StravaService Error: \(self.errorMessage!)")
-                    self.disconnect()
-                    let error = NSError(domain: "StravaService", code: validHttpResponse?.statusCode ?? -4, userInfo: [NSLocalizedDescriptionKey: "Invalid refresh response"]) // Use optional chaining here too
+                    print("StravaService Error: invalid refresh response (keeping tokens)")
+                    let error = NSError(domain: "StravaService", code: validHttpResponse?.statusCode ?? -4, userInfo: [NSLocalizedDescriptionKey: "Invalid refresh response"])
                     completion(.failure(error))
                     return
                 }
-                
-                if let responseString = String(data: data, encoding: .utf8) {
-                    // Use the captured validHttpResponse.statusCode
-                    print("StravaService: Refresh Token Response (\(validHttpResponse.statusCode)): \(responseString)")
-                }
-                
-                // Use the captured validHttpResponse.statusCode consistently
-                guard validHttpResponse.statusCode == 200 else {
-                    self.errorMessage = "Token refresh failed: Status \(validHttpResponse.statusCode)" // Use captured variable
-                    print("StravaService Error: \(self.errorMessage!) - Refresh token might be invalid.")
-                    self.disconnect()
-                    // Use captured variable's statusCode
-                    let error = NSError(domain: "StravaService", code: validHttpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Refresh token failed or revoked"])
+
+                let status = validHttpResponse.statusCode
+                guard status == 200 else {
+                    let refreshTokenRejected = status == 400 || status == 401
+                    self.errorMessage = "Token refresh failed: Status \(status)"
+                    if refreshTokenRejected {
+                        print("StravaService Error: refresh token rejected (\(status)); disconnecting.")
+                        self.disconnect()
+                    } else {
+                        print("StravaService Error: transient refresh failure (\(status)); keeping tokens.")
+                    }
+                    let error = NSError(domain: "StravaService", code: status, userInfo: [NSLocalizedDescriptionKey: refreshTokenRejected ? "Refresh token failed or revoked" : "Token refresh temporarily failed"])
                     completion(.failure(error))
                     return
                 }
-                                
-                if let responseString = String(data: data, encoding: .utf8) {
-                    // --- UPDATED LOGGING --- Use the captured validHttpResponse.statusCode
-                    print("StravaService: Refresh Token Response (\(validHttpResponse.statusCode)): \(responseString)")
-                }
-                
-                // --- UPDATED GUARD --- Use the captured validHttpResponse.statusCode
-                guard validHttpResponse.statusCode == 200 else {
-                    self.errorMessage = "Token refresh failed: Status \(validHttpResponse.statusCode)"
-                    print("StravaService Error: \(self.errorMessage!) - Refresh token might be invalid.")
-                    self.disconnect() // Assume refresh token is bad, force re-auth
-                    // --- UPDATED ERROR --- Use the captured validHttpResponse.statusCode
-                    let error = NSError(domain: "StravaService", code: validHttpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Refresh token failed or revoked"])
-                    completion(.failure(error))
-                    return
-                }
-                // Decode the new tokens
+
+                // Decode the new tokens (response body holds tokens — never log it)
                 do {
                     let tokenResponse = try JSONDecoder().decode(StravaTokenResponse.self, from: data)
                     print("StravaService: Tokens refreshed successfully.")
-                    // Update stored tokens with the new ones
                     self.currentTokens = StravaTokens(
                         accessToken: tokenResponse.access_token,
                         refreshToken: tokenResponse.refresh_token, // Update in case it changed
                         expiresAt: tokenResponse.expires_at
                     )
-                    self.errorMessage = nil // Clear error on success
-                    completion(.success(())) // Signal success
+                    self.errorMessage = nil
+                    completion(.success(()))
                 } catch {
+                    // A malformed 200 body is not proof the refresh token is bad; keep it.
                     self.errorMessage = "Failed to decode refreshed token response: \(error.localizedDescription)"
-                    print("StravaService Error: \(self.errorMessage!)")
-                    self.disconnect() // Disconnect if decoding fails
+                    print("StravaService Error: \(self.errorMessage ?? "") (keeping tokens)")
                     completion(.failure(error))
                 }
             }
