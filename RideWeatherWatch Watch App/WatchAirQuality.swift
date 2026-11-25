@@ -73,9 +73,18 @@ enum WatchAirQuality {
         let aqi: Int
 
         enum CodingKeys: String, CodingKey {
-            case parameterName = "ParameterName"
-            case aqi = "AQI"
+            // Keys of `observation/current/ziplatlong` (the `latLong/current`
+            // service was retired 2026-10-01). Keep in sync with the phone's
+            // `AirNowObservation`.
+            case parameterName
+            case aqi = "nowcastAQI"
         }
+    }
+
+    /// Skips entries with a missing or null AQI instead of failing the array.
+    private struct FailableObservation: Decodable {
+        let value: Observation?
+        init(from decoder: Decoder) throws { value = try? Observation(from: decoder) }
     }
 
     private static let apiKey: String? = {
@@ -110,7 +119,7 @@ enum WatchAirQuality {
             return (cached.value, cached.severityRank)
         }
         guard let apiKey else { return nil }
-        guard let url = URL(string: "https://www.airnowapi.org/aq/observation/latLong/current/?format=application/json&latitude=\(coordinate.latitude)&longitude=\(coordinate.longitude)&distance=25&API_KEY=\(apiKey)") else {
+        guard let url = URL(string: "https://www.airnowapi.org/aq/observation/current/ziplatlong/?format=application/json&latitude=\(coordinate.latitude)&longitude=\(coordinate.longitude)&distance=25&API_KEY=\(apiKey)") else {
             return nil
         }
 
@@ -119,7 +128,7 @@ enum WatchAirQuality {
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
                 return nil
             }
-            let observations = try JSONDecoder().decode([Observation].self, from: data)
+            let observations = (try JSONDecoder().decode([FailableObservation].self, from: data)).compactMap(\.value)
             guard let worst = observations.filter({ $0.aqi >= 0 }).max(by: { $0.aqi < $1.aqi }) else {
                 return nil
             }
