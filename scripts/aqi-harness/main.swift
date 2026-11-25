@@ -97,16 +97,16 @@ func makeDate(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int = 0) -> Date {
 }
 
 func obs(_ p: String, _ aqi: Int) -> AirNowObservation {
-    AirNowObservation(dateObserved: "2026-07-17", hourObserved: 11, localTimeZone: "EST",
-                      reportingArea: "Columbus", stateCode: "OH", latitude: 39.989, longitude: -82.987,
-                      parameterName: p, aqi: aqi, category: AirNowCategory(number: 5, name: "Very Unhealthy"))
+    AirNowObservation(dateObserved: "2026-07-17", hourObserved: "11:00", localTimeZone: "EST",
+                      reportingArea: "Columbus", parameterName: p, aqi: aqi,
+                      categoryName: "Very Unhealthy")
 }
 
 func fcst(_ date: String, _ p: String, _ aqi: Int) -> AirNowForecastEntry {
     AirNowForecastEntry(dateIssue: "2026-07-17", dateForecast: date,
-                        reportingArea: "Columbus", stateCode: "OH", latitude: 39.989, longitude: -82.987,
+                        reportingArea: "Columbus", stateCode: "OH",
                         parameterName: p, aqi: aqi,
-                        category: AirNowCategory(number: 2, name: "Moderate"),
+                        categoryNumber: 2, categoryName: "Moderate",
                         actionDay: false, discussion: nil)
 }
 

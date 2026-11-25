@@ -284,11 +284,22 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
             Task { @MainActor in
+                // Only a rejected refresh token (400/401) means the user must
+                // re-authenticate. Network errors, 5xx and 429 are transient —
+                // keep the stored tokens (this also runs at launch, possibly offline).
                 if let error = error {
-                    self.disconnect(); completion(.failure(error)); return
+                    print("GarminService: Token refresh network error (keeping tokens): \(error.localizedDescription)")
+                    completion(.failure(error)); return
                 }
-                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200, let data = data else {
-                    self.disconnect(); completion(.failure(GarminError.apiError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? -1, message: "refresh_token"))); return
+                let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+                guard status == 200, let data = data else {
+                    if status == 400 || status == 401 {
+                        print("GarminService: Refresh token rejected (\(status)); disconnecting.")
+                        self.disconnect()
+                    } else {
+                        print("GarminService: Transient token refresh failure (\(status)); keeping tokens.")
+                    }
+                    completion(.failure(GarminError.apiError(statusCode: status, message: "refresh_token"))); return
                 }
                 
                 do {
@@ -304,7 +315,9 @@ class GarminService: NSObject, ObservableObject, ASWebAuthenticationPresentation
                     self.errorMessage = nil
                     completion(.success(()))
                 } catch {
-                    self.disconnect(); completion(.failure(error))
+                    // A malformed 200 body is not proof the refresh token is bad; keep it.
+                    print("GarminService: Failed to decode refreshed tokens (keeping tokens): \(error)")
+                    completion(.failure(error))
                 }
             }
         }.resume()

@@ -272,7 +272,7 @@ struct WeatherDetailView: View {
                         .padding(.bottom, 10)
                         
                     } else {
-                        ContentUnavailableView("No Data", systemImage: "cloud.slash")
+                        ContentUnavailableView("No Data", systemImage: "icloud.slash")
                     }
                 }
                 .padding(.horizontal)

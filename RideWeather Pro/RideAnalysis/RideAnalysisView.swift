@@ -2207,25 +2207,14 @@ struct ShareItem: Identifiable {
     let url: URL
 }
 
-// Better approach: Store source info with analysis
+// Source info lives in a file-backed store (see AnalysisSourceStorage).
 extension AnalysisStorageManager {
-    private var sourceStorageKey: String { "analysisSourceInfo" }
-    
     func saveSource(_ source: RideSourceInfo, for analysisId: UUID) {
-        var sources = loadAllSources()
-        sources[analysisId] = source
-        
-        if let encoded = try? JSONEncoder().encode(sources) {
-            UserDefaults.standard.set(encoded, forKey: sourceStorageKey)
-        }
+        AnalysisSourceStorage.save(source, for: analysisId)
     }
-    
+
     func loadAllSources() -> [UUID: RideSourceInfo] {
-        guard let data = UserDefaults.standard.data(forKey: sourceStorageKey),
-              let sources = try? JSONDecoder().decode([UUID: RideSourceInfo].self, from: data) else {
-            return [:]
-        }
-        return sources
+        AnalysisSourceStorage.loadAll()
     }
 }
 
@@ -2254,7 +2243,9 @@ extension RideAnalysisViewModel {
             plannedRide: nil as PacingPlan?,
             isPreFiltered: true, // Data is already clean from Garmin
             elapsedTimeOverride: rideData.duration,
-            movingTimeOverride: rideData.duration,
+            // Garmin's summary has no moving time; estimate it from the
+            // samples so rides with stops don't report elapsed as moving.
+            movingTimeOverride: Self.estimatedMovingTime(points: fitDataPoints, elapsed: rideData.duration),
             averageHeartRate: rideData.averageHeartRate.map { Double($0) },
             powerGraphData: nil as [GraphableDataPoint]?,
             heartRateGraphData: nil as [GraphableDataPoint]?,
@@ -2286,6 +2277,48 @@ extension RideAnalysisViewModel {
         print("✅ Successfully imported ride: \(rideData.activityName)")
     }
     
+    /// Longest gap between consecutive samples still counted as riding;
+    /// longer gaps are recording pauses (auto-pause drops samples).
+    private static let maxMovingSampleGap: TimeInterval = 30
+    /// Speed floor for "moving" — matches `RideFileAnalyzer`'s stop detection.
+    private static let movingSpeedFloor: Double = 0.5 // m/s
+
+    /// Estimates moving time for an imported sample stream that carries no
+    /// moving-time summary.
+    ///
+    /// Sums the intervals between consecutive samples, skipping recording
+    /// pauses (gaps over `maxMovingSampleGap`) and intervals where the rider
+    /// was stationary (speed — or, without speed, distance covered — below
+    /// `movingSpeedFloor`). Samples with no speed or distance (indoor rides)
+    /// count as moving when they record power, or when nothing is known.
+    /// Never exceeds `elapsed`; falls back to `elapsed` if nothing qualifies.
+    static func estimatedMovingTime(points: [FITDataPoint], elapsed: TimeInterval) -> TimeInterval {
+        guard points.count > 1 else { return elapsed }
+
+        var moving: TimeInterval = 0
+        for i in 1..<points.count {
+            let previous = points[i - 1]
+            let current = points[i]
+            let gap = current.timestamp.timeIntervalSince(previous.timestamp)
+            guard gap > 0, gap <= maxMovingSampleGap else { continue }
+
+            let isMoving: Bool
+            if let speed = current.speed {
+                isMoving = speed >= movingSpeedFloor
+            } else if let distance = current.distance, let previousDistance = previous.distance {
+                isMoving = (distance - previousDistance) / gap >= movingSpeedFloor
+            } else if let power = current.power {
+                isMoving = power > 0
+            } else {
+                isMoving = true
+            }
+            if isMoving { moving += gap }
+        }
+
+        guard moving > 0 else { return elapsed }
+        return elapsed > 0 ? min(moving, elapsed) : moving
+    }
+
     /// Converts ImportedRideData to FITDataPoint array
     private func convertToFITDataPoints(_ rideData: ImportedRideData) -> [FITDataPoint] {
         var dataPoints: [FITDataPoint] = []
@@ -2681,7 +2714,7 @@ struct HistoricalWeatherSummaryCard: View {
                 .cornerRadius(12)
 
                 if let peakHeat {
-                    Label("\(peakHeat.category.label): \(peakHeat.category.ridingAdvice)", systemImage: "exclamationmark.thermometer")
+                    Label("\(peakHeat.category.label): \(peakHeat.category.ridingAdvice)", systemImage: "thermometer.sun.fill")  // app-wide heat-index symbol
                         .font(.caption2)
                         .foregroundColor(peakHeat.category.color)
                 }

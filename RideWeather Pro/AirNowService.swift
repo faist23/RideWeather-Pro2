@@ -6,68 +6,120 @@
 import Foundation
 
 // MARK: - Models
+//
+// AirNow retired the `observation/latLong/current` and `forecast/latLong`
+// web services on 2026-10-01 (HTTP 410; see docs.airnowapi.org/docs/
+// AirNowAPIUpdates2026June.pdf). Their replacements,
+// `observation/current/ziplatlong` and `forecast/current`, return camelCase
+// keys and a flatter shape (no nested Category, no lat/long). Only the fields
+// the app reads are required; the rest are optional so a missing field
+// doesn't fail the whole decode.
 
+/// One per-pollutant NowCast reading from the closest monitoring site.
 struct AirNowObservation: Codable {
-    let dateObserved: String
-    let hourObserved: Int
-    let localTimeZone: String
-    let reportingArea: String
-    let stateCode: String
-    let latitude: Double
-    let longitude: Double
+    let dateObserved: String?
+    /// Local hour, e.g. "15:00".
+    let hourObserved: String?
+    let localTimeZone: String?
+    let reportingArea: String?
+    let siteName: String?
     let parameterName: String
+    /// NowCast AQI (EPA 0–500); -1 when the service sends no value.
     let aqi: Int
-    let category: AirNowCategory
+    let categoryName: String?
 
     enum CodingKeys: String, CodingKey {
-        case dateObserved = "DateObserved"
-        case hourObserved = "HourObserved"
-        case localTimeZone = "LocalTimeZone"
-        case reportingArea = "ReportingArea"
-        case stateCode = "StateCode"
-        case latitude = "Latitude"
-        case longitude = "Longitude"
-        case parameterName = "ParameterName"
-        case aqi = "AQI"
-        case category = "Category"
+        case dateObserved
+        case hourObserved
+        case localTimeZone
+        case reportingArea = "reportingAreaName"
+        case siteName
+        case parameterName
+        case aqi = "nowcastAQI"
+        case categoryName = "aqiCategoryName"
+    }
+
+    init(dateObserved: String? = nil, hourObserved: String? = nil, localTimeZone: String? = nil,
+         reportingArea: String? = nil, siteName: String? = nil,
+         parameterName: String, aqi: Int, categoryName: String? = nil) {
+        self.dateObserved = dateObserved
+        self.hourObserved = hourObserved
+        self.localTimeZone = localTimeZone
+        self.reportingArea = reportingArea
+        self.siteName = siteName
+        self.parameterName = parameterName
+        self.aqi = aqi
+        self.categoryName = categoryName
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dateObserved = try c.decodeIfPresent(String.self, forKey: .dateObserved)
+        hourObserved = try c.decodeIfPresent(String.self, forKey: .hourObserved)
+        localTimeZone = try c.decodeIfPresent(String.self, forKey: .localTimeZone)
+        reportingArea = try c.decodeIfPresent(String.self, forKey: .reportingArea)
+        siteName = try c.decodeIfPresent(String.self, forKey: .siteName)
+        parameterName = try c.decodeIfPresent(String.self, forKey: .parameterName) ?? ""
+        aqi = (try? c.decodeIfPresent(Int.self, forKey: .aqi)) ?? -1
+        categoryName = try c.decodeIfPresent(String.self, forKey: .categoryName)
     }
 }
 
+/// One per-pollutant daily forecast for a reporting area.
 struct AirNowForecastEntry: Codable {
-    let dateIssue: String
+    let dateIssue: String?
+    /// Local calendar date the forecast applies to ("yyyy-MM-dd").
     let dateForecast: String
-    let reportingArea: String
-    let stateCode: String
-    let latitude: Double
-    let longitude: Double
+    let reportingArea: String?
+    let stateCode: String?
     let parameterName: String
     let aqi: Int          // -1 means "not forecast" — filter before use
-    let category: AirNowCategory
-    let actionDay: Bool
+    let categoryNumber: Int?
+    let categoryName: String?
+    let actionDay: Bool?
     let discussion: String?
 
     enum CodingKeys: String, CodingKey {
-        case dateIssue = "DateIssue"
-        case dateForecast = "DateForecast"
-        case reportingArea = "ReportingArea"
-        case stateCode = "StateCode"
-        case latitude = "Latitude"
-        case longitude = "Longitude"
-        case parameterName = "ParameterName"
-        case aqi = "AQI"
-        case category = "Category"
-        case actionDay = "ActionDay"
-        case discussion = "Discussion"
+        case dateIssue
+        case dateForecast = "dateValid"
+        case reportingArea
+        case stateCode
+        case parameterName
+        case aqi
+        case categoryNumber
+        case categoryName
+        case actionDay
+        case discussion
     }
-}
 
-struct AirNowCategory: Codable {
-    let number: Int
-    let name: String
+    init(dateIssue: String? = nil, dateForecast: String, reportingArea: String? = nil,
+         stateCode: String? = nil, parameterName: String, aqi: Int,
+         categoryNumber: Int? = nil, categoryName: String? = nil,
+         actionDay: Bool? = nil, discussion: String? = nil) {
+        self.dateIssue = dateIssue
+        self.dateForecast = dateForecast
+        self.reportingArea = reportingArea
+        self.stateCode = stateCode
+        self.parameterName = parameterName
+        self.aqi = aqi
+        self.categoryNumber = categoryNumber
+        self.categoryName = categoryName
+        self.actionDay = actionDay
+        self.discussion = discussion
+    }
 
-    enum CodingKeys: String, CodingKey {
-        case number = "Number"
-        case name = "Name"
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dateIssue = try c.decodeIfPresent(String.self, forKey: .dateIssue)
+        dateForecast = try c.decodeIfPresent(String.self, forKey: .dateForecast) ?? ""
+        reportingArea = try c.decodeIfPresent(String.self, forKey: .reportingArea)
+        stateCode = try c.decodeIfPresent(String.self, forKey: .stateCode)
+        parameterName = try c.decodeIfPresent(String.self, forKey: .parameterName) ?? ""
+        aqi = (try? c.decodeIfPresent(Int.self, forKey: .aqi)) ?? -1
+        categoryNumber = try? c.decodeIfPresent(Int.self, forKey: .categoryNumber)
+        categoryName = try c.decodeIfPresent(String.self, forKey: .categoryName)
+        actionDay = try? c.decodeIfPresent(Bool.self, forKey: .actionDay)
+        discussion = try c.decodeIfPresent(String.self, forKey: .discussion)
     }
 }
 
@@ -111,7 +163,7 @@ final class AirNowService {
             return observations
         }
 
-        guard let url = URL(string: "\(baseURL)/observation/latLong/current/?format=application/json&latitude=\(lat)&longitude=\(lon)&distance=25&API_KEY=\(apiKey)") else {
+        guard let url = URL(string: "\(baseURL)/observation/current/ziplatlong/?format=application/json&latitude=\(lat)&longitude=\(lon)&distance=25&API_KEY=\(apiKey)") else {
             throw URLError(.badURL)
         }
 
@@ -130,7 +182,7 @@ final class AirNowService {
             return forecasts
         }
 
-        guard let url = URL(string: "\(baseURL)/forecast/latLong/?format=application/json&latitude=\(lat)&longitude=\(lon)&distance=25&API_KEY=\(apiKey)") else {
+        guard let url = URL(string: "\(baseURL)/forecast/current/?format=application/json&latitude=\(lat)&longitude=\(lon)&distance=25&API_KEY=\(apiKey)") else {
             throw URLError(.badURL)
         }
 
@@ -152,6 +204,9 @@ final class AirNowService {
     private func fetchJSON<T: Decodable>(from url: URL) async throws -> T {
         let (data, response) = try await urlSession.data(from: url)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            // Log the status: a bare -1011 hid the 2026 endpoint retirement (410).
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            print("⚠️ AirNow HTTP \(status) for \(url.path)")
             throw URLError(.badServerResponse)
         }
         return try JSONDecoder().decode(T.self, from: data)
@@ -202,7 +257,7 @@ enum AirNowRouteAQISelector {
         windowEnd: Date,
         now: Date = Date(),
         // Deliberate approximation: window dates use the device calendar,
-        // while DateForecast is the reporting area's local date. Rides are
+        // while dateValid is the reporting area's local date. Rides are
         // planned near the user so these almost always agree; a distant-
         // timezone route at worst matches an adjacent day's daily forecast
         // or falls through to the OpenWeather fallback.

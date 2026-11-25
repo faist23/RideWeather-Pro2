@@ -22,6 +22,20 @@ private func timeFormatter(seconds: Double) -> String {
     }
 }
 
+/// X-axis tick spacing, in seconds, for ride charts. Their x values are
+/// elapsed `TimeInterval` seconds (a plain `Double`), so the stride must be
+/// numeric — a calendar stride like `.stride(by: .hour)` only applies to
+/// `Date` axes and makes Charts log "Axis values are incompatible with the
+/// data type". Hourly ticks on long rides, finer ones on short rides.
+private func timeAxisStride(for data: [GraphableDataPoint]) -> Double {
+    let duration = data.map(\.time).max() ?? 0
+    switch duration {
+    case ..<(90 * 60): return 15 * 60
+    case ..<(4 * 3600): return 30 * 60
+    default: return 3600
+    }
+}
+
 // MARK: - Heart Rate Graph
 
 struct HeartRateGraphCard: View {
@@ -96,7 +110,7 @@ struct HeartRateGraphCard: View {
                 }
                 .chartXAxis {
                     // Show time labels
-                    AxisMarks(preset: .automatic, values: .stride(by: .hour)) { value in
+                    AxisMarks(preset: .automatic, values: .stride(by: timeAxisStride(for: hrData))) { value in
                         if let time = value.as(Double.self) {
                             AxisValueLabel(timeFormatter(seconds: time))
                         }
@@ -197,7 +211,7 @@ struct PowerGraphCard: View {
                     }
                 }
                 .chartXAxis {
-                    AxisMarks(preset: .automatic, values: .stride(by: .hour)) { value in
+                    AxisMarks(preset: .automatic, values: .stride(by: timeAxisStride(for: powerData))) { value in
                         if let time = value.as(Double.self) {
                             AxisValueLabel(timeFormatter(seconds: time))
                         }

@@ -23,9 +23,10 @@ class WeatherViewModel: ObservableObject {
     
     @Published var settings: AppSettings {
         didSet {
-            UserDefaultsManager.shared.saveSettings(settings)
-            if oldValue.units != settings.units {
-                Task { await fetchAllWeather() }
+            let unitsChanged = oldValue.units != settings.units
+            if unitsChanged {
+                // Convert before saving so the converted speed is persisted
+                // (assigning here does not re-run this observer).
                 let currentSpeed = Double(averageSpeedInput) ?? settings.averageSpeed
                 if oldValue.units == .metric && settings.units == .imperial {
                     let newSpeed = currentSpeed * 0.621371
@@ -37,7 +38,47 @@ class WeatherViewModel: ObservableObject {
                     settings.averageSpeed = newSpeed
                 }
             }
+
+            // WeatherRepository and the watch sync read units/provider back from
+            // storage, so those changes must land before any fetch. Everything
+            // else (slider drags, steppers) is debounced.
+            let providerChanged = oldValue.weatherProvider != settings.weatherProvider
+            scheduleSettingsSave(immediately: unitsChanged || providerChanged)
+
+            if unitsChanged {
+                Task { await fetchAllWeather() }
+            }
         }
+    }
+
+    /// Pending debounced settings write, if any.
+    private var pendingSettingsSave: Task<Void, Never>?
+    /// Quiet period before a debounced settings write.
+    private static let settingsSaveDelay: Duration = .milliseconds(500)
+
+    /// Persists `settings`, either now or after `settingsSaveDelay` of no
+    /// further changes (each call replaces any pending write).
+    private func scheduleSettingsSave(immediately: Bool) {
+        pendingSettingsSave?.cancel()
+        pendingSettingsSave = nil
+
+        guard !immediately else {
+            UserDefaultsManager.shared.saveSettings(settings)
+            return
+        }
+        pendingSettingsSave = Task { [weak self] in
+            try? await Task.sleep(for: Self.settingsSaveDelay)
+            guard !Task.isCancelled, let self else { return }
+            self.pendingSettingsSave = nil
+            UserDefaultsManager.shared.saveSettings(self.settings)
+        }
+    }
+
+    /// Writes any debounced settings change now. Call when the app leaves the
+    /// foreground so a change made just before suspension isn't lost.
+    func flushPendingSettingsSave() {
+        guard pendingSettingsSave != nil else { return }
+        scheduleSettingsSave(immediately: true)
     }
     @Published var routePoints: [CLLocationCoordinate2D] = []
     @Published var authoritativeRouteDistanceMeters: Double? = nil
@@ -92,6 +133,21 @@ class WeatherViewModel: ObservableObject {
     private let hapticsManager = HapticsManager.shared
     private let cityNameResolver = CityNameResolver()
     private var cancellables = Set<AnyCancellable>()
+
+    // MARK: Live-weather fetch coordination
+    /// Distance a new GPS fix must be from the last-fetched location before
+    /// live weather is re-fetched automatically (and the radius within which
+    /// concurrent fetch requests are coalesced).
+    private static let refetchDistanceMeters: CLLocationDistance = 1_000
+    /// Location the most recent live-weather fetch was started for.
+    private var lastFetchedLocation: CLLocation?
+    /// The live-weather fetch currently running, if any.
+    private var weatherFetchTask: Task<Void, Never>?
+    /// Units/provider the in-flight fetch was started with; a fetch with
+    /// different settings is never coalesced into it.
+    private var weatherFetchSettingsKey: String?
+    /// Incremented per fetch; a fetch only applies results while it is the newest.
+    private var weatherFetchGeneration = 0
     
     // MARK: - Computed Properties
     var locationDisplayName: String { locationName.isEmpty ? "Current Location" : locationName }
@@ -173,12 +229,18 @@ class WeatherViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // Track every fix (not just the first) so refreshes use where the
+        // rider is now. Re-fetch automatically on the first fix, or once the
+        // rider has moved far enough that the forecast is for another place.
         locationManager.$location
             .compactMap { $0 }
-            .first()
             .sink { [weak self] location in
                 guard let self = self else { return }
                 self.currentLocation = location
+                if let last = self.lastFetchedLocation,
+                   location.distance(from: last) < Self.refetchDistanceMeters {
+                    return
+                }
                 Task { @MainActor in await self.fetchAllWeather(for: location) }
             }
             .store(in: &cancellables)
@@ -327,79 +389,98 @@ class WeatherViewModel: ObservableObject {
     
     // MARK: - Existing Methods (unchanged)
     
+    /// User-initiated refresh (pull-to-refresh, tab re-selection, retry).
+    ///
+    /// Uses the rider's latest known position — not the launch location — and
+    /// asks for a fresh GPS fix; if that fix lands far from where we fetched,
+    /// the location subscription re-fetches for it.
     func refreshWeather() async {
-        guard let location = currentLocation else { return }
         rideDate = Date()
-        uiState = .loading
-        
-        do {
-            let completeData = try await weatherRepo.fetchCompleteWeatherData(
-                for: location,
-                units: settings.units.rawValue
-            )
-            await processWeatherData(current: completeData.current, forecast: completeData.forecast)
-            self.enhancedInsights = completeData.enhancedInsights
-            scheduleCurrentAirQualityUpdate(location: location, fallbackComponents: completeData.airPollution.list.first?.components)
-
-            // Fetch daily separately (Option B)
-            do {
-                let dailyItems = try await weatherRepo.fetchDailyForecast(for: location, units: settings.units.rawValue)
-                let limit = settings.weatherProvider == .apple ? 10 : 8
-                self.dailyForecast = dailyItems.prefix(limit).map { WeatherMapper.mapDailyItem($0) }
-            } catch {
-                // Non-fatal - log and continue
-                print("⚠️ Failed to fetch daily forecast: \(error.localizedDescription)")
-                self.dailyForecast = []
-            }
-            
-            uiState = .loaded
-        } catch {
-            uiState = .error("Failed to fetch weather: \(error.localizedDescription)")
-            hapticsManager.triggerError()
-        }
+        locationManager.requestLocationAccess()
+        guard let location = locationManager.location ?? currentLocation else { return }
+        await fetchAllWeather(for: location, successHaptic: false)
     }
-    
-    func fetchAllWeather(for initialLocation: CLLocation? = nil) async {
+
+    /// Fetches all live weather (current, hourly, extended hourly + AQI,
+    /// daily) for a location. Concurrent requests for roughly the same place
+    /// and settings share one in-flight fetch; a superseded fetch never
+    /// overwrites newer results.
+    func fetchAllWeather(for initialLocation: CLLocation? = nil, successHaptic: Bool = true) async {
         guard locationManager.authorizationStatus != .denied else { return }
         guard let location = initialLocation ?? locationManager.location else {
             uiState = .loading
             return
         }
-        
+
+        let settingsKey = "\(settings.units.rawValue)|\(settings.weatherProvider.syncToken)"
+        if let inFlight = weatherFetchTask,
+           weatherFetchSettingsKey == settingsKey,
+           let last = lastFetchedLocation,
+           location.distance(from: last) < Self.refetchDistanceMeters {
+            await inFlight.value
+            return
+        }
+
+        weatherFetchGeneration += 1
+        let generation = weatherFetchGeneration
+        lastFetchedLocation = location
+        weatherFetchSettingsKey = settingsKey
+
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performWeatherFetch(for: location, generation: generation, successHaptic: successHaptic)
+        }
+        weatherFetchTask = task
+        await task.value
+        if weatherFetchGeneration == generation {
+            weatherFetchTask = nil
+            weatherFetchSettingsKey = nil
+        }
+    }
+
+    private func performWeatherFetch(for location: CLLocation, generation: Int, successHaptic: Bool) async {
+        /// True while this fetch is still the newest; stale results are dropped.
+        func isCurrent() -> Bool { generation == weatherFetchGeneration }
+
         // ✅ SAVE LOCATION FOR WIDGET
         saveLocationForWidget(location)
-        
+
         uiState = .loading
         Task { await cityNameResolver.getCityName(for: location, into: self) }
-        
+
         do {
             let completeData = try await weatherRepo.fetchCompleteWeatherData(
                 for: location,
                 units: settings.units.rawValue
             )
+            guard isCurrent() else { return }
             await processWeatherData(current: completeData.current, forecast: completeData.forecast)
             self.enhancedInsights = completeData.enhancedInsights
             scheduleCurrentAirQualityUpdate(location: location, fallbackComponents: completeData.airPollution.list.first?.components)
             try await fetchExtendedHourlyData()
-            
+            guard isCurrent() else { return }
+
             // Fetch daily separately
             do {
                 let dailyItems = try await weatherRepo.fetchDailyForecast(for: location, units: settings.units.rawValue)
+                guard isCurrent() else { return }
                 let limit = settings.weatherProvider == .apple ? 10 : 8
                 self.dailyForecast = dailyItems.prefix(limit).map { WeatherMapper.mapDailyItem($0) }
             } catch {
+                guard isCurrent() else { return }
                 print("⚠️ Failed loading daily forecast: \(error.localizedDescription)")
                 self.dailyForecast = []
             }
-            
+
             uiState = .loaded
-            hapticsManager.triggerSuccess()
-            
+            if successHaptic { hapticsManager.triggerSuccess() }
+
             if !hasLoadedInitialData {
                 hasLoadedInitialData = true
                 initialDataLoaded.send()
             }
         } catch {
+            guard isCurrent() else { return }
             if !isConnected {
                 uiState = .error("No internet connection. Check your network and try again.")
             } else {
@@ -412,7 +493,7 @@ class WeatherViewModel: ObservableObject {
             }
         }
     }
-
+    
     private func saveLocationForWidget(_ location: CLLocation) {
         // Try BOTH standard and shared
         let sharedDefaults = UserDefaults(suiteName: "group.com.ridepro.rideweather")

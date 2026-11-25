@@ -77,6 +77,10 @@ struct RideWeatherProApp: App {
                 }
             }
             .onChange(of: scenePhase) { oldPhase, newPhase in
+                if newPhase != .active {
+                    // Persist any debounced settings edit before suspension.
+                    weatherViewModel.flushPendingSettingsSave()
+                }
                 if newPhase == .active && (oldPhase == .inactive || oldPhase == .background) {
                     Task {
                         // Fetch readiness data

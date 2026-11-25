@@ -51,7 +51,8 @@ struct AIWeatherPacingInsights {
             let temp = settings.units == .metric ?
                 powerSeg.averageTemperatureC :
                 (powerSeg.averageTemperatureC * 9/5 + 32)
-            let humidity = Int(powerSeg.averageHumidity)
+            // averageHumidity is a 0–1 fraction; everything below works in percent.
+            let humidity = Int((powerSeg.averageHumidity * 100).rounded())
             
             // --- PRECIPITATION ANALYSIS ---
             if let weatherPoint = findClosestWeatherPoint(to: powerSeg, in: weatherPoints) {
@@ -619,7 +620,7 @@ struct AIWeatherPacingInsights {
 
         for seg in powerSegments {
             let tempF = seg.averageTemperatureC * 9/5 + 32
-            let hi = HeatIndexCalculator.heatIndexF(temperatureF: tempF, relativeHumidity: seg.averageHumidity)
+            let hi = HeatIndexCalculator.heatIndexF(temperatureF: tempF, relativeHumidity: seg.averageHumidity * 100)
             maxHeatIndexF = max(maxHeatIndexF, hi)
         }
 
@@ -688,12 +689,13 @@ struct AIWeatherPacingInsights {
         return apparentWind - riderSpeed
     }
     
+    /// - Parameter humidity: relative humidity in percent (0–100).
     private func calculateDehydrationRisk(temp: Double, humidity: Int) -> Double {
         // Convert to Fahrenheit if needed for heat index calculation
         let tempF = settings.units == .metric ? (temp * 9/5 + 32) : temp
         
-        let heatIndex = -42.379 + 2.04901523 * tempF + 10.14333127 * Double(humidity)
-            - 0.22475541 * tempF * Double(humidity)
+        // Shared NWS calculator — never reimplement the formula locally.
+        let heatIndex = HeatIndexCalculator.heatIndexF(temperatureF: tempF, relativeHumidity: Double(humidity))
         
         if heatIndex > 105 { return 1.0 }
         else if heatIndex > 95 { return 0.8 }
