@@ -27,17 +27,38 @@ class AIInsightsManager: ObservableObject {
     @Published var requestCount: Int = 0
     
     // MARK: - Usage Tracking
-    private let costPerInputToken = 0.000002  // $2 per 1M tokens (Sonnet 5)
-    private let costPerOutputToken = 0.000010 // $10 per 1M tokens (Sonnet 5)
+    private let costPerInputToken = 0.000002  // $2 per 1M tokens (Sonnet 5.5)
+    private let costPerOutputToken = 0.000010 // $10 per 1M tokens (Sonnet 5.5)
     
     private let userDefaults = UserDefaults.standard
     private let insightKey = "cachedAIInsight"
     private let costKey = "totalAICost"
     private let requestCountKey = "aiRequestCount"
+    /// Fingerprint of the recent training the cached insight was built from.
+    private let trainingFingerprintKey = "aiInsightTrainingFingerprint"
 
     // MARK: - Configuration
     private static let messagesEndpoint = URL(string: "https://api.anthropic.com/v1/messages")!
-    private static let model = "claude-sonnet-5"
+    private static let model = "claude-sonnet-5-5"
+    /// Server-side refusal fallback (opt-in beta): a `cyber`/`frontier_llm`
+    /// decline is re-run on Claude Sonnet 5 inside the same call.
+    private static let fallbackBeta = "server-side-fallback-2026-07-01"
+
+    /// JSON Schema for the insight; enforced by structured outputs so the
+    /// reply is always a decodable `AIInsightResponse`.
+    private static let insightSchema: [String: Any] = [
+        "type": "object",
+        "properties": [
+            "priority": ["type": "string", "enum": ["critical", "warning", "info"]],
+            "title": ["type": "string"],
+            "insight": ["type": "string"],
+            "explanation": ["type": "string"],
+            "recommendation": ["type": "string"],
+            "confidence": ["type": "string", "enum": ["high", "moderate", "low"]]
+        ],
+        "required": ["priority", "title", "insight", "explanation", "recommendation", "confidence"],
+        "additionalProperties": false
+    ]
 
     private var anthropicConfig: [String: String]?
 
@@ -91,7 +112,8 @@ class AIInsightsManager: ObservableObject {
         
         // Rate limiting: Don't analyze more than once per 6 hours
         if let lastAnalysis = lastAnalysisDate,
-           Date().timeIntervalSince(lastAnalysis) < 6 * 3600 {
+           Date().timeIntervalSince(lastAnalysis) < 6 * 3600,
+           !trainingChangedSinceLastInsight(recentLoads) {
             print("🤖 AI Insights: Too soon since last analysis")
             return
         }
@@ -169,6 +191,7 @@ class AIInsightsManager: ObservableObject {
             currentInsight = insight
             lastAnalysisDate = Date()
             cacheInsight(insight)
+            userDefaults.set(Self.trainingFingerprint(recentLoads), forKey: trainingFingerprintKey)
             print("🤖 AI Insights: Generated new insight")
 
         } catch {
@@ -238,19 +261,7 @@ class AIInsightsManager: ObservableObject {
             }
         }
         
-        // Add recent 7 days of training
-        let recent = recentLoads.prefix(7)
-        if !recent.isEmpty {
-            prompt += """
-            
-            
-            Last 7 Days Training:
-            """
-            for load in recent {
-                let dateStr = load.date.formatted(date: .abbreviated, time: .omitted)
-                prompt += "\n- \(dateStr): \(String(format: "%.0f", load.tss)) TSS"
-            }
-        }
+        prompt += Self.recentTrainingSection(from: recentLoads)
         
         prompt += """
         
@@ -269,9 +280,10 @@ class AIInsightsManager: ObservableObject {
     
     /// Requests an insight straight from the Anthropic Messages API.
     ///
-    /// `thinking` is explicitly disabled: Sonnet 5 thinks adaptively when the
-    /// parameter is omitted, which would eat the small `max_tokens` budget
-    /// before the JSON is written.
+    /// Thinking is turned off with `between_tools` (Sonnet 5.5 rejects
+    /// `disabled`): left adaptive, thinking would eat the small `max_tokens`
+    /// budget before the JSON is written. Structured outputs guarantee the
+    /// JSON shape; refusals and truncation are reported as distinct errors.
     private func fetchInsight(prompt: String) async throws -> AIInsight {
         guard let apiKey else {
             throw AIInsightError.missingAPIKey
@@ -282,11 +294,17 @@ class AIInsightsManager: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(Self.fallbackBeta, forHTTPHeaderField: "anthropic-beta")
 
         let body: [String: Any] = [
             "model": Self.model,
             "max_tokens": 1024,
-            "thinking": ["type": "disabled"],
+            "thinking": ["type": "between_tools"],
+            "output_config": [
+                "effort": "high",
+                "format": ["type": "json_schema", "schema": Self.insightSchema]
+            ],
+            "fallbacks": "default",
             "messages": [["role": "user", "content": prompt]]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -303,18 +321,33 @@ class AIInsightsManager: ObservableObject {
             throw AIInsightError.apiError(message ?? "HTTP \(httpResponse.statusCode)")
         }
 
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let content = json["content"] as? [[String: Any]],
-              let text = content.first(where: { $0["type"] as? String == "text" })?["text"] as? String
-        else {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw AIInsightError.invalidResponse
         }
 
+        // Bill tracking first: refused and truncated replies are still charged.
         if let usage = json["usage"] as? [String: Any] {
             trackUsage(
                 inputTokens: usage["input_tokens"] as? Int ?? 0,
                 outputTokens: usage["output_tokens"] as? Int ?? 0
             )
+        }
+
+        // Check why generation stopped before reading content: a refusal or a
+        // max_tokens cut-off can leave text that doesn't match the schema.
+        switch json["stop_reason"] as? String {
+        case "refusal":
+            throw AIInsightError.refused
+        case "max_tokens":
+            throw AIInsightError.truncated
+        default:
+            break
+        }
+
+        guard let content = json["content"] as? [[String: Any]],
+              let text = content.first(where: { $0["type"] as? String == "text" })?["text"] as? String
+        else {
+            throw AIInsightError.invalidResponse
         }
 
         let insight = try decodeInsightPayload(from: text)
@@ -329,9 +362,8 @@ class AIInsightsManager: ObservableObject {
         )
     }
 
-    /// The model answers with a bare JSON object, but occasionally wraps it in
-    /// a ```json fence or a sentence. Pull out the outermost braces before
-    /// decoding so a stray wrapper doesn't cost the whole insight.
+    /// Structured outputs make the reply a bare JSON object; trimming to the
+    /// outermost braces stays as a guard for a reply served by a fallback.
     private func decodeInsightPayload(from text: String) throws -> AIInsightResponse {
         guard let start = text.firstIndex(of: "{"),
               let end = text.lastIndex(of: "}"),
@@ -443,6 +475,8 @@ enum AIInsightError: LocalizedError {
     case apiError(String)
     case invalidResponse
     case missingAPIKey
+    case refused
+    case truncated
 
     var errorDescription: String? {
         switch self {
@@ -452,6 +486,10 @@ enum AIInsightError: LocalizedError {
             return "AI insight response could not be decoded"
         case .missingAPIKey:
             return "No Anthropic API key — add AnthropicConfig.plist with an AIKey entry"
+        case .refused:
+            return "The AI declined to generate this insight"
+        case .truncated:
+            return "AI insight response was cut off before it finished"
         }
     }
 }
@@ -478,7 +516,8 @@ extension AIInsightsManager {
         
         // Rate limiting: Don't analyze more than once per 6 hours
         if let lastAnalysis = lastAnalysisDate,
-           Date().timeIntervalSince(lastAnalysis) < 6 * 3600 {
+           Date().timeIntervalSince(lastAnalysis) < 6 * 3600,
+           !trainingChangedSinceLastInsight(recentLoads) {
             print("🤖 AI Insights: Too soon since last analysis")
             return
         }
@@ -512,6 +551,7 @@ extension AIInsightsManager {
             currentInsight = insight
             lastAnalysisDate = Date()
             cacheInsight(insight)
+            userDefaults.set(Self.trainingFingerprint(recentLoads), forKey: trainingFingerprintKey)
             print("🤖 AI Insights: Generated wellness-enhanced insight")
 
         } catch {
@@ -652,19 +692,7 @@ extension AIInsightsManager {
             }
         }
         
-        // Add recent training
-        let recent = recentLoads.prefix(7)
-        if !recent.isEmpty {
-            prompt += """
-            
-            
-            Last 7 Days Training:
-            """
-            for load in recent {
-                let dateStr = load.date.formatted(date: .abbreviated, time: .omitted)
-                prompt += "\n- \(dateStr): \(String(format: "%.0f", load.tss)) TSS"
-            }
-        }
+        prompt += Self.recentTrainingSection(from: recentLoads)
         
         prompt += """
         
@@ -728,5 +756,61 @@ extension WellnessManager {
         }
         
         return text.isEmpty ? "No wellness trends detected" : text
+    }
+}
+
+// MARK: - Recent training
+
+extension AIInsightsManager {
+    /// Actual (non-projected) loads for the last 7 calendar days ending today,
+    /// oldest first. Callers pass the chart's `dailyLoads`, which is sorted
+    /// oldest-first across the whole chart period and ends with projected
+    /// days, so taking a prefix would send the *oldest* week and never today.
+    static func lastSevenDays(of loads: [DailyTrainingLoad], now: Date = Date()) -> [DailyTrainingLoad] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        guard let start = calendar.date(byAdding: .day, value: -6, to: today) else { return [] }
+        return loads
+            .filter { !$0.isProjected }
+            .filter {
+                let day = calendar.startOfDay(for: $0.date)
+                return day >= start && day <= today
+            }
+            .sorted { $0.date < $1.date }
+    }
+
+    /// "Last 7 Days Training" prompt section, with today's entry labelled.
+    static func recentTrainingSection(from loads: [DailyTrainingLoad], now: Date = Date()) -> String {
+        let recent = lastSevenDays(of: loads, now: now)
+        guard !recent.isEmpty else { return "" }
+        let calendar = Calendar.current
+        var section = "\n\nLast 7 Days Training (oldest first):"
+        for load in recent {
+            let dateStr = load.date.formatted(date: .abbreviated, time: .omitted)
+            let label = calendar.isDate(load.date, inSameDayAs: now) ? " (TODAY)" : ""
+            var line = "\n- \(dateStr)\(label): \(String(format: "%.0f", load.tss)) TSS"
+            if load.rideCount > 0 {
+                let minutes = Int((load.totalDuration / 60).rounded())
+                line += ", \(load.rideCount) ride\(load.rideCount == 1 ? "" : "s"), \(minutes / 60)h \(minutes % 60)m"
+            }
+            section += line
+        }
+        if !recent.contains(where: { calendar.isDate($0.date, inSameDayAs: now) }) {
+            section += "\n- Today: no training recorded yet"
+        }
+        return section
+    }
+
+    /// Changes whenever a ride is added or its TSS changes in the last week.
+    static func trainingFingerprint(_ loads: [DailyTrainingLoad], now: Date = Date()) -> String {
+        lastSevenDays(of: loads, now: now)
+            .map { "\(Int($0.date.timeIntervalSince1970 / 86_400)):\($0.rideCount):\(Int($0.tss.rounded()))" }
+            .joined(separator: ",")
+    }
+
+    /// True when the recent training differs from what the cached insight saw,
+    /// so a just-finished workout isn't hidden behind the 6-hour rate limit.
+    func trainingChangedSinceLastInsight(_ loads: [DailyTrainingLoad]) -> Bool {
+        userDefaults.string(forKey: trainingFingerprintKey) != Self.trainingFingerprint(loads)
     }
 }

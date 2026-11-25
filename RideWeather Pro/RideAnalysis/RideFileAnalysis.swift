@@ -969,22 +969,37 @@ class RideFileAnalyzer {
             if currentGroup.count > 1 {
                 let totalDist = currentGroup.reduce(0.0) { $0 + $1.distance }
                 let totalTime = currentGroup.reduce(0.0) { $0 + $1.duration }
-                let avgGrade = currentGroup.reduce(0.0) { $0 + $1.gradient * $1.distance } / totalDist
-                let avgPower = currentGroup.reduce(0.0) { $0 + $1.averagePower * $1.distance } / totalDist
-                let avgNP = currentGroup.reduce(0.0) { $0 + $1.normalizedPower * $1.distance } / totalDist
+                // Distance-weighted averages; fall back to time weighting (then a
+                // plain mean) when the group covers no distance, e.g. merged
+                // stationary segments — dividing by a zero total yields NaN that
+                // would be saved into the analysis and charted.
+                func weightedAverage(_ value: (TerrainSegment) -> Double) -> Double {
+                    if totalDist > 0 {
+                        return currentGroup.reduce(0.0) { $0 + value($1) * $1.distance } / totalDist
+                    }
+                    if totalTime > 0 {
+                        return currentGroup.reduce(0.0) { $0 + value($1) * $1.duration } / totalTime
+                    }
+                    return currentGroup.reduce(0.0) { $0 + value($1) } / Double(currentGroup.count)
+                }
+                let avgGrade = weightedAverage { $0.gradient }
+                let avgPower = weightedAverage { $0.averagePower }
+                let avgNP = weightedAverage { $0.normalizedPower }
+                let optimalPower = currentGroup[0].optimalPowerForTime
                 
                 merged.append(TerrainSegment(
-                    startIndex: currentGroup.first!.startIndex,
-                    endIndex: currentGroup.last!.endIndex,
-                    type: currentGroup.first!.type,
+                    startIndex: currentGroup[0].startIndex,
+                    endIndex: currentGroup[currentGroup.count - 1].endIndex,
+                    type: currentGroup[0].type,
                     distance: totalDist,
                     elevationGain: currentGroup.reduce(0.0) { $0 + $1.elevationGain },
                     gradient: avgGrade,
                     duration: totalTime,
                     averagePower: avgPower,
                     normalizedPower: avgNP,
-                    optimalPowerForTime: currentGroup.first!.optimalPowerForTime,
-                    powerEfficiency: (avgPower / currentGroup.first!.optimalPowerForTime) * 100
+                    optimalPowerForTime: optimalPower,
+                    // Same zero guard as the per-segment calculation.
+                    powerEfficiency: optimalPower > 0 ? (avgPower / optimalPower) * 100 : 100
                 ))
             } else {
                 merged.append(currentGroup[0])
@@ -2579,6 +2594,7 @@ class AnalysisStorageManager {
         }
 
         Self.analysisStorage.save(analyses)
+        AnalysisSourceStorage.prune(keeping: Set(analyses.map(\.id)))
     }
 
     func loadAllAnalyses() -> [RideAnalysis] {
@@ -2590,6 +2606,7 @@ class AnalysisStorageManager {
         analyses.removeAll { $0.id == analysis.id }
 
         Self.analysisStorage.save(analyses)
+        AnalysisSourceStorage.prune(keeping: Set(analyses.map(\.id)))
     }
     
 /*    func getAnalysisTrend(limit: Int = 10) -> [TrendDataPoint] {

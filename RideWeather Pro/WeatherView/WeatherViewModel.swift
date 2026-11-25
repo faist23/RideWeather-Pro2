@@ -23,9 +23,10 @@ class WeatherViewModel: ObservableObject {
     
     @Published var settings: AppSettings {
         didSet {
-            UserDefaultsManager.shared.saveSettings(settings)
-            if oldValue.units != settings.units {
-                Task { await fetchAllWeather() }
+            let unitsChanged = oldValue.units != settings.units
+            if unitsChanged {
+                // Convert before saving so the converted speed is persisted
+                // (assigning here does not re-run this observer).
                 let currentSpeed = Double(averageSpeedInput) ?? settings.averageSpeed
                 if oldValue.units == .metric && settings.units == .imperial {
                     let newSpeed = currentSpeed * 0.621371
@@ -37,7 +38,47 @@ class WeatherViewModel: ObservableObject {
                     settings.averageSpeed = newSpeed
                 }
             }
+
+            // WeatherRepository and the watch sync read units/provider back from
+            // storage, so those changes must land before any fetch. Everything
+            // else (slider drags, steppers) is debounced.
+            let providerChanged = oldValue.weatherProvider != settings.weatherProvider
+            scheduleSettingsSave(immediately: unitsChanged || providerChanged)
+
+            if unitsChanged {
+                Task { await fetchAllWeather() }
+            }
         }
+    }
+
+    /// Pending debounced settings write, if any.
+    private var pendingSettingsSave: Task<Void, Never>?
+    /// Quiet period before a debounced settings write.
+    private static let settingsSaveDelay: Duration = .milliseconds(500)
+
+    /// Persists `settings`, either now or after `settingsSaveDelay` of no
+    /// further changes (each call replaces any pending write).
+    private func scheduleSettingsSave(immediately: Bool) {
+        pendingSettingsSave?.cancel()
+        pendingSettingsSave = nil
+
+        guard !immediately else {
+            UserDefaultsManager.shared.saveSettings(settings)
+            return
+        }
+        pendingSettingsSave = Task { [weak self] in
+            try? await Task.sleep(for: Self.settingsSaveDelay)
+            guard !Task.isCancelled, let self else { return }
+            self.pendingSettingsSave = nil
+            UserDefaultsManager.shared.saveSettings(self.settings)
+        }
+    }
+
+    /// Writes any debounced settings change now. Call when the app leaves the
+    /// foreground so a change made just before suspension isn't lost.
+    func flushPendingSettingsSave() {
+        guard pendingSettingsSave != nil else { return }
+        scheduleSettingsSave(immediately: true)
     }
     @Published var routePoints: [CLLocationCoordinate2D] = []
     @Published var authoritativeRouteDistanceMeters: Double? = nil

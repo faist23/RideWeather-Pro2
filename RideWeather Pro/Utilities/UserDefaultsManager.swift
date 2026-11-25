@@ -298,7 +298,6 @@ class UserDefaultsManager {
             // (widgets on this device; the watch receives them via WCSession context)
             sharedDefaults?.set(settings.weatherProvider.syncToken, forKey: "appSettings.weatherProvider")
             sharedDefaults?.set(settings.units.rawValue, forKey: "appSettings.units")
-            sharedDefaults?.synchronize()
         }
     }
 
